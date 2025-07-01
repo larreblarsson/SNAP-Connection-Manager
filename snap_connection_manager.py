@@ -645,16 +645,24 @@ class SSHClientGUI:
     def _launch_expect(self, lines, title):
         expect_bin = shutil.which("expect")
         if not expect_bin:
-            messagebox.showerror("Expect Missing", "Cannot find 'expect'.", parent=self.root)
+            messagebox.showerror(
+                "Expect Missing",
+                "Cannot find 'expect'.",
+                parent=self.root
+            )
             return
-        script = "".join(ln for ln in lines if not ln.startswith("#!"))
-        cmd = (
-            f"{expect_bin} -f - << 'EOF'\n"
-            f"{script}"
-            f"EOF\n"
-            f"read -p 'Press ENTER to close'"
-        )
-        subprocess.Popen(["gnome-terminal","--title",title,"--","bash","-ic",cmd])
+
+        # build a one‐liner Expect script (no pause, no flicker)
+        script = "".join(ln for ln in lines if not ln.startswith("#!")).strip()
+        # escape " and turn newlines into semicolons
+        one_liner = script.replace('"', '\\"').replace("\n", "; ")
+
+        # launch terminal directly with expect -c
+        launcher = [
+            "gnome-terminal", "--title", title,
+            "--", expect_bin, "-c", one_liner
+        ]
+        subprocess.Popen(launcher)
 
     def connect_to_ssh(self):
         sel = self.tree.selection()
