@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-Snap Connection Manager v1.6.4
+Snap Connection Manager v1.6.5
 
-– Folders in server list (ttk.Treeview + context menus)  
+– Foldered server list (ttk.Treeview + context menus)  
 – Add/Edit/Delete servers with folder selection  
 – SSH/SFTP launched via snap- or apt-installed Expect via here-doc  
 – RoundedEntry inputs, Ubuntu 12 font  
 – Persists geometry, folders, servers in JSON  
+– Renamed log widget/method to avoid name collision
 """
 
 import tkinter as tk
@@ -31,54 +32,50 @@ class RoundedEntry(tk.Canvas):
                          bg=bg, highlightthickness=0)
         r, w, h = radius, width, total_h
 
-        # fill
-        self.create_rectangle(r, 0, w-r, h, fill=fg_color, outline=fg_color)
-        self.create_rectangle(0, r, w, h-r, fill=fg_color, outline=fg_color)
+        # white fill
+        self.create_rectangle(r,   0, w-r,   h,   fill=fg_color, outline=fg_color)
+        self.create_rectangle(0,   r, w,     h-r, fill=fg_color, outline=fg_color)
         for cx, cy in ((0,0), (w-2*r,0), (0,h-2*r), (w-2*r,h-2*r)):
             self.create_oval(cx, cy, cx+2*r, cy+2*r,
                              fill=fg_color, outline=fg_color)
 
-        # border
+        # grey border
         self._draw_border(0, 0, w, h, r, border_color, border_width)
 
         # embed Entry
         inset = r + border_width
         ent_w, ent_h = w - 2*inset, h - 2*inset
         self.entry = tk.Entry(self, bd=0, bg=fg_color,
-                              highlightthickness=0,
-                              **entry_kwargs)
+                              highlightthickness=0, **entry_kwargs)
         self.create_window((inset, inset), window=self.entry,
                            anchor="nw", width=ent_w, height=ent_h)
 
     def _draw_border(self, x1, y1, x2, y2, r, col, w):
-        # four corner arcs
-        self.create_arc(x1, y1,   x1+2*r, y1+2*r,
-                        start=90,  extent=90, style="arc",
-                        outline=col, width=w)
-        self.create_arc(x2-2*r, y1, x2,     y1+2*r,
-                        start=0,   extent=90, style="arc",
-                        outline=col, width=w)
-        self.create_arc(x2-2*r, y2-2*r, x2, y2,
-                        start=270, extent=90, style="arc",
-                        outline=col, width=w)
-        self.create_arc(x1,     y2-2*r, x1+2*r, y2,
-                        start=180, extent=90, style="arc",
-                        outline=col, width=w)
-        # four edges
+        # corner arcs
+        self.create_arc(x1, y1,   x1+2*r, y1+2*r, start=90,  extent=90,
+                        style="arc", outline=col, width=w)
+        self.create_arc(x2-2*r, y1, x2,     y1+2*r, start=0,   extent=90,
+                        style="arc", outline=col, width=w)
+        self.create_arc(x2-2*r, y2-2*r, x2, y2,    start=270, extent=90,
+                        style="arc", outline=col, width=w)
+        self.create_arc(x1,     y2-2*r, x1+2*r, y2, start=180, extent=90,
+                        style="arc", outline=col, width=w)
+        # edges
         self.create_line(x1+r, y1,   x2-r, y1,   fill=col, width=w)
         self.create_line(x2,   y1+r, x2,   y2-r, fill=col, width=w)
         self.create_line(x1+r, y2,   x2-r, y2,   fill=col, width=w)
         self.create_line(x1,   y1+r, x1,   y2-r, fill=col, width=w)
 
-    def insert(self, idx, s):          return self.entry.insert(idx, s)
-    def get(self):                     return self.entry.get()
-    def delete(self, first, last=None): return self.entry.delete(first, last)
-    def bind(self, sequence=None, fn=None, add=None):
-        return self.entry.bind(sequence, fn, add)
+    # proxy methods
+    def insert(self, idx, s):             return self.entry.insert(idx, s)
+    def get(self):                        return self.entry.get()
+    def delete(self, first, last=None):   return self.entry.delete(first, last)
+    def bind(self, sequence, func, add=None):
+        return self.entry.bind(sequence, func, add)
 
 
 def make_entry(master, initial="", width=260, **kwargs):
-    """Factory for RoundedEntry with default Ubuntu 12 font."""
+    """Create a RoundedEntry with Ubuntu12 font + Ctrl+V paste."""
     kwargs.setdefault("font", FONT)
     r = RoundedEntry(master, width=width, height=28, radius=6, **kwargs)
     if initial:
@@ -93,9 +90,9 @@ def load_settings():
     except:
         return {}
 
-def save_settings(s):
+def save_settings(settings):
     try:
-        json.dump(s, open(SETTINGS_FILE, "w"), indent=4)
+        json.dump(settings, open(SETTINGS_FILE, "w"), indent=4)
     except:
         pass
 
@@ -103,14 +100,14 @@ def center(win, parent=None):
     win.update_idletasks()
     w, h = win.winfo_width(), win.winfo_height()
     if parent:
-        px,py = parent.winfo_x(), parent.winfo_y()
-        pw,ph = parent.winfo_width(), parent.winfo_height()
-        x = px + (pw-w)//2
-        y = py + (ph-h)//2
+        px, py = parent.winfo_x(), parent.winfo_y()
+        pw, ph = parent.winfo_width(), parent.winfo_height()
+        x = px + (pw - w)//2
+        y = py + (ph - h)//2
     else:
-        sw,sh = win.winfo_screenwidth(), win.winfo_screenheight()
-        x = (sw-w)//2
-        y = (sh-h)//2
+        sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
+        x = (sw - w)//2
+        y = (sh - h)//2
     win.geometry(f"+{x}+{y}")
 
 def setup_styles(root):
@@ -170,6 +167,7 @@ class SSHClientGUI:
 
         self._reload_folders()
         self._populate_tree()
+
         geom = self.settings.get("main_geometry")
         if geom:
             root.geometry(geom)
@@ -185,9 +183,9 @@ class SSHClientGUI:
         self.root.destroy()
 
     def _build_gui(self):
-        # Server list frame
         sf = ttk.Labelframe(self.root, text="Saved Servers")
         sf.pack(fill="both", expand=True, padx=10, pady=5)
+
         self.tree = ttk.Treeview(sf, show="tree")
         self.tree.pack(side="left", fill="both", expand=True)
         self.tree.bind("<Double-1>", self._on_double)
@@ -196,7 +194,6 @@ class SSHClientGUI:
         sb.pack(side="right", fill="y")
         self.tree.config(yscrollcommand=sb.set)
 
-        # Buttons
         bf = tk.Frame(self.root, bg="#f6f6f6")
         bf.pack(pady=5)
         for txt, cmd in [
@@ -208,19 +205,21 @@ class SSHClientGUI:
         ]:
             ttk.Button(bf, text=txt, width=8, command=cmd).pack(side="left", padx=5)
 
-        # Log
         lf = ttk.Labelframe(self.root, text="Log")
         lf.pack(fill="both", expand=True, padx=10, pady=5)
         li = tk.Frame(lf, bg="#f6f6f6")
         li.pack(fill="both", expand=True)
-        self.log_widget = tk.Text(li, font=FONT, bg="#ffffff",
-                                  relief="flat", state="disabled", height=6)
+
+        self.log_widget = tk.Text(
+            li, font=FONT, bg="#ffffff",
+            relief="flat", state="disabled", height=6
+        )
         self.log_widget.pack(side="left", fill="both", expand=True)
         sb2 = ttk.Scrollbar(li, command=self.log_widget.yview)
         sb2.pack(side="right", fill="y")
         self.log_widget.config(yscrollcommand=sb2.set)
 
-    # ─── Folder & Tree Management ─────────────────────────────────────
+    # ─── Folders & Tree ─────────────────────────────────────────────────
     def _reload_folders(self):
         names = {s.get("folder", UNCAT_FOLDER) for s in self.servers}
         names.add(UNCAT_FOLDER)
@@ -254,7 +253,7 @@ class SSHClientGUI:
             menu.add_command(label="Rename Folder", command=lambda f=fld: self._rename_folder(f))
             menu.add_command(label="Delete Folder", command=lambda f=fld: self._delete_folder(f))
             menu.add_separator()
-            menu.add_command(label="Add", command=self.add_server)
+            menu.add_command(label="Add",            command=self.add_server)
         else:
             menu.add_command(label="Edit",   command=self.edit_server)
             menu.add_command(label="Delete", command=self.delete_server)
@@ -263,6 +262,7 @@ class SSHClientGUI:
             for f in self.folders:
                 mv.add_command(label=f, command=lambda f=f: self._move_to_folder(f))
             menu.add_cascade(label="Move To", menu=mv)
+
         menu.post(event.x_root, event.y_root)
 
     def _new_folder(self):
@@ -273,11 +273,12 @@ class SSHClientGUI:
             self._populate_tree()
 
     def _rename_folder(self, old):
-        new = simpledialog.askstring("Rename Folder", "New name:",
-                                     initialvalue=old, parent=self.root)
-        if new and new!=old and new not in self.folders:
+        new = simpledialog.askstring(
+            "Rename Folder", "New name:", initialvalue=old, parent=self.root
+        )
+        if new and new != old and new not in self.folders:
             for s in self.servers:
-                if s.get("folder")==old:
+                if s.get("folder") == old:
                     s["folder"] = new
             save_servers(self.servers, SERVER_FILE)
             self._reload_folders()
@@ -285,13 +286,17 @@ class SSHClientGUI:
 
     def _delete_folder(self, fld):
         if fld == UNCAT_FOLDER:
-            messagebox.showwarning("Cannot delete",
-                                   "Cannot delete Uncategorized.", parent=self.root)
+            messagebox.showwarning(
+                "Cannot delete", "Cannot delete Uncategorized.", parent=self.root
+            )
             return
-        if messagebox.askyesno("Delete Folder",
-           f"Delete folder '{fld}'? Move servers to {UNCAT_FOLDER}.", parent=self.root):
+        if messagebox.askyesno(
+            "Delete Folder",
+            f"Delete folder '{fld}'? Move servers to {UNCAT_FOLDER}.",
+            parent=self.root
+        ):
             for s in self.servers:
-                if s.get("folder")==fld:
+                if s.get("folder") == fld:
                     s["folder"] = UNCAT_FOLDER
             save_servers(self.servers, SERVER_FILE)
             self._reload_folders()
@@ -306,7 +311,7 @@ class SSHClientGUI:
             self._reload_folders()
             self._populate_tree()
 
-    # ─── Server CRUD ───────────────────────────────────────────────────
+    # ─── CRUD ───────────────────────────────────────────────────────────
     def add_server(self):
         self._edit_flow(edit=False)
 
@@ -353,7 +358,7 @@ class SSHClientGUI:
         self._reload_folders()
         self._populate_tree()
 
-    # ─── Dialog & Login-Actions Sequence Editor ──────────────────────
+    # ─── Dialog & Sequence Editor ─────────────────────────────────────
     def _open_dialog(self, cfg=None):
         server_result = None
         dlg = tk.Toplevel(self.root)
@@ -364,7 +369,7 @@ class SSHClientGUI:
         dlg.title("Server Details")
 
         # freeze parent
-        rx,ry = self.root.winfo_x(), self.root.winfo_y()
+        rx, ry = self.root.winfo_x(), self.root.winfo_y()
         try:
             self.root.attributes("-disabled", True)
             using_attr = True
@@ -374,15 +379,17 @@ class SSHClientGUI:
 
         def release():
             if using_attr:
-                try: self.root.attributes("-disabled", False)
-                except: pass
+                try:
+                    self.root.attributes("-disabled", False)
+                except:
+                    pass
             else:
                 self.root.unbind("<Configure>")
             dlg.destroy()
 
         dlg.protocol("WM_DELETE_WINDOW", release)
 
-        # Tab bar + underline
+        # Tab bar
         bar = tk.Frame(dlg, bg="#f6f6f6")
         bar.pack(fill="x", padx=5, pady=(5,0))
         underline = tk.Frame(dlg, height=3, bg="#22aa22")
@@ -395,25 +402,25 @@ class SSHClientGUI:
             "Login Actions": tk.Frame(dlg, bg="#f6f6f6"),
         }
 
-        def show(page, btn):
+        def show_page(name, btn):
             for p in pages.values():
                 p.pack_forget()
-            pages[page].pack(fill="both", expand=True, padx=10, pady=5)
+            pages[name].pack(fill="both", expand=True, padx=10, pady=5)
             x = btn.winfo_x() + bar.winfo_x()
             w = btn.winfo_width()
             underline.place(x=x, y=bar.winfo_y()+btn.winfo_height(), width=w)
 
         btns = {}
-        for name, frame in pages.items():
+        for name in pages:
             b = ttk.Button(bar, text=name)
             b.pack(side="left", padx=2, pady=2)
             btns[name] = b
-            b.bind("<Button-1>", lambda e, n=name: show(n, e.widget))
+            b.bind("<Button-1>", lambda e, n=name: show_page(n, e.widget))
 
         dlg.update_idletasks()
-        show("General", btns["General"])
+        show_page("General", btns["General"])
 
-        # ─ General tab ─────────────────────────────────────────────────
+        # --- General tab ---
         t1 = pages["General"]
         entries = {}
         for i, label in enumerate(("Name:","Host:","Port:","User:")):
@@ -424,26 +431,26 @@ class SSHClientGUI:
             e = make_entry(t1, initial=init, width=300)
             e.grid(row=i, column=1, sticky="ew", padx=5, pady=4)
             entries[key] = e
-        # Folder dropdown
+
+        # Folder selector
         tk.Label(t1, text="Folder:", font=FONT, bg="#f6f6f6")\
           .grid(row=4, column=0, sticky="w", padx=5, pady=4)
         folder_var = tk.StringVar(
-            t1,
-            value=(cfg.get("folder",UNCAT_FOLDER) if cfg else UNCAT_FOLDER)
+            t1, value=(cfg.get("folder",UNCAT_FOLDER) if cfg else UNCAT_FOLDER)
         )
         ttk.OptionMenu(t1, folder_var, folder_var.get(), *self.folders)\
            .grid(row=4, column=1, sticky="w", padx=5, pady=4)
         entries["folder"] = folder_var
         t1.columnconfigure(1, weight=1)
 
-        # ─ Auth tab ───────────────────────────────────────────────────
+        # --- Auth tab ---
         t2 = pages["Auth"]
         tk.Label(t2, text="Auth Method:", font=FONT, bg="#f6f6f6")\
           .grid(row=0, column=0, sticky="w", padx=5, pady=4)
-        auth_var = tk.StringVar(t2,
-                        value=(cfg.get("auth_method") if cfg else "password"))
-        ttk.OptionMenu(t2, auth_var, auth_var.get(),
-                       "password","key_file").grid(row=0, column=1, sticky="w", padx=5, pady=4)
+        auth_var = tk.StringVar(t2, value=(cfg.get("auth_method") if cfg else "password"))
+        ttk.OptionMenu(t2, auth_var, auth_var.get(), "password","key_file")\
+           .grid(row=0, column=1, sticky="w", padx=5, pady=4)
+
         fb = tk.Frame(t2, bg="#f6f6f6")
         fk = tk.Frame(t2, bg="#f6f6f6")
         # password
@@ -462,8 +469,7 @@ class SSHClientGUI:
         fk.columnconfigure(1, weight=1)
 
         def swap_auth(*_):
-            fb.grid_forget()
-            fk.grid_forget()
+            fb.grid_forget(); fk.grid_forget()
             if auth_var.get()=="password":
                 fb.grid(row=1, column=0, columnspan=2, sticky="ew", padx=5, pady=4)
             else:
@@ -477,13 +483,12 @@ class SSHClientGUI:
             else:
                 e_key.insert(0, cfg.get("key_file",""))
 
-        # ─ Logging tab ───────────────────────────────────────────────
+        # --- Logging tab ---
         t3 = pages["Logging"]
         tk.Label(t3, text="Logging Enabled:", font=FONT, bg="#f6f6f6")\
           .grid(row=0, column=0, sticky="w", padx=5, pady=4)
         log_var = tk.BooleanVar(
-            t3,
-            value=(cfg.get("logging_enabled",False) if cfg else False)
+            t3, value=(cfg.get("logging_enabled",False) if cfg else False)
         )
         ttk.Checkbutton(t3, variable=log_var).grid(row=0, column=1, sticky="w", padx=5, pady=4)
         tk.Label(t3, text="Log File Path:", font=FONT, bg="#f6f6f6")\
@@ -496,21 +501,18 @@ class SSHClientGUI:
         if cfg and cfg.get("log_path"):
             e_log.insert(0, cfg["log_path"])
 
-        # ─ Login Actions tab ───────────────────────────────────────
+        # --- Login Actions tab ---  
         t4 = pages["Login Actions"]
         cols = self.settings.get("login_actions_cols", {})
         w_e = cols.get("expect", 200)
         w_s = cols.get("send",   300)
         tv = ttk.Treeview(t4, columns=("expect","send"),
                           show="headings", height=6)
-        tv.heading("expect", text="Expected Text")
-        tv.column("expect", width=w_e)
-        tv.heading("send",   text="Command to Send")
-        tv.column("send",   width=w_s)
+        tv.heading("expect", text="Expected Text"); tv.column("expect", width=w_e)
+        tv.heading("send",   text="Command to Send"); tv.column("send", width=w_s)
         tv.grid(row=0, column=0, sticky="nsew", padx=5, pady=4)
         sbx = ttk.Scrollbar(t4, orient="vertical", command=tv.yview)
-        sbx.grid(row=0, column=1, sticky="ns", pady=4)
-        tv.configure(yscrollcommand=sbx.set)
+        sbx.grid(row=0, column=1, sticky="ns", pady=4); tv.configure(yscrollcommand=sbx.set)
         if cfg and cfg.get("auto_sequence"):
             for st in cfg["auto_sequence"]:
                 tv.insert("", "end", values=(st["expect"], st["send"]))
@@ -526,27 +528,23 @@ class SSHClientGUI:
                        tv.item(tv.selection()[0])["values"] if tv.selection() else None
                    )).pack(side="left", padx=5)
         ttk.Button(btnf, text="Delete Step",
-                   command=lambda: [tv.delete(i) for i in tv.selection()])\
-                   .pack(side="left", padx=5)
+                   command=lambda: [tv.delete(i) for i in tv.selection()]).pack(side="left", padx=5)
 
         # lock tab sizes
         dlg.update_idletasks()
         sizes = []
         for name, btn in btns.items():
-            show(name, btn)
+            show_page(name, btn)
             dlg.update_idletasks()
             sizes.append((dlg.winfo_width(), dlg.winfo_height()))
-        mw = max(w for w,h in sizes)
-        mh = max(h for w,h in sizes)
+        mw = max(w for w,h in sizes); mh = max(h for w,h in sizes)
         dlg.minsize(mw, mh)
-        show("General", btns["General"])
+        show_page("General", btns["General"])
 
         # OK / Cancel
-        okf = tk.Frame(dlg, bg="#f6f6f6")
-        okf.pack(side="bottom", fill="x", padx=10, pady=(0,10))
+        okf = tk.Frame(dlg, bg="#f6f6f6"); okf.pack(side="bottom", fill="x", padx=10, pady=(0,10))
         ttk.Button(okf, text="Cancel", command=release).pack(side="right", padx=(0,5))
-        b_ok = ttk.Button(okf, text="OK")
-        b_ok.pack(side="right")
+        b_ok = ttk.Button(okf, text="OK"); b_ok.pack(side="right")
 
         def on_ok():
             nonlocal server_result
@@ -575,10 +573,10 @@ class SSHClientGUI:
                 save_settings(self.settings)
 
                 for iid in tv.get_children():
-                    a,b = tv.item(iid)["values"]
-                    out["auto_sequence"].append({"expect":a,"send":b})
+                    a, b = tv.item(iid)["values"]
+                    out["auto_sequence"].append({"expect": a, "send": b})
 
-                if not(out["name"] and out["host"] and out["user"]):
+                if not (out["name"] and out["host"] and out["user"]):
                     raise ValueError("Name, host, and user required")
 
                 server_result = out
@@ -587,32 +585,27 @@ class SSHClientGUI:
                 messagebox.showerror("Error", str(ex), parent=dlg)
 
         b_ok.config(command=on_ok)
-
         center(dlg, self.root)
         dlg.deiconify()
         dlg.wait_window()
-
         return server_result
 
     def _open_seq_editor(self, tree, iid=None, values=None):
         parent = tree.winfo_toplevel()
-        edit = tk.Toplevel(parent)
-        edit.withdraw()
-        edit.transient(parent)
-        edit.grab_set()
-        setup_styles(edit)
-        edit.title("Edit Auto Command Step")
+        edit = tk.Toplevel(parent); edit.withdraw()
+        edit.transient(parent); edit.grab_set()
+        setup_styles(edit); edit.title("Edit Auto Command Step")
 
         px,py = parent.winfo_x(), parent.winfo_y()
         try:
             parent.attributes("-disabled", True)
-            disabled = True
+            ua = True
         except:
             parent.bind("<Configure>", lambda e: parent.geometry(f"+{px}+{py}"))
-            disabled = False
+            ua = False
 
         def close_seq():
-            if disabled:
+            if ua:
                 try: parent.attributes("-disabled", False)
                 except: pass
             else:
@@ -623,21 +616,18 @@ class SSHClientGUI:
 
         tk.Label(edit, text="Expected Text:", font=FONT, bg=edit["bg"])\
           .grid(row=0, column=0, sticky="w", padx=5, pady=5)
-        e_ent = make_entry(edit, width=300)
-        e_ent.grid(row=0, column=1, padx=5, pady=5)
+        e_ent = make_entry(edit, width=300); e_ent.grid(row=0, column=1, padx=5, pady=5)
 
         tk.Label(edit, text="Command to Send:", font=FONT, bg=edit["bg"])\
           .grid(row=1, column=0, sticky="w", padx=5, pady=5)
-        s_ent = make_entry(edit, width=300)
-        s_ent.grid(row=1, column=1, padx=5, pady=5)
+        s_ent = make_entry(edit, width=300); s_ent.grid(row=1, column=1, padx=5, pady=5)
 
         if values:
             e_ent.insert(0, values[0])
             s_ent.insert(0, values[1])
 
         def save_seq():
-            a = e_ent.get().strip()
-            b = s_ent.get().strip()
+            a = e_ent.get().strip(); b = s_ent.get().strip()
             if not a:
                 messagebox.showwarning("Validation", "Expected text required", parent=edit)
                 return
@@ -649,20 +639,14 @@ class SSHClientGUI:
 
         ttk.Button(edit, text="Save", command=save_seq).grid(row=2, column=0, padx=5, pady=10)
         ttk.Button(edit, text="Cancel", command=close_seq).grid(row=2, column=1, padx=5, pady=10)
+        center(edit, parent); edit.deiconify(); edit.wait_window()
 
-        center(edit, parent)
-        edit.deiconify()
-        edit.wait_window()
-
-    # ─── Expect launcher via here-doc ─────────────────────────────────
+    # ─── Expect via here-doc ─────────────────────────────────────────
     def _launch_expect(self, lines, title):
         expect_bin = shutil.which("expect")
         if not expect_bin:
-            messagebox.showerror("Expect Missing",
-                                 "Cannot find 'expect' on PATH.",
-                                 parent=self.root)
+            messagebox.showerror("Expect Missing", "Cannot find 'expect'.", parent=self.root)
             return
-        # strip shebang lines
         script = "".join(ln for ln in lines if not ln.startswith("#!"))
         cmd = (
             f"{expect_bin} -f - << 'EOF'\n"
@@ -670,23 +654,18 @@ class SSHClientGUI:
             f"EOF\n"
             f"read -p 'Press ENTER to close'"
         )
-        subprocess.Popen([
-            "gnome-terminal", "--title", title,
-            "--", "bash", "-ic", cmd
-        ])
+        subprocess.Popen(["gnome-terminal","--title",title,"--","bash","-ic",cmd])
 
     def connect_to_ssh(self):
         sel = self.tree.selection()
         if not sel or not sel[0].startswith("server::"):
             messagebox.showwarning("Select server", parent=self.root)
             return
-        idx = int(sel[0].split("::",1)[1])
-        cfg = self.servers[idx]
+        idx = int(sel[0].split("::",1)[1]); cfg = self.servers[idx]
         self.log_msg(f"Launching SSH for '{cfg['name']}'")
 
         lines = [
-            "#!/usr/bin/env expect\n",
-            "set timeout -1\n",
+            "#!/usr/bin/env expect\n", "set timeout -1\n",
             "spawn ssh " +
             (f"-i {cfg.get('key_file')} " if cfg["auth_method"]=="key_file" else "") +
             f"{cfg['user']}@{cfg['host']} -p {cfg['port']}\n"
@@ -695,7 +674,6 @@ class SSHClientGUI:
             lines.append(f"expect \"*{st['expect']}*\"\n")
             lines.append(f"send -- \"{st['send']}\\r\"\nafter 500\n")
         lines.append("interact\n")
-
         self._launch_expect(lines, f"{cfg['name']} SSH")
 
     def connect_to_sftp(self):
@@ -703,13 +681,11 @@ class SSHClientGUI:
         if not sel or not sel[0].startswith("server::"):
             messagebox.showwarning("Select server", parent=self.root)
             return
-        idx = int(sel[0].split("::",1)[1])
-        cfg = self.servers[idx]
+        idx = int(sel[0].split("::",1)[1]); cfg = self.servers[idx]
         self.log_msg(f"Launching SFTP for '{cfg['name']}'")
 
         lines = [
-            "#!/usr/bin/env expect\n",
-            "set timeout -1\n",
+            "#!/usr/bin/env expect\n", "set timeout -1\n",
             "spawn sftp " +
             (f"-i {cfg.get('key_file')} " if cfg["auth_method"]=="key_file" else "") +
             f"-P {cfg['port']} {cfg['user']}@{cfg['host']}\n"
@@ -718,7 +694,6 @@ class SSHClientGUI:
             lines.append(f"expect \"*{st['expect']}*\"\n")
             lines.append(f"send -- \"{st['send']}\\r\"\nafter 500\n")
         lines.append("interact\n")
-
         self._launch_expect(lines, f"{cfg['name']} SFTP")
 
     def log_msg(self, msg):
