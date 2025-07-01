@@ -1,0 +1,8 @@
+{
+    "login_actions_cols": {
+        "expect": 200,
+        "send": 300
+    },
+    "main_geometry": "759x435+528+465",
+    "geometry": "760x435+1447+599"
+}

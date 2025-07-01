@@ -1,0 +1,27 @@
+[
+    {
+        "name": "SSH_Local",
+        "host": "10.0.2.15",
+        "port": 22,
+        "user": "larre",
+        "folder": "MyLocalSSH",
+        "auth_method": "password",
+        "logging_enabled": false,
+        "log_path": "/tmp/ssh_session.log",
+        "auto_sequence": [
+            {
+                "expect": "password:",
+                "send": "hp2035_kalle"
+            },
+            {
+                "expect": "larax@larax:~$",
+                "send": "ls -la"
+            },
+            {
+                "expect": "larax",
+                "send": "pwd"
+            }
+        ],
+        "password": ""
+    }
+]
