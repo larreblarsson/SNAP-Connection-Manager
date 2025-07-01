@@ -652,15 +652,20 @@ class SSHClientGUI:
             )
             return
 
-        # build a one‐liner Expect script (no pause, no flicker)
-        script = "".join(ln for ln in lines if not ln.startswith("#!")).strip()
-        # escape " and turn newlines into semicolons
-        one_liner = script.replace('"', '\\"').replace("\n", "; ")
+        # strip shebang lines
+        script = "".join(ln for ln in lines if not ln.startswith("#!"))
 
-        # launch terminal directly with expect -c
+        # build bash -ic here-doc (no pause at the end)
+        cmd = (
+            f"{expect_bin} -f - << 'EOF'\n"
+            f"{script}"
+            f"EOF"
+        )
+
+        # launch inside an interactive bash to preserve autocomplete
         launcher = [
             "gnome-terminal", "--title", title,
-            "--", expect_bin, "-c", one_liner
+            "--", "bash", "-ic", cmd
         ]
         subprocess.Popen(launcher)
 
