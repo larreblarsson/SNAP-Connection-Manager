@@ -658,8 +658,8 @@ class SSHClientGUI:
         # build bash -ic here-doc (no pause at the end)
         cmd = (
             f"{expect_bin} -f - << 'EOF'\n"
-            f"{script}"
-            f"EOF"
+            f"{script}\n"
+            "EOF"  
         )
 
         # launch inside an interactive bash to preserve autocomplete
