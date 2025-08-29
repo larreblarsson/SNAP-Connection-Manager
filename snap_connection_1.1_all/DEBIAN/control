@@ -1,0 +1,6 @@
+Package: snap-connection-manager
+Version: 1.1
+Architecture: all
+Depends: python3, python3-gi, gnupg, python3-gnupg, expect, openssh-client, gir1.2-vte-2.91
+Maintainer: Tomas Larsson <larre.b.larsson@gmail.com>
+Description: Snap Connection Manager is a very slimmed down SSH/SFTP Connection Manager

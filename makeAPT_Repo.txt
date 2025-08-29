@@ -1,0 +1,165 @@
+#Copy the latest snap_connection_manager.py to binary folder in the debian package and rename it then move to that folder
+cp snap_connection_manager.py snap_connection_1.1_all/usr/bin/snap_connection_manager_1.1.py
+cd snap_connection_1.1_all/usr/bin/
+        
+#########################
+# Create debian package #
+#########################
+#Create the files and folder structure as per:
+snap_connection_1.1_all/
+├── DEBIAN/
+│   ├── control
+|   ├── postinst
+│   └── postrm
+├── usr/
+    └── bin/
+    │  └── snap_connection_manager_1.1.py
+    └── share/
+        └── applications/
+        │   └── snap_connection_manager.desktop
+        ├── icons/
+        │  └── hicolor/
+        │        └── 512x512/
+        │            └── apps/
+        │                └── snap_icon.png
+        └── snap_connection_manager/
+            ├── folder.png
+            ├── server.png
+            ├── Disclaimer.txt
+            ├── user_guide.html
+            └── readme.md    
+
+
+
+##Where the following is:
+#File DEBIAN/control:
+Package: snap-connection-manager
+Version: 1.1
+Architecture: all
+Depends: python3, python3-gi, gnupg, python3-gnupg, expect, openssh-client, gnome-terminal | x-terminal-emulator
+Maintainer: Tomas Larsson <larre.b.larsson@gmail.com>
+Description: Snap Connection Manager is a very slimmed down SSH/SFTP Connection Manager
+
+#File DEBIAN/postrm is:
+Is to correclty purge the two settings file ssh_servers.json and snap_cm_settings.json when unstalling the program.
+Now especially purging the ssh_servers.json wich will lead to that user has to set a new passphrase at next installation.
+If not purge uninstall will then lead that the server users data is retained but of course the passphrase nneds to be
+remenbered by the user and to be able to open the program needs to be given and valid. All for safty!
+
+#File usr/bin/snap_connection_manager_1.1.pyc
+py3compile compiled snap_connection_manager_1.1.py script file
+
+#File usr/share/applications/snap_connection_manager.desktop:
+[Desktop Entry]
+Name=Snap Connection Manager
+Exec=python3 /usr/bin/snap_connection_manager_1.1.py
+Icon=/usr/share/icons/hicolor/512x512/apps/snap_icon.png
+Terminal=false
+Type=Application
+StartupWMClass=snap_connection_manager_1.1.py
+Categories=Utility;
+
+#File usr/share/snap_connection_manager
+Your projects resource directory containing all data files needed
+Here we put:
+folder.png
+server.png
+user_guide.html
+readme.md
+
+#File  usr/share/icons/hicolor/512x512/apps/snap_icon.png:
+Your Application ICON image
+
+#Set permission to 775 recursive on all in folder
+chmod -R 775 snap_connection_1.1_all/
+#Then build you deb pack by:
+sudo dpkg-deb --root-owner-group --build snap_connection_1.1_all
+
+#This then results in the following deb pack:
+snap_connection_1.1_all.deb
+
+#This then we can install using:
+sudo apt install ./snap_connection_1.1_all.deb
+#Note use the above method to get all dependencies to be installed
+
+#To list our debian package
+sudo dpkg -l | grep -i snap-connection
+
+#To uninstall:
+sudo dpkg -r snap-connection-manager
+
+#Including removing all configuration do:
+sudo dpkg --purge snap-connection-manager
+
+
+###################################
+# To install on a offline machine #
+###################################
+#Make a offline-bundle directory
+mkdir offline-bundle
+cd offline-bundle
+
+#Then make a list of all the dependencies by:
+sudo apt-get --simulate install python3 python3-gi python3-gnupg gnupg expect openssh-client gir1.2-vte-2.91 | grep "Inst " | awk '{print $2}' > packages.list
+
+#Then download them all and cp it over to our directory
+sudo apt-get update
+xargs -a packages.list sudo apt-get install --download-only --yes
+cp /var/cache/apt/archives/*.deb ./
+
+#Upload the offline-bundle directory to the offline machine and installed them all by:
+cd offline-bundle
+sudo dpkg -i *.deb
+sudo apt-get install -f
+
+#Now you can go up and follow the installation instruction.
+
+###########################
+# Create a APT Repository #
+###########################
+# Create directory structure and copy .deb file
+mkdir -p snap_repo/apt-repo
+cd snap_repo/apt-repo
+mkdir -p pool/main
+mkdir -p dists/stable/main/binary-all
+cp snap_connection_1.1_all.deb pool/main
+
+#Generate package and zip it 
+apt-ftparchive packages pool/main > dists/stable/main/binary-all/Packages. 
+#or use dpkg-scanpackages -a all pool/ > dists/stable/main/binary-all/Packages
+cat dists/stable/main/binary-all/Packages | gzip -9 > dists/stable/main/binary-all/Packages.gz
+
+#Generate release file
+apt-ftparchive release . > dists/stable/Release
+##################
+# Git and Github #
+##################
+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
+#Your Github token = GitToken = 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
+#In SNAP-Connection-Managerdirectory do 
+#This then for the first initial time
+git init
+
+#Add all !Note! Do not add the offline-bundle directory here as it to large for working with Github
+#This then for the first initial time
+git add *
+git status
+
+#Add remote Git Repository URL and Github key
+git remote add origin https://github.com/larreblarsson/SNAP-Connection-Manager.git
+git remote set-url origin https://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@github.com/larreblarsson/SNAP-Connection-Manager.git
+
+#Push origin master upp to Github repository
+git push -u origin master 
+
+
+Grrrrr Git is very complicated and completly non understandable To complexed for my little APP!!!!!!!!!!!!!!!
+
+
+#############################
+# Install pillown and gnupg #
+#############################
+sudo apt update
+sudo apt-get install python3-pil python3-pil.imagetk python3-venv python3-tk
+sudo apt-get install python3-gnupg
+
