@@ -162,21 +162,28 @@ git status
 git commit -m "The very first commit"
 git status
 
+#Instead of doing git add and and then git commit do:
+git commit -a -m "Edited makeAPT_Repo.txt"
+
 ##########
 # Github #
 ##########
 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
 #Your Github token = GitToken = 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
+#First in Github create a repository named SNAP-Connection-Manager
 
-#Add remote Github Repository URL and Github key
+#Then copy paste the git remote add command including the unique URL
+#And add remote Github Repository URL and then push the local repository to remotre Github repository
+#Also make sure to stand on main branch
 git remote add origin https://github.com/larreblarsson/SNAP-Connection-Manager.git
+git branch -M main
+git push -u origin master 
+
 git remote set-url origin https://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@github.com/larreblarsson/SNAP-Connection-Manager.git
 
 #Push origin master upp to Github repository
-git push -u origin master 
 
 
-Grrrrr Git is very complicated and completly non understandable To complexed for my little APP!!!!!!!!!!!!!!!
 
 
 #############################
