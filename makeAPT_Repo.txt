@@ -140,10 +140,18 @@ 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
 #This then for the first initial time
 git init
 
+#Add a Ignore for the offline-bundle directory as it to large for handle with Github
+vim .gitignore
+offline-bundle/
+:wq!
+
 #Add all !Note! Do not add the offline-bundle directory here as it to large for working with Github
 #This then for the first initial time
 git add *
 git status
+
+#Then commit all as the first commit
+git commit -m "The very first commit"
 
 #Add remote Git Repository URL and Github key
 git remote add origin https://github.com/larreblarsson/SNAP-Connection-Manager.git
