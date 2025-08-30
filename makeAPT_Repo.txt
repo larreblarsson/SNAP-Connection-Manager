@@ -131,29 +131,44 @@ cat dists/stable/main/binary-all/Packages | gzip -9 > dists/stable/main/binary-a
 
 #Generate release file
 apt-ftparchive release . > dists/stable/Release
+
 ##################
-# Git and Github #
+# Git and  #
 ##################
-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
-#Your Github token = GitToken = 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
-#In SNAP-Connection-Managerdirectory do 
+#In SNAP-Connection-Manager directory do 
 #This then for the first initial time
 git init
+#So we have now created the Git repository "SNAP-Connection-Manager"
 
-#Add a Ignore for the offline-bundle directory as it to large for handle with Github
+#Set you name, email and default branch to main(this last one I think is default)
+#This then for the first initial time
+git config --global user.name "Tomas Larsson"
+git config --global user.email "larre.b.larsson@gamil.comn" 
+git config --global init.default branch main
+git config list
+
+#Add a Ignore file .gitignore and offline-bundle directory to it. This becasue it is to large for handle and doess not need to be in the repository.
+#Also it is simply to large for Github to handle later on
 vim .gitignore
 offline-bundle/
 :wq!
 
-#Add all !Note! Do not add the offline-bundle directory here as it to large for working with Github
+#Now add all to staging enviroment
 #This then for the first initial time
 git add *
 git status
 
 #Then commit all as the first commit
 git commit -m "The very first commit"
+git status
 
-#Add remote Git Repository URL and Github key
+##########
+# Github #
+##########
+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
+#Your Github token = GitToken = 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
+
+#Add remote Github Repository URL and Github key
 git remote add origin https://github.com/larreblarsson/SNAP-Connection-Manager.git
 git remote set-url origin https://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@github.com/larreblarsson/SNAP-Connection-Manager.git
 
