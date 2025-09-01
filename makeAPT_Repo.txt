@@ -167,6 +167,8 @@ git commit -a -m "Edited makeAPT_Repo.txt"
 
 #Branches
 #List branch and which one are standing in
+git branch -l
+
 #Create a branch
 git branch AddAppearanceInEditSwerverWindows
 
