@@ -166,11 +166,24 @@ git status
 git commit -a -m "Edited makeAPT_Repo.txt"
 
 #Branches
+#The working order is first make sure main branch is fully commited
+#Then create a new branch when we want to edit anything in our repository like updating txt files or adding/editing codes
+#The once we are happy with what we edit merge it into the main branch by standing at main branch and do merge on the new branch name
 #List branch and which one are standing in
-git branch -l
+git branch
 
 #Create a branch
 git branch AddAppearanceInEditSwerverWindows
+
+#Switch to branch
+git switch AddAppearanceInEditSwerverWindows
+
+#Merge the new branch to main
+#Switch to main
+git switch main
+
+#Merge new branch to main
+git merge AddAppearanceInEditSwerverWindows
 
 ##########
 # Github #
