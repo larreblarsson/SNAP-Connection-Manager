@@ -132,9 +132,9 @@ cat dists/stable/main/binary-all/Packages | gzip -9 > dists/stable/main/binary-a
 #Generate release file
 apt-ftparchive release . > dists/stable/Release
 
-##################
-# Git and  #
-##################
+#######
+# Git #
+#######
 #In SNAP-Connection-Manager directory do 
 #This then for the first initial time
 git init
@@ -165,19 +165,24 @@ git status
 #Instead of doing git add and and then git commit do:
 git commit -a -m "Edited makeAPT_Repo.txt"
 
+#Branches
+#List branch and which one are standing in
+#Create a branch
+git branch AddAppearanceInEditSwerverWindows
+
 ##########
 # Github #
 ##########
-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
-#Your Github token = GitToken = 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
 #First in Github create a repository named SNAP-Connection-Manager
 
-#Then copy paste the git remote add command including the unique URL
-#And add remote Github Repository URL and then push the local repository to remotre Github repository
-#Also make sure to stand on main branch
+#Then copy paste the git remote add command including the unique URL and run it 
 git remote add origin https://github.com/larreblarsson/SNAP-Connection-Manager.git
+
+#Also make sure to stand on main branch
 git branch -M main
-git push -u origin master 
+
+#Then push the local repository to remotre Github repository
+git push -u origin main
 
 git remote set-url origin https://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@github.com/larreblarsson/SNAP-Connection-Manager.git
 
