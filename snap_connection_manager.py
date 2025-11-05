@@ -55,6 +55,27 @@ HELP_FILE_PATH = os.path.join(DATA_DIR, "user_guide.html")
 APP_ID         = "com.example.SnapCM"
 APP_TITLE      = "Snap Connection Manager"
 ROOT_FOLDER    = "Session"
+DEFAULT_TERM_FONT = "Ubuntu Sans Mono 12"
+DEFAULT_TERM_FG = "#000000"
+DEFAULT_TERM_BG = "#FFFFDD"
+DEFAULT_TERM_PALETTE = "None"
+DEFAULT_TERM_SCROLLBACK = 10000
+# Terminal color schemes used by the Appearance tab / server dialog
+BUILTIN_SCHEMES = {
+    "Black on light yellow": {"term_fg": "#000000", "term_bg": "#FFFFDD", "term_palette": "None"},
+    "Black on white":        {"term_fg": "#000000", "term_bg": "#FFFFFF", "term_palette": "None"},
+    "Gray on black":         {"term_fg": "#AAAAAA", "term_bg": "#000000", "term_palette": "None"},
+    "Green on black":        {"term_fg": "#00FF00", "term_bg": "#000000", "term_palette": "None"},
+    "White on black":        {"term_fg": "#FFFFFF", "term_bg": "#000000", "term_palette": "None"},
+    "GNOME light":           {"term_fg": "#2E3436", "term_bg": "#EEEEEC", "term_palette": "Tango"},
+    "GNOME dark":            {"term_fg": "#D3D7CF", "term_bg": "#2E3436", "term_palette": "Tango"},
+    "Tango light":           {"term_fg": "#2E3436", "term_bg": "#F7F7F7", "term_palette": "Tango"},
+    "Tango dark":            {"term_fg": "#D3D7CF", "term_bg": "#2E3436", "term_palette": "Tango"},
+    "Solarized light":       {"term_fg": "#586E75", "term_bg": "#FDF6E3", "term_palette": "Solarized Light"},
+    "Solarized dark":        {"term_fg": "#839496", "term_bg": "#002B36", "term_palette": "Solarized Dark"},
+    "Custom": None,
+}
+
 
 # --- Passphrase Hashing Globals ---
 PBKDF2_ITERATIONS = 600000  # Number of iterations for PBKDF2. Higher = more secure but slower.
@@ -255,7 +276,6 @@ def center(window):
         window.set_position(Gtk.WindowPosition.CENTER)
 
 # ── NEW Chunk: Passphrase Input Dialog Class ──────────────────────────────────────
-# THIS IS THE CLASS THAT NEEDS TO BE CORRECT IN YOUR FILE
 class PassphraseInputDialog(Gtk.Dialog):
     def __init__(self, parent, title, prompt_text, confirm_text=None, show_retry_message=False):
         super().__init__(
@@ -302,7 +322,6 @@ class PassphraseInputDialog(Gtk.Dialog):
 
         self.show_all() # Show dialog elements before run()
 
-    # <<< IMPORTANT: THIS METHOD MUST BE PRESENT >>>
     def get_passphrases(self):
         """Returns the passphrase and confirmation passphrase (if applicable)."""
         passphrase = self.entry_pass.get_text()
@@ -312,7 +331,6 @@ class PassphraseInputDialog(Gtk.Dialog):
     def show_retry_error(self):
         """Shows the retry error message."""
         self.lbl_retry_msg.show()
-# ── End NEW Chunk: Passphrase Input Dialog Class ──────────────────────────────────
 
 # ── Chunk 2: Application & Main Window Setup ────────────────────────────────────────
 class SnapConnectionManager(Gtk.Application):
@@ -1483,17 +1501,11 @@ class SnapConnectionManager(Gtk.Application):
         # Hand control to user
         lines.append("interact\n")
     
-        self._launch_expect(lines, f"{cfg['name']} SSH")
+        self._launch_expect(lines, f"{cfg['name']} SSH", cfg)
 
 
 
     def on_sftp(self, action, param):
-        """
-        Launch an SFTP session in either 'manual' or 'automated' mode.
-    
-        Manual mode: spawn sftp directly in the VTE widget, full user control.
-        Automated mode: use Expect to auto-send password and auto_sequence.
-        """
         model, it = self.tree.get_selection().get_selected()
         if not it:
             return self._info("Select a server first.")
@@ -1510,71 +1522,42 @@ class SnapConnectionManager(Gtk.Application):
         auth       = cfg.get("auth_method")
         port       = cfg.get("port", 22)
     
-        # Decide mode: manual if no password and no auto_sequence, else automated
-        needs_auto = bool((auth == "password" and cfg.get("password")) or cfg.get("auto_sequence"))
-    
-        if not needs_auto:
-            # ---------- MANUAL MODE ----------
-            cmd_parts = ["sftp", "-oBatchMode=no"]
-            if auth == "password":
-                cmd_parts.append("-oPubkeyAuthentication=no")
-            if auth == "key_file" and cfg.get("key_file"):
-                cmd_parts.extend(["-i", cfg["key_file"]])
-            cmd_parts.extend(["-P", str(port), f'{cfg["user"]}@{cfg["host"]}'])
-    
-            self.log(f"Spawning manual SFTP: {' '.join(cmd_parts)}")
-            # Spawn directly in VTE without Expect
-            self.vte.spawn_sync(
-                Vte.PtyFlags.DEFAULT,
-                os.environ["HOME"],
-                cmd_parts,
-                [],
-                GLib.SpawnFlags.DO_NOT_REAP_CHILD,
-                None,
-                None,
-            )
-    
-        else:
-            # ---------- AUTOMATED MODE ----------
-            key_opt    = f"-i {cfg['key_file']}" if auth == "key_file" and cfg.get("key_file") else ""
-            pubkey_opt = "-o PubkeyAuthentication=no" if auth == "password" else ""
-            
-            cmd_parts = ["spawn", "sftp", "-oBatchMode=no"]
-            if pubkey_opt:
-                cmd_parts.append(pubkey_opt)
-            if key_opt:
-                cmd_parts.extend(key_opt.split())
-            cmd_parts.extend(["-P", str(port), f'{cfg["user"]}@{cfg["host"]}'])
-            
-            lines = [" ".join(cmd_parts) + "\n", "log_user 1\n"]
-            
-            if auth == "password" and cfg.get("password"):
-                lines.append('expect -timeout 5 "*assword:*" {\n')
-                lines.append(f'    send -- "{cfg["password"]}\\r"\n')
-                lines.append("    after 500\n")
-                lines.append("} timeout {\n")
-                lines.append("    # skip password prompt\n")
-                lines.append("}\n")
-            
-            for step in cfg.get("auto_sequence", []):
-                exp, snd = step["expect"], step["send"]
-                lines.append(f'expect -timeout 1 "*{exp}*" {{\n')
-                lines.append(f'    send -- "{snd}\\r"\n')
-                lines.append("    after 500\n")
-                lines.append("} timeout {\n")
-                lines.append("    # no match, skip\n")
-                lines.append("}\n")
-            
-            lines.append("interact\n")
-            self._launch_expect(lines, f"{cfg['name']} SFTP")
+        key_opt    = f"-i {cfg['key_file']}" if auth == "key_file" and cfg.get("key_file") else ""
+        pubkey_opt = "-o PubkeyAuthentication=no" if auth == "password" else ""
+        
+        cmd_parts = ["spawn", "sftp", "-oBatchMode=no"]
+        if pubkey_opt:
+            cmd_parts.append(pubkey_opt)
+        if key_opt:
+            cmd_parts.extend(key_opt.split())
+        cmd_parts.extend(["-P", str(port), f'{cfg["user"]}@{cfg["host"]}'])
+        
+        lines = [" ".join(cmd_parts) + "\n", "log_user 1\n"]
+        
+        if auth == "password" and cfg.get("password"):
+            lines.append('expect -timeout 5 "*assword:*" {\n')
+            lines.append(f'    send -- "{cfg["password"]}\\r"\n')
+            lines.append("    after 500\n")
+            lines.append("} timeout {\n")
+            lines.append("    # skip password prompt\n")
+            lines.append("}\n")
+        
+        for step in cfg.get("auto_sequence", []):
+            exp, snd = step["expect"], step["send"]
+            lines.append(f'expect -timeout 1 "*{exp}*" {{\n')
+            lines.append(f'    send -- "{snd}\\r"\n')
+            lines.append("    after 500\n")
+            lines.append("} timeout {\n")
+            lines.append("    # no match, skip\n")
+            lines.append("}\n")
+        
+        lines.append("interact\n")
+        self._launch_expect(lines, f"{cfg['name']} SFTP", cfg)
 
 
 
     # ── Generate & Launch Expect Script ───────────────────────────────────────
-    def _launch_expect(self, lines, title):
-        """
-        Rewritten to launch the expect script in an embedded VTE Terminal.
-        """
+    def _launch_expect(self, lines, title, cfg):
         expect = shutil.which("expect")
         if not expect:
             return self._error("'expect' not found. Please install the 'expect' package.")
@@ -1606,12 +1589,7 @@ class SnapConnectionManager(Gtk.Application):
             term_window.set_destroy_with_parent(True)
 
             terminal = Vte.Terminal()
-            
-            # --- Configure Terminal Appearance ---
-            # User-defined colors and font
-            terminal.set_color_background(Gdk.RGBA(255/255.0, 255/255.0, 221/255.0, 1.0))
-            terminal.set_color_foreground(Gdk.RGBA(0.1, 0.1, 0.1, 1.0))
-            terminal.set_font(Pango.FontDescription("Ubuntu Mono 13"))
+            self.apply_appearance_to_terminal(terminal, cfg)
             
             # This makes sure the temp file is deleted when the terminal exits
             def on_child_exited(_terminal, _status):
@@ -2052,11 +2030,10 @@ class SnapConnectionManager(Gtk.Application):
             for step in cfg.get("auto_sequence", []):
                 seq_store.append([step["expect"], step["send"], step.get("hide", True)])
     
-        # Port Forwarding tab (NEW)
+        # Port Forwarding tab
         fwd_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin=10)
         nb.append_page(fwd_page, Gtk.Label(label="Port Forwarding"))
     
-        # Store: Type(str), Source Port(int), Dest Host(str), Dest Port(int), Rule(obj)
         fwd_store = Gtk.ListStore(str, int, str, int, object)
         fwd_view = Gtk.TreeView(model=fwd_store)
         fwd_view.set_grid_lines(Gtk.TreeViewGridLines.BOTH)
@@ -2094,7 +2071,138 @@ class SnapConnectionManager(Gtk.Application):
                     int(rule.get("dest_port", 0)),
                     rule
                 ])
+#########################################################    
+        # ── Appearance tab ─────────────────────────────────────────────
+        app_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin=10)
+        nb.append_page(app_page, Gtk.Label(label="Appearance"))
     
+        # Built-in color scheme chooser
+        scheme_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        lbl_scheme = Gtk.Label(label="Color Scheme:")
+        lbl_scheme.set_halign(Gtk.Align.START)
+        scheme_cb = Gtk.ComboBoxText()
+        for name in BUILTIN_SCHEMES.keys():
+            scheme_cb.append_text(name)
+        scheme_cb.set_size_request(240, -1)
+        scheme_hbox.pack_start(lbl_scheme, False, False, 0)
+        scheme_hbox.pack_start(scheme_cb, False, False, 0)
+        app_page.pack_start(scheme_hbox, False, False, 0)
+    
+        # Foreground / Background color buttons
+        color_grid = Gtk.Grid(column_spacing=6, row_spacing=6)
+        app_page.pack_start(color_grid, False, False, 0)
+    
+        lbl_fg = Gtk.Label(label="Text color:"); lbl_fg.set_halign(Gtk.Align.START)
+        btn_fg = Gtk.ColorButton(); btn_fg.set_use_alpha(False)
+        color_grid.attach(lbl_fg, 0, 0, 1, 1)
+        color_grid.attach(btn_fg, 1, 0, 1, 1)
+    
+        lbl_bg = Gtk.Label(label="Background:"); lbl_bg.set_halign(Gtk.Align.START)
+        btn_bg = Gtk.ColorButton(); btn_bg.set_use_alpha(False)
+        color_grid.attach(lbl_bg, 0, 1, 1, 1)
+        color_grid.attach(btn_bg, 1, 1, 1, 1)
+    
+        # Palette chooser
+        pal_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        lbl_pal = Gtk.Label(label="Palette:"); lbl_pal.set_halign(Gtk.Align.START)
+        pal_cb = Gtk.ComboBoxText(); pal_cb.set_size_request(240, -1)
+        for p in ["None", "Tango", "Solarized Light", "Solarized Dark", "GNOME"]:
+            pal_cb.append_text(p)
+        pal_cb.set_active(0)
+        pal_hbox.pack_start(lbl_pal, False, False, 0)
+        pal_hbox.pack_start(pal_cb, False, False, 0)
+        app_page.pack_start(pal_hbox, False, False, 0)
+    
+        # Font selector
+        font_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        lbl_font = Gtk.Label(label="Font:"); lbl_font.set_halign(Gtk.Align.START)
+        en_font = Gtk.Entry(); en_font.set_size_request(240, -1)
+        btn_font = Gtk.Button(label="Select")
+        def on_choose_font(_btn):
+            parent_window = dlg if dlg else (self.win if hasattr(self, 'win') and self.win else None)
+            fd = Gtk.FontChooserDialog(title="Select Font", transient_for=parent_window)
+            current = en_font.get_text().strip()
+            if current:
+                try: fd.set_font(current)
+                except Exception: pass
+            if fd.run() == Gtk.ResponseType.OK:
+                en_font.set_text(fd.get_font())
+            fd.destroy()
+        btn_font.connect("clicked", on_choose_font)
+        font_hbox.pack_start(lbl_font, False, False, 0)
+        font_hbox.pack_start(en_font, False, False, 0)
+        font_hbox.pack_start(btn_font, False, False, 0)
+        app_page.pack_start(font_hbox, False, False, 0)
+    
+        # Scrollback/Buffer setting
+        buf_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        lbl_buf = Gtk.Label(label="Buffer (lines):"); lbl_buf.set_halign(Gtk.Align.START)
+        spin_buf = Gtk.SpinButton.new_with_range(100, 100000, 100)
+        spin_buf.set_value(self.DEFAULT_TERM_SCROLLBACK if hasattr(self, "DEFAULT_TERM_SCROLLBACK") else 10000)
+        buf_hbox.pack_start(lbl_buf, False, False, 0)
+        buf_hbox.pack_start(spin_buf, False, False, 0)
+        app_page.pack_start(buf_hbox, False, False, 0)
+    
+        # Reset to defaults
+        ctrl_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        btn_reset = Gtk.Button(label="Reset to Defaults")
+        def on_reset_defaults(_):
+            en_font.set_text(getattr(self, "DEFAULT_TERM_FONT", "Ubuntu Mono 12"))
+            fg = Gdk.RGBA(); fg.parse(getattr(self, "DEFAULT_TERM_FG", "#000000")); btn_fg.set_rgba(fg)
+            bg = Gdk.RGBA(); bg.parse(getattr(self, "DEFAULT_TERM_BG", "#FFFFDD")); btn_bg.set_rgba(bg)
+            pal_default = getattr(self, "DEFAULT_TERM_PALETTE", "None")
+            try:
+                pal_cb.set_active(["None", "Tango", "Solarized Light", "Solarized Dark", "GNOME"].index(pal_default))
+            except ValueError:
+                pal_cb.set_active(0)
+            spin_buf.set_value(getattr(self, "DEFAULT_TERM_SCROLLBACK", 1000))
+            # Reset scheme dropdown
+            try:
+                idx_scheme = list(BUILTIN_SCHEMES.keys()).index("Black on light yellow")
+            except Exception:
+                idx_scheme = 0
+            scheme_cb.set_active(idx_scheme)
+        btn_reset.connect("clicked", on_reset_defaults)
+        ctrl_hbox.pack_start(btn_reset, False, False, 0)
+        app_page.pack_start(ctrl_hbox, False, False, 0)
+    
+        # Pre-fill when editing
+        if cfg:
+            en_font.set_text(cfg.get("term_font", getattr(self, "DEFAULT_TERM_FONT", "Ubuntu Mono 12")))
+            fg = Gdk.RGBA(); fg.parse(cfg.get("term_fg", getattr(self, "DEFAULT_TERM_FG", "#000000"))); btn_fg.set_rgba(fg)
+            bg = Gdk.RGBA(); bg.parse(cfg.get("term_bg", getattr(self, "DEFAULT_TERM_BG", "#FFFFDD"))); btn_bg.set_rgba(bg)
+            pal = cfg.get("term_palette", getattr(self, "DEFAULT_TERM_PALETTE", "None"))
+            try:
+                pal_cb.set_active(["None", "Tango", "Solarized Light", "Solarized Dark", "GNOME"].index(pal))
+            except ValueError:
+                pal_cb.set_active(0)
+            spin_buf.set_value(int(cfg.get("term_scrollback", getattr(self, "DEFAULT_TERM_SCROLLBACK", 1000))))
+    
+            # Restore scheme dropdown directly from saved name
+            scheme_name = cfg.get("term_scheme")
+            if scheme_name and scheme_name in BUILTIN_SCHEMES:
+                scheme_cb.set_active(list(BUILTIN_SCHEMES.keys()).index(scheme_name))
+            else:
+                scheme_cb.set_active(list(BUILTIN_SCHEMES.keys()).index("Custom"))
+    
+        # When user changes scheme, update fg/bg/palette
+        def on_scheme_changed(cb):
+            idx = cb.get_active()
+            if idx is None or idx < 0: return
+            name = list(BUILTIN_SCHEMES.keys())[idx]
+            scheme = BUILTIN_SCHEMES.get(name)
+            if scheme:
+                fg = Gdk.RGBA(); fg.parse(scheme.get("term_fg", btn_fg.get_rgba().to_string())); btn_fg.set_rgba(fg)
+                bg = Gdk.RGBA(); bg.parse(scheme.get("term_bg", btn_bg.get_rgba().to_string())); btn_bg.set_rgba(bg)
+                pal = scheme.get("term_palette")
+                if pal and pal != "None":
+                    try:
+                        pal_idx = ["None", "Tango", "Solarized Light", "Solarized Dark", "GNOME"].index(pal)
+                    except ValueError:
+                        pal_idx = 0
+                    pal_cb.set_active(pal_idx)
+        scheme_cb.connect("changed", on_scheme_changed)
+#######################################################################################################    
         # Validation loop
         center(dlg)
         result = None
@@ -2126,6 +2234,14 @@ class SnapConnectionManager(Gtk.Application):
                 ],
                 "port_forwards": []
             }
+    
+            # Read final appearance values directly from widgets
+            result["term_font"] = en_font.get_text().strip()
+            result["term_fg"]   = btn_fg.get_rgba().to_string()
+            result["term_bg"]   = btn_bg.get_rgba().to_string()
+            result["term_palette"]    = pal_cb.get_active_text() or "None"
+            result["term_scrollback"] = spin_buf.get_value_as_int()
+            result["term_scheme"] = scheme_cb.get_active_text() or "Custom"
     
             for i in range(len(fwd_store)):
                 rule = fwd_store[i][4]
@@ -2413,7 +2529,71 @@ class SnapConnectionManager(Gtk.Application):
         self.populate_tree()
         self.tree.expand_row(Gtk.TreePath.new_from_string("0"), False)
         self.log(f"Pasted server as '{new_srv['name']}' into folder '{folder}'.")
+
+    def apply_appearance_to_terminal(self, terminal, cfg):
+        """Apply font, colors, palette and scrollback to a Vte.Terminal."""
     
+        # --- Font ---
+        fontname = cfg.get("term_font", DEFAULT_TERM_FONT)
+        if fontname:
+            try:
+                desc = Pango.FontDescription(fontname)
+                terminal.set_font(desc)
+            except Exception as e:
+                self.log(f"Could not set font '{fontname}': {e}")
+    
+        # --- Foreground / Background ---
+        fg = Gdk.RGBA(); fg.parse(cfg.get("term_fg", DEFAULT_TERM_FG))
+        bg = Gdk.RGBA(); bg.parse(cfg.get("term_bg", DEFAULT_TERM_BG))
+          
+        # --- Palette selection ---
+        pal_name = cfg.get("term_palette", DEFAULT_TERM_PALETTE)
+        palette = []
+    
+        if pal_name == "Tango":
+            # Tango 16‑color palette
+            tango_hex = [
+                "#2e3436", "#cc0000", "#4e9a06", "#c4a000",
+                "#3465a4", "#75507b", "#06989a", "#d3d7cf",
+                "#555753", "#ef2929", "#8ae234", "#fce94f",
+                "#729fcf", "#ad7fa8", "#34e2e2", "#eeeeec",
+            ]
+            palette = [Gdk.RGBA() for _ in tango_hex]
+            for i, h in enumerate(tango_hex):
+                palette[i].parse(h)
+    
+        elif pal_name == "Solarized Light":
+            solarized_light_hex = [
+                "#073642", "#dc322f", "#859900", "#b58900",
+                "#268bd2", "#d33682", "#2aa198", "#eee8d5",
+                "#002b36", "#cb4b16", "#586e75", "#657b83",
+                "#839496", "#6c71c4", "#93a1a1", "#fdf6e3",
+            ]
+            palette = [Gdk.RGBA() for _ in solarized_light_hex]
+            for i, h in enumerate(solarized_light_hex):
+                palette[i].parse(h)
+    
+        elif pal_name == "Solarized Dark":
+            solarized_dark_hex = [
+                "#073642", "#dc322f", "#859900", "#b58900",
+                "#268bd2", "#d33682", "#2aa198", "#eee8d5",
+                "#002b36", "#cb4b16", "#586e75", "#657b83",
+                "#839496", "#6c71c4", "#93a1a1", "#fdf6e3",
+            ]
+            palette = [Gdk.RGBA() for _ in solarized_dark_hex]
+            for i, h in enumerate(solarized_dark_hex):
+                palette[i].parse(h)
+    
+        # "None" or unknown → leave palette empty to use VTE defaults
+    
+        # --- Apply colors ---
+        try:
+            terminal.set_colors(fg, bg, palette)
+        except Exception as e:
+            self.log(f"Could not set colors: {e}")
+    
+        # --- Scrollback ---
+        terminal.set_scrollback_lines(cfg.get("term_scrollback", DEFAULT_TERM_SCROLLBACK))
 
 # ── main() ─────────────────────────────────────────────────────────────────────────────
 
