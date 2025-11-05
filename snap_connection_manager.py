@@ -2071,53 +2071,56 @@ class SnapConnectionManager(Gtk.Application):
                     int(rule.get("dest_port", 0)),
                     rule
                 ])
-#########################################################    
-        # ── Appearance tab ─────────────────────────────────────────────
-        app_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin=10)
+
+        # ── Appearance tab (Grid layout for alignment) ───────────────────────────────
+        app_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, margin=12)
         nb.append_page(app_page, Gtk.Label(label="Appearance"))
-    
-        # Built-in color scheme chooser
-        scheme_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        lbl_scheme = Gtk.Label(label="Color Scheme:")
-        lbl_scheme.set_halign(Gtk.Align.START)
-        scheme_cb = Gtk.ComboBoxText()
-        for name in BUILTIN_SCHEMES.keys():
-            scheme_cb.append_text(name)
-        scheme_cb.set_size_request(240, -1)
-        scheme_hbox.pack_start(lbl_scheme, False, False, 0)
-        scheme_hbox.pack_start(scheme_cb, False, False, 0)
-        app_page.pack_start(scheme_hbox, False, False, 0)
-    
-        # Foreground / Background color buttons
-        color_grid = Gtk.Grid(column_spacing=6, row_spacing=6)
-        app_page.pack_start(color_grid, False, False, 0)
-    
-        lbl_fg = Gtk.Label(label="Text color:"); lbl_fg.set_halign(Gtk.Align.START)
-        btn_fg = Gtk.ColorButton(); btn_fg.set_use_alpha(False)
-        color_grid.attach(lbl_fg, 0, 0, 1, 1)
-        color_grid.attach(btn_fg, 1, 0, 1, 1)
-    
-        lbl_bg = Gtk.Label(label="Background:"); lbl_bg.set_halign(Gtk.Align.START)
-        btn_bg = Gtk.ColorButton(); btn_bg.set_use_alpha(False)
-        color_grid.attach(lbl_bg, 0, 1, 1, 1)
-        color_grid.attach(btn_bg, 1, 1, 1, 1)
-    
-        # Palette chooser
-        pal_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        lbl_pal = Gtk.Label(label="Palette:"); lbl_pal.set_halign(Gtk.Align.START)
+        
+        grid = Gtk.Grid(column_spacing=12, row_spacing=8)
+        app_page.pack_start(grid, False, False, 0)
+        
+        row = 0
+        
+        # Palette
+        lbl_palette = Gtk.Label(); lbl_palette.set_markup("<b>Palette:</b>")
+        lbl_palette.set_halign(Gtk.Align.START)
         pal_cb = Gtk.ComboBoxText(); pal_cb.set_size_request(240, -1)
         for p in ["None", "Tango", "Solarized Light", "Solarized Dark", "GNOME"]:
             pal_cb.append_text(p)
-        pal_cb.set_active(0)
-        pal_hbox.pack_start(lbl_pal, False, False, 0)
-        pal_hbox.pack_start(pal_cb, False, False, 0)
-        app_page.pack_start(pal_hbox, False, False, 0)
-    
-        # Font selector
-        font_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        lbl_font = Gtk.Label(label="Font:"); lbl_font.set_halign(Gtk.Align.START)
+        grid.attach(lbl_palette, 0, row, 1, 1)
+        grid.attach(pal_cb,     1, row, 1, 1)
+        row += 1
+        
+        # Color scheme
+        lbl_scheme = Gtk.Label(); lbl_scheme.set_markup("<b>Color scheme:</b>")
+        lbl_scheme.set_halign(Gtk.Align.START)
+        scheme_cb = Gtk.ComboBoxText(); scheme_cb.set_size_request(240, -1)
+        for name in BUILTIN_SCHEMES.keys():
+            scheme_cb.append_text(name)
+        grid.attach(lbl_scheme, 0, row, 1, 1)
+        grid.attach(scheme_cb,  1, row, 1, 1)
+        row += 1
+        
+        # Text color
+        lbl_fg = Gtk.Label(label="Text color:"); lbl_fg.set_halign(Gtk.Align.START)
+        btn_fg = Gtk.ColorButton(); btn_fg.set_use_alpha(False)
+        grid.attach(lbl_fg, 0, row, 1, 1)
+        grid.attach(btn_fg, 1, row, 1, 1)
+        row += 1
+        
+        # Background
+        lbl_bg = Gtk.Label(label="Background:"); lbl_bg.set_halign(Gtk.Align.START)
+        btn_bg = Gtk.ColorButton(); btn_bg.set_use_alpha(False)
+        grid.attach(lbl_bg, 0, row, 1, 1)
+        grid.attach(btn_bg, 1, row, 1, 1)
+        row += 1
+        
+        # Font
+        lbl_font = Gtk.Label(); lbl_font.set_markup("<b>Font:</b>")
+        lbl_font.set_halign(Gtk.Align.START)
         en_font = Gtk.Entry(); en_font.set_size_request(240, -1)
         btn_font = Gtk.Button(label="Select")
+        
         def on_choose_font(_btn):
             parent_window = dlg if dlg else (self.win if hasattr(self, 'win') and self.win else None)
             fd = Gtk.FontChooserDialog(title="Select Font", transient_for=parent_window)
@@ -2128,24 +2131,31 @@ class SnapConnectionManager(Gtk.Application):
             if fd.run() == Gtk.ResponseType.OK:
                 en_font.set_text(fd.get_font())
             fd.destroy()
+        
         btn_font.connect("clicked", on_choose_font)
-        font_hbox.pack_start(lbl_font, False, False, 0)
-        font_hbox.pack_start(en_font, False, False, 0)
-        font_hbox.pack_start(btn_font, False, False, 0)
-        app_page.pack_start(font_hbox, False, False, 0)
-    
-        # Scrollback/Buffer setting
-        buf_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        lbl_buf = Gtk.Label(label="Buffer (lines):"); lbl_buf.set_halign(Gtk.Align.START)
+        font_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        font_box.pack_start(en_font, False, False, 0)
+        font_box.pack_start(btn_font, False, False, 0)
+        grid.attach(lbl_font, 0, row, 1, 1)
+        grid.attach(font_box, 1, row, 1, 1)
+        row += 1
+        
+        # Buffer
+        lbl_buf = Gtk.Label(); lbl_buf.set_markup("<b>Buffer:</b>")
+        lbl_buf.set_halign(Gtk.Align.START)
         spin_buf = Gtk.SpinButton.new_with_range(100, 100000, 100)
-        spin_buf.set_value(self.DEFAULT_TERM_SCROLLBACK if hasattr(self, "DEFAULT_TERM_SCROLLBACK") else 10000)
-        buf_hbox.pack_start(lbl_buf, False, False, 0)
-        buf_hbox.pack_start(spin_buf, False, False, 0)
-        app_page.pack_start(buf_hbox, False, False, 0)
-    
-        # Reset to defaults
-        ctrl_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        buf_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        buf_box.pack_start(Gtk.Label(label="Lines:"), False, False, 0)
+        buf_box.pack_start(spin_buf, False, False, 0)
+        grid.attach(lbl_buf, 0, row, 1, 1)
+        grid.attach(buf_box, 1, row, 1, 1)
+        row += 1
+        
+        # Defaults
+        lbl_defaults = Gtk.Label(); lbl_defaults.set_markup("<b>Defaults:</b>")
+        lbl_defaults.set_halign(Gtk.Align.START)
         btn_reset = Gtk.Button(label="Reset to Defaults")
+        
         def on_reset_defaults(_):
             en_font.set_text(getattr(self, "DEFAULT_TERM_FONT", "Ubuntu Mono 12"))
             fg = Gdk.RGBA(); fg.parse(getattr(self, "DEFAULT_TERM_FG", "#000000")); btn_fg.set_rgba(fg)
@@ -2156,17 +2166,18 @@ class SnapConnectionManager(Gtk.Application):
             except ValueError:
                 pal_cb.set_active(0)
             spin_buf.set_value(getattr(self, "DEFAULT_TERM_SCROLLBACK", 1000))
-            # Reset scheme dropdown
             try:
                 idx_scheme = list(BUILTIN_SCHEMES.keys()).index("Black on light yellow")
             except Exception:
                 idx_scheme = 0
             scheme_cb.set_active(idx_scheme)
+        
         btn_reset.connect("clicked", on_reset_defaults)
-        ctrl_hbox.pack_start(btn_reset, False, False, 0)
-        app_page.pack_start(ctrl_hbox, False, False, 0)
-    
-        # Pre-fill when editing
+        grid.attach(lbl_defaults, 0, row, 1, 1)
+        grid.attach(btn_reset,   1, row, 1, 1)
+        row += 1
+        
+        # --- Pre-fill when editing ---
         if cfg:
             en_font.set_text(cfg.get("term_font", getattr(self, "DEFAULT_TERM_FONT", "Ubuntu Mono 12")))
             fg = Gdk.RGBA(); fg.parse(cfg.get("term_fg", getattr(self, "DEFAULT_TERM_FG", "#000000"))); btn_fg.set_rgba(fg)
@@ -2177,15 +2188,13 @@ class SnapConnectionManager(Gtk.Application):
             except ValueError:
                 pal_cb.set_active(0)
             spin_buf.set_value(int(cfg.get("term_scrollback", getattr(self, "DEFAULT_TERM_SCROLLBACK", 1000))))
-    
-            # Restore scheme dropdown directly from saved name
             scheme_name = cfg.get("term_scheme")
             if scheme_name and scheme_name in BUILTIN_SCHEMES:
                 scheme_cb.set_active(list(BUILTIN_SCHEMES.keys()).index(scheme_name))
             else:
                 scheme_cb.set_active(list(BUILTIN_SCHEMES.keys()).index("Custom"))
-    
-        # When user changes scheme, update fg/bg/palette
+        
+        # --- Scheme change handler ---
         def on_scheme_changed(cb):
             idx = cb.get_active()
             if idx is None or idx < 0: return
@@ -2201,8 +2210,9 @@ class SnapConnectionManager(Gtk.Application):
                     except ValueError:
                         pal_idx = 0
                     pal_cb.set_active(pal_idx)
+        
         scheme_cb.connect("changed", on_scheme_changed)
-#######################################################################################################    
+        
         # Validation loop
         center(dlg)
         result = None
