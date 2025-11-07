@@ -68,6 +68,7 @@ Your Application ICON image
 
 #Set permission to 775 recursive on all in folder
 chmod -R 775 snap_connection_manager_1.2/
+
 #Then build you deb pack by:
 sudo dpkg-deb --root-owner-group --build snap_connection_manager_1.2
 
@@ -118,7 +119,7 @@ mkdir -p snap_repo/apt-repo
 cd snap_repo/apt-repo
 mkdir -p pool/main
 mkdir -p dists/stable/main/binary-all
-cp snap_connection_manager_1.2_all.deb pool/main
+cp snap_connection_manager_1.2.deb pool/main
 
 #Generate package and zip it 
 apt-ftparchive packages pool/main > dists/stable/main/binary-all/Packages. 
