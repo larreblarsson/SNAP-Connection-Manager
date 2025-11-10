@@ -125,6 +125,7 @@ sudo apt-get install -f
 #####################################
 #Create a new folder above the SNAP-Connection-Manager and name it SNAP_CM_PPA
 mkdir SNAP_CM_PPA
+cd SNAP_CM_PPA
 #This then for the first initial time we do git init
 git init
 #So we have now created a new Git repository "SNAP-CM_PPA"
@@ -139,15 +140,54 @@ git config --global init.default branch main
 git remote add origin https://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@github.com/larreblarsson/SNAP_CM_PPA.git
 git config list
 
-#Now copy the debian package to this folder
-
-
 #On Github WEB create a new Github repo
 Go to Github web page and create a new Github repo and name it SNAP_CM_PPA (the same name as created locally)
 
-#
-git clone "git@github.com:$github.com/larreblarsson/SNAP_CM_PPA.git
+#Now copy the debian package to this folder
+cp ../SNAP-Connection-Manager/snap_connection_manager_1.2.deb ./
 
+#Create a GPG Key
+gpg --full-gen-key
+Please select what kind of key you want: 1
+What keysize do you want? 4096
+Key is valid for? (0) 0
+Real name: Tomas Larsson
+E-mail address: larre.b.larsson@gmail.com
+Comment: larre.b.larsson@gmail.com
+Change (N)ame, (C)omment, (E)-mail or (O)kay/(Q)uit? O
+
+#Backup key
+gpg --export-secret-keys "larre.b.larsson@gmail.com" > MykeyforAPTRepo.asc
+psw = mypassword
+
+#Create the ASCII public key file MykeyforAPTRepo.gpg inside the git SNAP_CM_PPA repo
+#Standing in repo SNAP_CM_PPA do
+gpg --armor --export "larre.b.larsson@gmail.com" > /home/larax/Downloads/SSH_GUI/SNAP_CM_PPA/MykeyforAPTRepo.gpg
+
+#Creating the Packages and Packages.gz files
+#Standing in SNAP_CM_PPA repo
+dpkg-scanpackages --multiversion . > Packages
+
+#Creating the Release, Release.gpg and InRelease files
+apt-ftparchive release . > Release
+gpg --default-key "larre.b.larsson@gmail.com" -abs -o - Release > Release.gpg
+gpg --default-key "larre.b.larsson@gmail.com" --clearsign -o - Release > InRelease
+
+#Creating the snap_cm_file.list file
+echo "deb [signed-by=/etc/apt/trusted.gpg.d/SNAP_CM_PPA.gpg] https://larreblarsson.github.io/SNAP_CM_PPA ./" > snap_cm_file.list
+
+#Commit and push to GitHub and your PPA is ready to go:
+git add -A
+git commit -a -m "SNAP_CM_PPA repo is now hosted on github"
+git push -u origin master
+
+#Now you can tell all your friends and users to install your PPA this way
+curl -s --compressed "https://larreblarsson.github.io/SNAP_CM_PPA/MykeyforAPTRepo.gpg" | gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/SNAP_CM_PPA.gpg >/dev/null
+sudo curl -s --compressed -o /etc/apt/sources.list.d/snap_cm_file.list "https://larreblarsson..github.io/SNAP_CM_PPA/snap_cm_file.list"
+sudo apt update
+
+#Then they can install your packages:
+sudo apt install snap_connection_manager_1.2.deb
 
 #############################
 # Install pillown and gnupg #
@@ -155,4 +195,35 @@ git clone "git@github.com:$github.com/larreblarsson/SNAP_CM_PPA.git
 sudo apt update
 sudo apt-get install python3-pil python3-pil.imagetk python3-venv python3-tk
 sudo apt-get install python3-gnupg
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
