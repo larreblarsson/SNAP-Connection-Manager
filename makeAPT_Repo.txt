@@ -145,7 +145,7 @@ echo "deb [signed-by=/etc/apt/trusted.gpg.d/SNAP_CM_PPA.gpg] https://larreblarss
 
 #Commit and push to GitHub and your PPA is ready to go:
 git add -A
-git commit -a -m "SNAP_CM_PPA repo is now hosted on github"
+git commit -a -m "Fixed bug in default Font"
 git push -u origin master
 
 #Now you can tell all your friends and users to install your PPA this way
