@@ -73,13 +73,13 @@ Your Application ICON image
 #Set permission to 775 recursive on all in folder
 chmod -R 775 snap_connection_1.1_all/
 #Then build you deb pack by:
-sudo dpkg-deb --root-owner-group --build snap_connection_1.1_all
+sudo dpkg-deb --root-owner-group --build snap_connection_manager_1.2
 
 #This then results in the following deb pack:
 snap_connection_1.1_all.deb
 
 #This then we can install using:
-sudo apt install ./snap_connection_1.1_all.deb
+sudo apt install ./snap_connection_manager_1.2.deb
 #Note use the above method to get all dependencies to be installed
 
 #To list our debian package
@@ -90,35 +90,6 @@ sudo dpkg -r snap-connection-manager
 
 #Including removing all configuration do:
 sudo dpkg --purge snap-connection-manager
-
-
-###################################
-# To install on a offline machine #
-###################################
-#Make a offline-bundle directory
-mkdir offline-bundle
-cd offline-bundle
-
-#Then make a list of all the dependencies by:
-sudo apt-get --simulate install python3 python3-gi python3-gnupg gnupg expect openssh-client gir1.2-vte-2.91 | grep "Inst " | awk '{print $2}' > packages.list
-
-#Then download them all and cp it over to our directory
-sudo apt-get update
-xargs -a packages.list sudo apt-get install --download-only --yes
-cp /var/cache/apt/archives/*.deb ./
-
-#Upload the offline-bundle directory to the offline machine and installed them all by:
-cd offline-bundle
-sudo dpkg -i *.deb
-sudo apt-get install -f
-
-#Now you can go up and follow the installation instruction.
-
-
-
-
-
-
 
 #####################################
 # Create a APT Repository on Github #

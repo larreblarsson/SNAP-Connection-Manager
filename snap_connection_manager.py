@@ -2193,6 +2193,32 @@ class SnapConnectionManager(Gtk.Application):
                 scheme_cb.set_active(list(BUILTIN_SCHEMES.keys()).index(scheme_name))
             else:
                 scheme_cb.set_active(list(BUILTIN_SCHEMES.keys()).index("Custom"))
+        if not cfg:
+            # Font
+            en_font.set_text(DEFAULT_TERM_FONT)
+        
+            # Colors
+            fg = Gdk.RGBA(); fg.parse(DEFAULT_TERM_FG); btn_fg.set_rgba(fg)
+            bg = Gdk.RGBA(); bg.parse(DEFAULT_TERM_BG); btn_bg.set_rgba(bg)
+        
+            # Palette
+            try:
+                pal_cb.set_active(["None", "Tango", "Solarized Light", "Solarized Dark", "GNOME"].index(DEFAULT_TERM_PALETTE))
+            except ValueError:
+                pal_cb.set_active(0)
+        
+            # Buffer
+            spin_buf.set_value(DEFAULT_TERM_SCROLLBACK)
+        
+            # Scheme
+            try:
+                idx_scheme = list(BUILTIN_SCHEMES.keys()).index(DEFAULT_TERM_SCHEME)
+            except Exception:
+                idx_scheme = 0
+            scheme_cb.set_active(idx_scheme)
+
+
+
         
         # --- Scheme change handler ---
         def on_scheme_changed(cb):
