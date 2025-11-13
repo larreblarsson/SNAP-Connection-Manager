@@ -1,6 +1,5 @@
 #Copy the latest snap_connection_manager.py to binary folder in the debian package and rename it then move to that folder
-cp snap_connection_manager.py snap_connection_1.1_all/usr/bin/snap_connection_manager_1.1.py
-cd snap_connection_1.1_all/usr/bin/
+cp snap_connection_manager.py snap_connection_manager_1.2/usr/bin/snap_connection_manager_1.2.py
         
 #########################
 # Create debian package #
@@ -13,7 +12,7 @@ snap_connection_1.1_all/
 │   └── postrm
 ├── usr/
     └── bin/
-    │  └── snap_connection_manager_1.1.py
+    │  └── snap_connection_manager_1.2.py
     └── share/
         └── applications/
         │   └── snap_connection_manager.desktop
@@ -34,7 +33,7 @@ snap_connection_1.1_all/
 ##Where the following is:
 #File DEBIAN/control:
 Package: snap-connection-manager
-Version: 1.1
+Version: 1.2
 Architecture: all
 Depends: python3, python3-gi, gnupg, python3-gnupg, expect, openssh-client, gnome-terminal | x-terminal-emulator
 Maintainer: Tomas Larsson <larre.b.larsson@gmail.com>
@@ -46,13 +45,10 @@ Now especially purging the ssh_servers.json wich will lead to that user has to s
 If not purge uninstall will then lead that the server users data is retained but of course the passphrase nneds to be
 remenbered by the user and to be able to open the program needs to be given and valid. All for safty!
 
-#File usr/bin/snap_connection_manager_1.1.pyc
-py3compile compiled snap_connection_manager_1.1.py script file
-
 #File usr/share/applications/snap_connection_manager.desktop:
 [Desktop Entry]
 Name=Snap Connection Manager
-Exec=python3 /usr/bin/snap_connection_manager_1.1.py
+Exec=python3 /usr/bin/snap_connection_manager_1.2.py
 Icon=/usr/share/icons/hicolor/512x512/apps/snap_icon.png
 Terminal=false
 Type=Application
@@ -71,12 +67,12 @@ readme.md
 Your Application ICON image
 
 #Set permission to 775 recursive on all in folder
-chmod -R 775 snap_connection_1.1_all/
+chmod -R 775 snap_connection_manager_1.2
 #Then build you deb pack by:
 sudo dpkg-deb --root-owner-group --build snap_connection_manager_1.2
 
 #This then results in the following deb pack:
-snap_connection_1.1_all.deb
+snap_connection_manager_1.2.deb
 
 #This then we can install using:
 sudo apt install ./snap_connection_manager_1.2.deb
