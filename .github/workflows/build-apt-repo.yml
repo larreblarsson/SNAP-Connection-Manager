@@ -58,6 +58,7 @@ jobs:
 
           # 3f. Sign the Release file to create Release.gpg (detached signature, for compatibility)
           gpg $GPG_SIGNING_OPTS -abs -o repo/dists/stable/Release.gpg repo/dists/stable/Release
+          #...
 
       # 4. Upload the built repository as a page artifact
       # The 'repo' directory contains all the APT files.
