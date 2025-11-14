@@ -90,32 +90,6 @@ sudo dpkg --purge snap-connection-manager
 #####################################
 # Create a APT Repository on Github #
 #####################################
-#Create a new folder above the SNAP-Connection-Manager and name it SNAP_CM_PPA
-mkdir SNAP_CM_PPA
-cd SNAP_CM_PPA
-#This then for the first initial time we do git init
-git init
-#So we have now created a new Git repository "SNAP-CM_PPA"
-
-#Set you name, email and default branch to main(this last one I think is default)
-#This then for the first initial time
-git config --global user.name "Tomas Larsson"
-git config --global user.email "larre.b.larsson@gamil.comn" 
-git config --global init.default branch main
-
-#Also add the PAT to this Git repo
-git remote add origin https://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@github.com/larreblarsson/SNAP_CM_PPA.git
-git config list
-
-#On Github WEB create a new Github repo
-Go to Github web page and create a new Github repo and name it SNAP_CM_PPA (the same name as created locally)
-
-#Now copy the debian package to this folder
-cp ../SNAP-Connection-Manager/snap_connection_manager_1.2.deb ./
-
-
-
-#Start new APT repository on GitHub according to Gemini
 #Create a GPG Key
 #In my SNAP-Connection-Manager repository
 gpg --full-gen-key
@@ -146,141 +120,24 @@ gpg --export --armor 866C4A21160983AD0ACAE71DA3A178F3E8197519 > public.key
 
 #Create the GitHub Actions Workflow:
 #In your repository, create a file named .github/workflows/build-apt-repo.yml.
-#Here is a complete, working example using a popular GitHub Action. This example assumes your .deb files are in a directory named debs.
+#See file in your Repo
 
-Of course. You can create and host an APT repository on GitHub, primarily by using GitHub Pages to serve the files and GitHub Actions to automate the repository's creation and updates.
+#Commit and push to GitHub and your PPA is ready to go:
+git commit -a -m "Added APT repository Action Workflow_3"
+git push -u origin main
 
-Here’s a breakdown of the two main methods, from the most automated to the more manual.
-
-🚀 Method 1: The Automated Way (Recommended)
-This method uses GitHub Actions to automatically build and publish your APT repository to GitHub Pages every time you push new .deb packages or create a new release.
-
-How It Works
-You provide: Your .deb package files and a GPG private key (to sign the repository).
-
-GitHub Actions does: All the technical work. It runs a workflow that:
-
-Generates the necessary Packages and Release files.
-
-Signs the Release file with your GPG key.
-
-Pushes the complete repository structure to a specific branch (like gh-pages).
-
-GitHub Pages: You enable GitHub Pages to serve content from that gh-pages branch, making your repository publicly available via a https://<username>.github.io/<repo-name> URL.
-
-Step-by-Step Guide
-Generate a GPG Key: You need a GPG key to sign your repository. This proves the packages are from you.
-
-Bash
-
-gpg --full-generate-key
-Choose "RSA and RSA" and a key size of 4096 bits.
-
-Set it to not expire (or as long as you need).
-
-Note the Key ID (e.g., 3AA5C3437156A0D5).
-
-Export Your GPG Key:
-
-Private Key (for signing):
-
-Bash
-
-gpg --export-secret-keys --armor <YOUR-KEY-ID>
-Public Key (for users):
-
-Bash
-
-gpg --export --armor <YOUR-KEY-ID> > public.key
-Add the public.key file to the root of your repository. This is what your users will need to add to trust your repo.
-
-Add GPG Key to GitHub Secrets:
-
-Go to your GitHub repo > Settings > Secrets and variables > Actions.
-
-Create a new repository secret named GPG_PRIVATE_KEY and paste your entire ASCII-armored private key block (including -----BEGIN... and -----END...).
-
-If your key has a passphrase, add it as another secret (e.g., GPG_PASSPHRASE).
-
-Enable GitHub Pages:
-
-Go to your GitHub repo > Settings > Pages.
-
-Under "Build and deployment," set the Source to GitHub Actions.
-
-Create the GitHub Actions Workflow:
-
-In your repository, create a file named .github/workflows/build-apt-repo.yml.
-
-Here is a complete, working example using a popular GitHub Action. This example assumes your .deb files are in a directory named debs.
-
-YAML
-
-name: Build and Publish APT Repository
-
-on:
-  # Run on every push to the 'main' branch
-  push:
-    branches:
-      - main
-    paths:
-      - 'debs/**' # Only run if .deb files are changed
-
-  # Allows you to run this workflow manually from the Actions tab
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write # To commit to the gh-pages branch
-      pages: write    # To deploy to GitHub Pages
-      id-token: write # For GitHub Pages deployment
-
-    steps:
-      # 1. Check out your repository
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      # 2. This action builds the repository structure
-      - name: Build APT Repository
-        uses: morph027/apt-repo-action@v2
-        with:
-          repo_name: my-apt-repo  # A name for your repo
-          distro: stable          # The "distribution" name
-          component: main         # The "component" name
-          arch: "amd64,all"     # Supported architectures
-
-          # Directory containing your .deb files
-          scan_directory: ./debs  
-
-          # GPG private key from secrets
-          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
-          gpg_passphrase: ${{ secrets.GPG_PASSPHRASE }}
-
-      # 3. Upload the built repository as a page artifact
-      - name: Upload Pages Artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: output/ # This is the default output dir of the action
-
-      # 4. Deploy the artifact to GitHub Pages
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
-
-#How Users Add Your Repo
+#Now user can add your repo as per:
 #Once the action has run successfully, users can add your repository like this (replace the placeholders):
-# 1. Add the GPG key
+# Add the GPG key
 curl -sL https://<username>.github.io/<repo-name>/public.key | sudo gpg --dearmor -o /usr/share/keyrings/<repo-name>-keyring.gpg
 
-# 2. Add the repository to sources.list
+#Add the repository to sources.list
 echo \
   "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/<repo-name>-keyring.gpg] \
   https://<username>.github.io/<repo-name> stable main" \
   | sudo tee /etc/apt/sources.list.d/<repo-name>.list > /dev/null
 
-# 3. Update and install
+#And then they can do Update and install
 sudo apt update
 sudo apt install <your-package-name>
 
@@ -295,38 +152,6 @@ sudo apt install <your-package-name>
 
 
 
-#Backup key
-gpg --export-secret-keys "larre.b.larsson@gmail.com" > MykeyforAPTRepo.asc
-psw = mypassword
-
-#Create the ASCII public key file MykeyforAPTRepo.gpg inside the git SNAP_CM_PPA repo
-#Standing in repo SNAP_CM_PPA do
-gpg --armor --export "larre.b.larsson@gmail.com" > /home/larax/Downloads/SSH_GUI/SNAP_CM_PPA/MykeyforAPTRepo.gpg
-
-#Creating the Packages and Packages.gz files
-#Standing in SNAP_CM_PPA repo
-dpkg-scanpackages --multiversion . > Packages
-
-#Creating the Release, Release.gpg and InRelease files
-apt-ftparchive release . > Release
-gpg --default-key "larre.b.larsson@gmail.com" -abs -o - Release > Release.gpg
-gpg --default-key "larre.b.larsson@gmail.com" --clearsign -o - Release > InRelease
-
-#Creating the snap_cm_file.list file
-echo "deb [signed-by=/etc/apt/trusted.gpg.d/SNAP_CM_PPA.gpg] https://larreblarsson.github.io/SNAP_CM_PPA ./" > snap_cm_file.list
-
-#Commit and push to GitHub and your PPA is ready to go:
-git add -A
-git commit -a -m "Fixed bug in default Font"
-git push -u origin master
-
-#Now you can tell all your friends and users to install your PPA this way
-curl -s --compressed "https://larreblarsson.github.io/SNAP_CM_PPA/MykeyforAPTRepo.gpg" | gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/SNAP_CM_PPA.gpg >/dev/null
-sudo curl -s --compressed -o /etc/apt/sources.list.d/snap_cm_file.list "https://larreblarsson.github.io/SNAP_CM_PPA/snap_cm_file.list"
-sudo apt update
-
-#Then they can install your packages:
-sudo apt install snap_connection_manager_1.2.deb
 
 #############################
 # Install pillown and gnupg #
