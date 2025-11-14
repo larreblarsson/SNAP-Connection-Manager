@@ -113,7 +113,11 @@ Go to Github web page and create a new Github repo and name it SNAP_CM_PPA (the 
 #Now copy the debian package to this folder
 cp ../SNAP-Connection-Manager/snap_connection_manager_1.2.deb ./
 
+
+
+#Start new APT repository on GitHub according to Gemini
 #Create a GPG Key
+#In my SNAP-Connection-Manager repository
 gpg --full-gen-key
 Please select what kind of key you want: 1
 What keysize do you want? 4096
@@ -122,6 +126,177 @@ Real name: Tomas Larsson
 E-mail address: larre.b.larsson@gmail.com
 Comment: larre.b.larsson@gmail.com
 Change (N)ame, (C)omment, (E)-mail or (O)kay/(Q)uit? O
+psw = hp2035_kalle
+Key ID = 866C4A21160983AD0ACAE71DA3A178F3E8197519
+
+#Export the key
+#Private Key
+gpg --export-secret-keys --armor 866C4A21160983AD0ACAE71DA3A178F3E8197519
+
+#Public Key
+gpg --export --armor 866C4A21160983AD0ACAE71DA3A178F3E8197519 > public.key
+
+#Go to your GitHub repo > Settings > Secrets and variables > Actions.
+#Create a new repository secret named GPG_PRIVATE_KEY above and paste your entire ASCII-armored private key block (including -----BEGIN... and -----END...).
+#Add the password set from above as another secretand name it GPG_PASSPHRASE.
+
+#Enable GitHub Pages:
+#Go to your GitHub repo > Settings > Pages.
+#Under "Build and deployment," set the Source to GitHub Actions.
+
+#Create the GitHub Actions Workflow:
+#In your repository, create a file named .github/workflows/build-apt-repo.yml.
+#Here is a complete, working example using a popular GitHub Action. This example assumes your .deb files are in a directory named debs.
+
+Of course. You can create and host an APT repository on GitHub, primarily by using GitHub Pages to serve the files and GitHub Actions to automate the repository's creation and updates.
+
+Here’s a breakdown of the two main methods, from the most automated to the more manual.
+
+🚀 Method 1: The Automated Way (Recommended)
+This method uses GitHub Actions to automatically build and publish your APT repository to GitHub Pages every time you push new .deb packages or create a new release.
+
+How It Works
+You provide: Your .deb package files and a GPG private key (to sign the repository).
+
+GitHub Actions does: All the technical work. It runs a workflow that:
+
+Generates the necessary Packages and Release files.
+
+Signs the Release file with your GPG key.
+
+Pushes the complete repository structure to a specific branch (like gh-pages).
+
+GitHub Pages: You enable GitHub Pages to serve content from that gh-pages branch, making your repository publicly available via a https://<username>.github.io/<repo-name> URL.
+
+Step-by-Step Guide
+Generate a GPG Key: You need a GPG key to sign your repository. This proves the packages are from you.
+
+Bash
+
+gpg --full-generate-key
+Choose "RSA and RSA" and a key size of 4096 bits.
+
+Set it to not expire (or as long as you need).
+
+Note the Key ID (e.g., 3AA5C3437156A0D5).
+
+Export Your GPG Key:
+
+Private Key (for signing):
+
+Bash
+
+gpg --export-secret-keys --armor <YOUR-KEY-ID>
+Public Key (for users):
+
+Bash
+
+gpg --export --armor <YOUR-KEY-ID> > public.key
+Add the public.key file to the root of your repository. This is what your users will need to add to trust your repo.
+
+Add GPG Key to GitHub Secrets:
+
+Go to your GitHub repo > Settings > Secrets and variables > Actions.
+
+Create a new repository secret named GPG_PRIVATE_KEY and paste your entire ASCII-armored private key block (including -----BEGIN... and -----END...).
+
+If your key has a passphrase, add it as another secret (e.g., GPG_PASSPHRASE).
+
+Enable GitHub Pages:
+
+Go to your GitHub repo > Settings > Pages.
+
+Under "Build and deployment," set the Source to GitHub Actions.
+
+Create the GitHub Actions Workflow:
+
+In your repository, create a file named .github/workflows/build-apt-repo.yml.
+
+Here is a complete, working example using a popular GitHub Action. This example assumes your .deb files are in a directory named debs.
+
+YAML
+
+name: Build and Publish APT Repository
+
+on:
+  # Run on every push to the 'main' branch
+  push:
+    branches:
+      - main
+    paths:
+      - 'debs/**' # Only run if .deb files are changed
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # To commit to the gh-pages branch
+      pages: write    # To deploy to GitHub Pages
+      id-token: write # For GitHub Pages deployment
+
+    steps:
+      # 1. Check out your repository
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      # 2. This action builds the repository structure
+      - name: Build APT Repository
+        uses: morph027/apt-repo-action@v2
+        with:
+          repo_name: my-apt-repo  # A name for your repo
+          distro: stable          # The "distribution" name
+          component: main         # The "component" name
+          arch: "amd64,all"     # Supported architectures
+
+          # Directory containing your .deb files
+          scan_directory: ./debs  
+
+          # GPG private key from secrets
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          gpg_passphrase: ${{ secrets.GPG_PASSPHRASE }}
+
+      # 3. Upload the built repository as a page artifact
+      - name: Upload Pages Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: output/ # This is the default output dir of the action
+
+      # 4. Deploy the artifact to GitHub Pages
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+#How Users Add Your Repo
+#Once the action has run successfully, users can add your repository like this (replace the placeholders):
+
+Bash
+
+# 1. Add the GPG key
+curl -sL https://<username>.github.io/<repo-name>/public.key | sudo gpg --dearmor -o /usr/share/keyrings/<repo-name>-keyring.gpg
+
+# 2. Add the repository to sources.list
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/<repo-name>-keyring.gpg] \
+  https://<username>.github.io/<repo-name> stable main" \
+  | sudo tee /etc/apt/sources.list.d/<repo-name>.list > /dev/null
+
+# 3. Update and install
+sudo apt update
+sudo apt install <your-package-name>
+
+
+
+
+
+
+
+
+
+
+
 
 #Backup key
 gpg --export-secret-keys "larre.b.larsson@gmail.com" > MykeyforAPTRepo.asc
@@ -150,7 +325,7 @@ git push -u origin master
 
 #Now you can tell all your friends and users to install your PPA this way
 curl -s --compressed "https://larreblarsson.github.io/SNAP_CM_PPA/MykeyforAPTRepo.gpg" | gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/SNAP_CM_PPA.gpg >/dev/null
-sudo curl -s --compressed -o /etc/apt/sources.list.d/snap_cm_file.list "https://larreblarsson..github.io/SNAP_CM_PPA/snap_cm_file.list"
+sudo curl -s --compressed -o /etc/apt/sources.list.d/snap_cm_file.list "https://larreblarsson.github.io/SNAP_CM_PPA/snap_cm_file.list"
 sudo apt update
 
 #Then they can install your packages:
