@@ -6,7 +6,7 @@ on:
     branches:
       - main
     paths:
-      - '/**' # Only run if .deb files are changed
+      - 'debs/**' # Only run if .deb files are changed
   
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
@@ -33,11 +33,11 @@ jobs:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         with:
           # All inputs are now in 'kebab-case' and have the correct names
-          repo-name: my-apt-repo  
+          repo-name: SNAP-Connection-Manager
           suite: stable         
           components: main        
           architectures: "amd64,all"  
-          scan-dir: ./debs  
+          scan-dir: .  
           signing-key: ${{ secrets.GPG_PRIVATE_KEY }}
 
       # 3. Upload the built repository as a page artifact
