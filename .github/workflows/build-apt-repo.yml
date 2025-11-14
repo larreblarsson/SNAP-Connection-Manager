@@ -1,53 +1,49 @@
 name: Build and Publish APT Repository
 
 on:
-  # Run on every push to the 'main' branch
   push:
     branches:
       - main
     paths:
-      - 'debs/**' # Only run if .deb files are changed
-      #...
-  
-  # Allows you to run this workflow manually from the Actions tab
+      - 'debs/**'
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # To commit to the gh-pages branch
-      pages: write    # To deploy to GitHub Pages
-      id-token: write # For GitHub Pages deployment
+      contents: write 
+      pages: write    
+      id-token: write 
 
     steps:
-      # 1. Check out your repository
-      - name: Check out repository
+      - name: Checkout repository
         uses: actions/checkout@v4
-
-      # 2. This action builds the repository structure
-      #    *** THIS BLOCK IS NOW CORRECTED ***
+      
+      # 1. NEW ACTION: r-darwish/apt-repo-action
       - name: Build APT Repository
-        uses: morph027/apt-repo-action@v2
-        env:
-          # The passphrase is an environment variable, not a 'with' input
-          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        uses: r-darwish/apt-repo-action@v1
         with:
-          # All inputs are now in 'kebab-case' and have the correct names
-          repo-name: SNAP-Connection-Manager
-          suite: stable         
-          components: main        
-          architectures: "amd64,all"  
-          scan-dir: .  
-          signing-key: ${{ secrets.GPG_PRIVATE_KEY }}
-
-      # 3. Upload the built repository as a page artifact
+          # REQUIRED: GPG Private Key (from your secret)
+          private-key: ${{ secrets.GPG_PRIVATE_KEY }}
+          # OPTIONAL: Passphrase (from your secret)
+          passphrase: ${{ secrets.GPG_PASSPHRASE }}
+          
+          # DIRECTORY: Where your .deb files are located
+          repo-root: . 
+          
+          # CONFIGURATION: Used for the Release file
+          distribution: stable
+          component: main
+          
+      # 2. Upload the built repository as a page artifact
       - name: Upload Pages Artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: output/ 
+          # This action places the built repo in the 'repo' directory
+          path: repo/ 
 
-      # 4. Deploy the artifact to GitHub Pages
+      # 3. Deploy the artifact to GitHub Pages
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
