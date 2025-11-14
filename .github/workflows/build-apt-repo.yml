@@ -36,38 +36,48 @@ jobs:
           echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --import --batch --yes
         shell: bash
 
-      # 3. Build and Sign the repository structure manually
+      # 3. EXPORT PUBLIC KEY (NEW STEP)
+      - name: Export Public Key for Client Download
+        run: |
+          # 3a. Use the first GPG key found for the export
+          KEY_FINGERPRINT=$(gpg --list-keys --with-colons | grep fpr | head -n 1 | cut -d: -f10)
+          
+          # 3b. Create the output directory (if not already created later)
+          mkdir -p repo
+          
+          # 3c. Export the public key to the deployed 'repo/' folder
+          gpg --export --armor $KEY_FINGERPRINT > repo/public.key
+          
+          echo "Public key exported to repo/public.key"
+
+      # 4. Build and Sign the repository structure manually
       - name: Build and Sign APT Repository
         run: |
-          # 3a. Create the output directory structure for GitHub Pages (repo/dists/suite/component/arch)
+          # 4a. Create the rest of the output directory structure
           mkdir -p repo/dists/stable/main/binary-amd64
           
-          # 3b. Scan the packages in the root directory ('.') and create the Packages.gz file
-          # CRITICAL: '.' scans the root, where your .deb files are located.
+          # 4b. Scan the packages in the root directory ('.')
           dpkg-scanpackages . /dev/null | gzip -9c > repo/dists/stable/main/binary-amd64/Packages.gz
           
-          # 3c. Generate the Release file metadata
+          # 4c. Generate the Release file metadata
           apt-ftparchive release repo/dists/stable > repo/dists/stable/Release
           
-          # 3d. Define the common GPG signing options using the passphrase secret
-          # This allows GPG to sign the file without interactive input.
+          # 4d. Define the common GPG signing options (using passphrase secret)
           GPG_SIGNING_OPTS="--batch --yes --pinentry-mode loopback --passphrase ${{ secrets.GPG_PASSPHRASE }}"
 
-          # 3e. Sign the Release file to create InRelease (clearsigned, preferred by modern APT)
+          # 4e. Sign the Release file to create InRelease (clearsigned)
           gpg $GPG_SIGNING_OPTS --clearsign -o repo/dists/stable/InRelease repo/dists/stable/Release
 
-          # 3f. Sign the Release file to create Release.gpg (detached signature, for compatibility)
+          # 4f. Sign the Release file to create Release.gpg (detached signature)
           gpg $GPG_SIGNING_OPTS -abs -o repo/dists/stable/Release.gpg repo/dists/stable/Release
-          #...
 
-      # 4. Upload the built repository as a page artifact
-      # The 'repo' directory contains all the APT files.
+      # 5. Upload the built repository as a page artifact
       - name: Upload Pages Artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: repo/ 
 
-      # 5. Deploy the artifact to GitHub Pages
+      # 6. Deploy the artifact to GitHub Pages
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4

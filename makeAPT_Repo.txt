@@ -126,6 +126,10 @@ gpg --export --armor 866C4A21160983AD0ACAE71DA3A178F3E8197519 > public.key
 git commit -a -m "Added APT repository Action Workflow_4"
 git push -u origin main
 
+#Go back to Hithub repo and click Actions tab
+#Then click "Build and Publish APT Repository#
+#Then click #Run workflow"
+
 #Now user can add your repo as per:
 #Once the action has run successfully, users can add your repository like this (replace the placeholders):
 # Add the GPG key
