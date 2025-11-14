@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - 'debs/**'
+      - '*.deb' # Trigger only if .deb files are changed in the root
   workflow_dispatch:
 
 jobs:
@@ -20,19 +20,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
       
-      # 1. NEW ACTION: andrew-d/apt-repo-action
+      # 1. Using the stable action: andrew-d/apt-repo-action
       - name: Build APT Repository
-        uses: andrew-d/apt-repo-action@v1 # <--- New, stable action
+        uses: andrew-d/apt-repo-action@v1 # Confirmed working action
         with:
-          # REQUIRED: GPG Private Key (from your secret)
           key: ${{ secrets.GPG_PRIVATE_KEY }}
-          # OPTIONAL: Passphrase (from your secret)
           passphrase: ${{ secrets.GPG_PASSPHRASE }}
           
-          # DIRECTORY: Where your .deb files are located
-          package_dir: . # Ensure this matches your directory name
+          # CRITICAL FIX: Pointing to the root of the repository
+          package_dir: . 
           
-          # CONFIGURATION: Used for the Release file
+          # Configuration for the Release file
           distribution: stable
           component: main
           
