@@ -20,17 +20,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
       
-      # 1. NEW ACTION: r-darwish/apt-repo-action
+      # 1. NEW ACTION: andrew-d/apt-repo-action
       - name: Build APT Repository
-        uses: r-darwish/apt-repo-action@main
+        uses: andrew-d/apt-repo-action@v1 # <--- New, stable action
         with:
           # REQUIRED: GPG Private Key (from your secret)
-          private-key: ${{ secrets.GPG_PRIVATE_KEY }}
+          key: ${{ secrets.GPG_PRIVATE_KEY }}
           # OPTIONAL: Passphrase (from your secret)
           passphrase: ${{ secrets.GPG_PASSPHRASE }}
           
           # DIRECTORY: Where your .deb files are located
-          repo-root: . 
+          package_dir: . # Ensure this matches your directory name
           
           # CONFIGURATION: Used for the Release file
           distribution: stable
