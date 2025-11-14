@@ -22,7 +22,7 @@ jobs:
       
       # 1. NEW ACTION: r-darwish/apt-repo-action
       - name: Build APT Repository
-        uses: r-darwish/apt-repo-action@v1
+        uses: r-darwish/apt-repo-action@main
         with:
           # REQUIRED: GPG Private Key (from your secret)
           private-key: ${{ secrets.GPG_PRIVATE_KEY }}
