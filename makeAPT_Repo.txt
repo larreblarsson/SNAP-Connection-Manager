@@ -271,9 +271,6 @@ jobs:
 
 #How Users Add Your Repo
 #Once the action has run successfully, users can add your repository like this (replace the placeholders):
-
-Bash
-
 # 1. Add the GPG key
 curl -sL https://<username>.github.io/<repo-name>/public.key | sudo gpg --dearmor -o /usr/share/keyrings/<repo-name>-keyring.gpg
 
