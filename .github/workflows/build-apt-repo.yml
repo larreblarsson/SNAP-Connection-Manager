@@ -1,0 +1,52 @@
+name: Build and Publish APT Repository
+
+on:
+  # Run on every push to the 'main' branch
+  push:
+    branches:
+      - main
+    paths:
+      - 'debs/**' # Only run if .deb files are changed
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # To commit to the gh-pages branch
+      pages: write    # To deploy to GitHub Pages
+      id-token: write # For GitHub Pages deployment
+
+    steps:
+      # 1. Check out your repository
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      # 2. This action builds the repository structure
+      - name: Build APT Repository
+        uses: morph027/apt-repo-action@v2
+        with:
+          repo_name: SNAP-Connection-Manager  # A name for your repo
+          distro: stable          # The "distribution" name
+          component: main         # The "component" name
+          arch: "all"     # Supported architectures
+
+          # Directory containing your .deb files
+          scan_directory: ./
+
+          # GPG private key from secrets
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          gpg_passphrase: ${{ secrets.GPG_PASSPHRASE }}
+
+      # 3. Upload the built repository as a page artifact
+      - name: Upload Pages Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: output/ # This is the default output dir of the action
+
+      # 4. Deploy the artifact to GitHub Pages
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
