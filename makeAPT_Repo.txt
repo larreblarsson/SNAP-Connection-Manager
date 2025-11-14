@@ -139,7 +139,7 @@ echo \
 
 #And then they can do Update and install
 sudo apt update
-sudo apt install <your-package-name>
+sudo apt install SNAP-Connection-Manager
 
 
 

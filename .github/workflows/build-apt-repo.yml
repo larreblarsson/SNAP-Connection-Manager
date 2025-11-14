@@ -6,8 +6,8 @@ on:
     branches:
       - main
     paths:
-      - './**' # Only run if .deb files are changed
-
+      - '/**' # Only run if .deb files are changed
+  
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
@@ -25,26 +25,26 @@ jobs:
         uses: actions/checkout@v4
 
       # 2. This action builds the repository structure
+      #    *** THIS BLOCK IS NOW CORRECTED ***
       - name: Build APT Repository
         uses: morph027/apt-repo-action@v2
+        env:
+          # The passphrase is an environment variable, not a 'with' input
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         with:
-          repo_name: SNAP-Connection-Manager  # A name for your repo
-          distro: stable          # The "distribution" name
-          component: main         # The "component" name
-          arch: "all"     # Supported architectures
-
-          # Directory containing your .deb files
-          scan_directory: ./
-
-          # GPG private key from secrets
-          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
-          gpg_passphrase: ${{ secrets.GPG_PASSPHRASE }}
+          # All inputs are now in 'kebab-case' and have the correct names
+          repo-name: my-apt-repo  
+          suite: stable         
+          components: main        
+          architectures: "amd64,all"  
+          scan-dir: ./debs  
+          signing-key: ${{ secrets.GPG_PRIVATE_KEY }}
 
       # 3. Upload the built repository as a page artifact
       - name: Upload Pages Artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: output/ # This is the default output dir of the action
+          path: output/ 
 
       # 4. Deploy the artifact to GitHub Pages
       - name: Deploy to GitHub Pages
