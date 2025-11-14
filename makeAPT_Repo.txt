@@ -123,19 +123,19 @@ gpg --export --armor 866C4A21160983AD0ACAE71DA3A178F3E8197519 > public.key
 #See file in your Repo
 
 #Commit and push to GitHub and your PPA is ready to go:
-git commit -a -m "Added APT repository Action Workflow_3"
+git commit -a -m "Added APT repository Action Workflow_4"
 git push -u origin main
 
 #Now user can add your repo as per:
 #Once the action has run successfully, users can add your repository like this (replace the placeholders):
 # Add the GPG key
-curl -sL https://<username>.github.io/<repo-name>/public.key | sudo gpg --dearmor -o /usr/share/keyrings/<repo-name>-keyring.gpg
+curl -sL https://larreblarsson.github.io/SNAP-Connection-Manager/public.key | sudo gpg --dearmor -o /usr/share/keyrings/SNAP-Connection-Manager-keyring.gpg
 
 #Add the repository to sources.list
 echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/<repo-name>-keyring.gpg] \
-  https://<username>.github.io/<repo-name> stable main" \
-  | sudo tee /etc/apt/sources.list.d/<repo-name>.list > /dev/null
+  "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/SNAP-Connection-Manager-keyring.gpg] \
+  https://larreblarsson.github.io/SNAP-Connection-Manager stable main" \
+  | sudo tee /etc/apt/sources.list.d/SNAP-Connection-Manager.list > /dev/null
 
 #And then they can do Update and install
 sudo apt update
