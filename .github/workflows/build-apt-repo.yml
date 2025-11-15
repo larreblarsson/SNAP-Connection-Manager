@@ -1,11 +1,13 @@
 name: Build and Publish APT Repository
 
 on:
+  # This triggers the workflow whenever a file ending in .deb is pushed to the main branch
   push:
     branches:
       - main
     paths:
       - '*.deb' 
+  # Allows manual triggering from the GitHub Actions tab
   workflow_dispatch:
 
 jobs:
@@ -43,13 +45,15 @@ jobs:
       # 4. Build and Sign the repository structure
       - name: Build and Sign APT Repository
         run: |
-          # 4a. Create the output directory structure
+          # 4a. Create output directories for both amd64 and all architectures (CRITICAL FIX)
           mkdir -p repo/dists/stable/main/binary-amd64
+          mkdir -p repo/dists/stable/main/binary-all
           
-          # 4b. Scan the packages in the root directory ('.')
+          # 4b. Scan for packages (the .deb file in the root is scanned for both)
           dpkg-scanpackages . /dev/null | gzip -9c > repo/dists/stable/main/binary-amd64/Packages.gz
+          dpkg-scanpackages . /dev/null | gzip -9c > repo/dists/stable/main/binary-all/Packages.gz
           
-          # --- FIX: Create the apt-ftparchive configuration file ---
+          # 4c. Create the apt-ftparchive configuration file with metadata
           cat > apt-ftparchive.conf <<EOF
           APT::FTPArchive::Release::Suite "stable";
           APT::FTPArchive::Release::Codename "stable";
@@ -57,13 +61,13 @@ jobs:
           APT::FTPArchive::Release::Architectures "amd64 all";
           EOF
 
-          # 4c. Generate the Release file metadata, using the new config file (-c flag)
+          # 4d. Generate the Release file metadata
           apt-ftparchive -c apt-ftparchive.conf release repo/dists/stable > repo/dists/stable/Release
           
-          # 4d. Define the common GPG signing options
+          # 4e. Define the common GPG signing options
           GPG_SIGNING_OPTS="--batch --yes --pinentry-mode loopback --passphrase ${{ secrets.GPG_PASSPHRASE }}"
 
-          # 4e. Sign the Release file
+          # 4f. Sign the Release file
           gpg $GPG_SIGNING_OPTS --clearsign -o repo/dists/stable/InRelease repo/dists/stable/Release
           gpg $GPG_SIGNING_OPTS -abs -o repo/dists/stable/Release.gpg repo/dists/stable/Release
 

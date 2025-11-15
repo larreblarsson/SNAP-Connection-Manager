@@ -136,14 +136,12 @@ git push -u origin main
 curl -sL https://larreblarsson.github.io/SNAP-Connection-Manager/public.key | sudo gpg --dearmor -o /usr/share/keyrings/SNAP-Connection-Manager-keyring.gpg
 
 #Add the repository to sources.list
-echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/SNAP-Connection-Manager-keyring.gpg] \
-  https://larreblarsson.github.io/SNAP-Connection-Manager stable main" \
-  | sudo tee /etc/apt/sources.list.d/SNAP-Connection-Manager.list > /dev/null
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/SNAP-Connection-Manager-keyring.gpg]  https://larreblarsson.github.io/SNAP-Connection-Manager stable main" | sudo tee /etc/apt/sources.list.d/SNAP-Connection-Manager.list > /dev/null
 
 #And then they can do Update and install
 sudo apt update
-sudo apt install SNAP-Connection-Manager
+#Note the name of the package below.
+sudo apt install snap-connection-manager
 
 
 
