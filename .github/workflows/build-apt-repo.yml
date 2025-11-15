@@ -1,13 +1,11 @@
 name: Build and Publish APT Repository
 
 on:
-  # This triggers the workflow whenever a file ending in .deb is pushed to the main branch
   push:
     branches:
       - main
     paths:
       - '*.deb' 
-  # Allows manual triggering from the GitHub Actions tab
   workflow_dispatch:
 
 jobs:
@@ -26,49 +24,47 @@ jobs:
       - name: Install dependencies and GPG tools
         run: |
           sudo apt update
-          # Install dpkg-dev (for scanning packages), gnupg (for GPG), and apt-utils
           sudo apt install -y dpkg-dev gnupg apt-utils
 
-      # 2. Import your GPG Private Key from the secret
-      # The private key must be saved as a GitHub Secret named GPG_PRIVATE_KEY
+      # 2. Import your GPG Private Key
       - name: Import GPG Private Key
         run: |
           echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --import --batch --yes
         shell: bash
 
-      # 3. EXPORT PUBLIC KEY (NEW STEP)
+      # 3. Export Public Key
       - name: Export Public Key for Client Download
         run: |
-          # 3a. Use the first GPG key found for the export
           KEY_FINGERPRINT=$(gpg --list-keys --with-colons | grep fpr | head -n 1 | cut -d: -f10)
-          
-          # 3b. Create the output directory (if not already created later)
           mkdir -p repo
-          
-          # 3c. Export the public key to the deployed 'repo/' folder
           gpg --export --armor $KEY_FINGERPRINT > repo/public.key
-          
           echo "Public key exported to repo/public.key"
 
-      # 4. Build and Sign the repository structure manually
+      # 4. Build and Sign the repository structure
       - name: Build and Sign APT Repository
         run: |
-          # 4a. Create the rest of the output directory structure
+          # 4a. Create the output directory structure
           mkdir -p repo/dists/stable/main/binary-amd64
           
           # 4b. Scan the packages in the root directory ('.')
           dpkg-scanpackages . /dev/null | gzip -9c > repo/dists/stable/main/binary-amd64/Packages.gz
           
-          # 4c. Generate the Release file metadata
-          apt-ftparchive release repo/dists/stable > repo/dists/stable/Release
+          # --- FIX: Create the apt-ftparchive configuration file ---
+          cat > apt-ftparchive.conf <<EOF
+          APT::FTPArchive::Release::Suite "stable";
+          APT::FTPArchive::Release::Codename "stable";
+          APT::FTPArchive::Release::Components "main";
+          APT::FTPArchive::Release::Architectures "amd64 all";
+          EOF
+
+          # 4c. Generate the Release file metadata, using the new config file (-c flag)
+          apt-ftparchive -c apt-ftparchive.conf release repo/dists/stable > repo/dists/stable/Release
           
-          # 4d. Define the common GPG signing options (using passphrase secret)
+          # 4d. Define the common GPG signing options
           GPG_SIGNING_OPTS="--batch --yes --pinentry-mode loopback --passphrase ${{ secrets.GPG_PASSPHRASE }}"
 
-          # 4e. Sign the Release file to create InRelease (clearsigned)
+          # 4e. Sign the Release file
           gpg $GPG_SIGNING_OPTS --clearsign -o repo/dists/stable/InRelease repo/dists/stable/Release
-
-          # 4f. Sign the Release file to create Release.gpg (detached signature)
           gpg $GPG_SIGNING_OPTS -abs -o repo/dists/stable/Release.gpg repo/dists/stable/Release
 
       # 5. Upload the built repository as a page artifact
