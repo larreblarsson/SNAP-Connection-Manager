@@ -92,16 +92,16 @@ jobs:
 
           # Write apt-ftparchive.conf (heredoc aligned under run: |)
           cat > apt-ftparchive.conf <<EOF
-APT::FTPArchive::Release {
-  Origin "SNAP-Connection-Manager";
-  Label "SNAP Connection Manager";
-  Suite "stable";
-  Codename "stable";
-  Architectures "${PKG_ARCH} amd64 all";
-  Components "main";
-  Description "SNAP Connection Manager APT repository";
-};
-EOF
+          APT::FTPArchive::Release {
+            Origin "SNAP-Connection-Manager";
+            Label "SNAP Connection Manager";
+            Suite "stable";
+            Codename "stable";
+            Architectures "${PKG_ARCH} amd64 all";
+            Components "main";
+            Description "SNAP Connection Manager APT repository";
+          };
+          EOF
 
           # Generate Release with hashes and Date
           apt-ftparchive -c apt-ftparchive.conf release repo/dists/stable > repo/dists/stable/Release
@@ -173,8 +173,8 @@ EOF
         id: determine_upload
         run: |
           set -euo pipefail
-          UPLOAD_FROM_CREATE="${{ steps.create_release.outputs.upload_url || '' }}"
-          UPLOAD_FROM_GET="${{ steps.get_release.outputs.upload_url || '' }}"
+          UPLOAD_FROM_CREATE="${{ steps.create_release.outputs.upload_url }}"
+          UPLOAD_FROM_GET="${{ steps.get_release.outputs.upload_url }}"
           if [ -n "$UPLOAD_FROM_CREATE" ]; then
             echo "upload_url=$UPLOAD_FROM_CREATE" >> $GITHUB_OUTPUT
           elif [ -n "$UPLOAD_FROM_GET" ]; then
