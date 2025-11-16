@@ -35,14 +35,12 @@ jobs:
           set -euo pipefail
           DEB_FILE=$(ls -1t *.deb 2>/dev/null | head -n1 || true)
           if [ -z "$DEB_FILE" ]; then
-            echo "No .deb found in repository root. Exiting."
             echo "found_deb=false" >> $GITHUB_OUTPUT
             exit 0
           fi
           PKG_NAME=$(dpkg-deb -f "$DEB_FILE" Package)
           PKG_VERSION=$(dpkg-deb -f "$DEB_FILE" Version)
           PKG_ARCH=$(dpkg-deb -f "$DEB_FILE" Architecture)
-          echo "Detected: $DEB_FILE -> $PKG_NAME $PKG_VERSION $PKG_ARCH"
           echo "DEB_FILE=$DEB_FILE" >> $GITHUB_ENV
           echo "PKG_NAME=$PKG_NAME" >> $GITHUB_ENV
           echo "PKG_VERSION=$PKG_VERSION" >> $GITHUB_ENV
@@ -63,9 +61,13 @@ jobs:
           echo "Exported public key to repo/public.key (fingerprint: $KEY_FPR)"
         shell: bash
 
-      - name: Build APT repository structure, index and sign
+      - name: Build repo, index and sign
         if: steps.detect.outputs.found_deb == 'true'
         env:
+          DEB_FILE: ${{ env.DEB_FILE }}
+          PKG_NAME: ${{ env.PKG_NAME }}
+          PKG_VERSION: ${{ env.PKG_VERSION }}
+          PKG_ARCH: ${{ env.PKG_ARCH }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
           set -euo pipefail
@@ -83,16 +85,16 @@ jobs:
           dpkg-scanpackages repo/pool /dev/null | gzip -9c > "$DISTDIR_ARCH/Packages.gz"
           dpkg-scanpackages repo/pool /dev/null | gzip -9c > "$DISTDIR_AMD64/Packages.gz"
 
-          # Create a minimal Release file
-          cat > repo/dists/stable/Release <<'RELEASE'
-Origin: SNAP-Connection-Manager
-Label: SNAP Connection Manager
-Suite: stable
-Codename: stable
-Architectures: amd64 all
-Components: main
-Description: SNAP Connection Manager APT repository
-RELEASE
+          # Create a minimal Release file using printf (avoids heredoc indentation issues)
+          printf '%s\n' \
+            "Origin: SNAP-Connection-Manager" \
+            "Label: SNAP Connection Manager" \
+            "Suite: stable" \
+            "Codename: stable" \
+            "Architectures: amd64 all" \
+            "Components: main" \
+            "Description: SNAP Connection Manager APT repository" \
+            > repo/dists/stable/Release
 
           # Sign the Release file (create InRelease and Release.gpg)
           GPG_OPTS="--batch --yes --pinentry-mode loopback --passphrase $GPG_PASSPHRASE"
