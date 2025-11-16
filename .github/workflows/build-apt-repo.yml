@@ -92,16 +92,16 @@ jobs:
 
           # Write apt-ftparchive.conf (heredoc aligned under run: |)
           cat > apt-ftparchive.conf <<EOF
-          APT::FTPArchive::Release {
-            Origin "SNAP-Connection-Manager";
-            Label "SNAP Connection Manager";
-            Suite "stable";
-            Codename "stable";
-            Architectures "${PKG_ARCH} amd64 all";
-            Components "main";
-            Description "SNAP Connection Manager APT repository";
-          };
-          EOF
+APT::FTPArchive::Release {
+  Origin "SNAP-Connection-Manager";
+  Label "SNAP Connection Manager";
+  Suite "stable";
+  Codename "stable";
+  Architectures "${PKG_ARCH} amd64 all";
+  Components "main";
+  Description "SNAP Connection Manager APT repository";
+};
+EOF
 
           # Generate Release with hashes and Date
           apt-ftparchive -c apt-ftparchive.conf release repo/dists/stable > repo/dists/stable/Release
@@ -184,10 +184,44 @@ jobs:
           fi
         shell: bash
 
-      - name: Debug upload_url
+      - name: Debug upload_url and file info
         if: steps.detect.outputs.found_deb == 'true'
         run: |
+          set -euo pipefail
           echo "Resolved upload_url=${{ steps.determine_upload.outputs.upload_url }}"
+          echo "Asset path: repo/pool/main/${{ env.PKG_NAME }}/${{ env.DEB_FILE }}"
+          ls -l "repo/pool/main/${{ env.PKG_NAME }}/${{ env.DEB_FILE }}" || true
+        shell: bash
+
+      - name: Prepare release asset (list and delete existing)
+        if: steps.detect.outputs.found_deb == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          REPO="${{ github.repository }}"
+          TAG="v${{ env.PKG_VERSION }}"
+          TOKEN="${GITHUB_TOKEN}"
+          ASSET_NAME="${{ env.DEB_FILE }}"
+
+          echo "Fetching release JSON for tag $TAG"
+          RELEASE_JSON=$(curl -s -H "Authorization: token $TOKEN" "https://api.github.com/repos/$REPO/releases/tags/$TAG")
+          if [ -z "$RELEASE_JSON" ] || [ "$RELEASE_JSON" = "null" ]; then
+            echo "No release JSON returned (release may have just been created)."
+          else
+            echo "Existing assets:"
+            echo "$RELEASE_JSON" | jq -r '.assets[] | "\(.id) \(.name) \(.size) bytes"' || echo "No assets"
+          fi
+
+          # If an asset with the same name exists, delete it
+          ASSET_ID=$(echo "$RELEASE_JSON" | jq -r --arg name "$ASSET_NAME" '.assets[] | select(.name==$name) | .id // empty')
+          if [ -n "$ASSET_ID" ]; then
+            echo "Deleting existing asset id=$ASSET_ID name=$ASSET_NAME"
+            curl -s -X DELETE -H "Authorization: token $TOKEN" "https://api.github.com/repos/$REPO/releases/assets/$ASSET_ID"
+            echo "Deleted asset id=$ASSET_ID"
+          else
+            echo "No existing asset named $ASSET_NAME"
+          fi
         shell: bash
 
       - name: Upload .deb to GitHub Release
