@@ -17,6 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GNUPGHOME: ${{ runner.temp }}/gnupg
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -26,17 +27,16 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y dpkg-dev gnupg apt-utils gzip apt-transport-https
-        shell: bash
+          sudo apt-get install -y dpkg-dev gnupg apt-utils gzip apt-ftparchive
 
       - name: Detect .deb and package metadata
         id: detect
         run: |
-          set -e
-          # pick the most recent .deb in the repo root
+          set -euo pipefail
           DEB_FILE=$(ls -1t *.deb 2>/dev/null | head -n1 || true)
           if [ -z "$DEB_FILE" ]; then
             echo "No .deb found in repository root. Exiting."
+            echo "found_deb=false" >> $GITHUB_OUTPUT
             exit 0
           fi
           PKG_NAME=$(dpkg-deb -f "$DEB_FILE" Package)
@@ -47,11 +47,13 @@ jobs:
           echo "PKG_NAME=$PKG_NAME" >> $GITHUB_ENV
           echo "PKG_VERSION=$PKG_VERSION" >> $GITHUB_ENV
           echo "PKG_ARCH=$PKG_ARCH" >> $GITHUB_ENV
+          echo "found_deb=true" >> $GITHUB_OUTPUT
         shell: bash
 
-      - name: Import GPG Private Key and export public key
+      - name: Import GPG private key and export public key
+        if: steps.detect.outputs.found_deb == 'true'
         run: |
-          set -e
+          set -euo pipefail
           mkdir -p "$GNUPGHOME"
           chmod 700 "$GNUPGHOME"
           echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import --yes
@@ -62,55 +64,54 @@ jobs:
         shell: bash
 
       - name: Build APT repository structure, index and sign
+        if: steps.detect.outputs.found_deb == 'true'
         env:
           DEB_FILE: ${{ env.DEB_FILE }}
           PKG_NAME: ${{ env.PKG_NAME }}
           PKG_VERSION: ${{ env.PKG_VERSION }}
           PKG_ARCH: ${{ env.PKG_ARCH }}
         run: |
-          set -e
-          # Prepare directories
+          set -euo pipefail
+
           POOLDIR="repo/pool/main/${PKG_NAME}"
-          DISTDIR_AMD64="repo/dists/stable/main/binary-amd64"
           DISTDIR_ARCH="repo/dists/stable/main/binary-${PKG_ARCH}"
-          mkdir -p "$POOLDIR" "$DISTDIR_AMD64" "$DISTDIR_ARCH"
+          DISTDIR_AMD64="repo/dists/stable/main/binary-amd64"
+
+          mkdir -p "$POOLDIR" "$DISTDIR_ARCH" "$DISTDIR_AMD64"
 
           # Copy the detected .deb into pool
-          echo "Copying $DEB_FILE -> $POOLDIR/"
           cp -v "$DEB_FILE" "$POOLDIR/"
 
           # Generate Packages.gz from the pool directory (ensures Filename: pool/...)
           dpkg-scanpackages repo/pool /dev/null | gzip -9c > "$DISTDIR_ARCH/Packages.gz"
-          # Also generate amd64 index for clients that request binary-amd64 (if arch is amd64 this duplicates)
           dpkg-scanpackages repo/pool /dev/null | gzip -9c > "$DISTDIR_AMD64/Packages.gz"
 
-          # Create apt-ftparchive config and generate Release metadata
-          cat > apt-ftparchive.conf <<'EOF'
-APT::FTPArchive::Release::Suite "stable";
-APT::FTPArchive::Release::Codename "stable";
-APT::FTPArchive::Release::Components "main";
-APT::FTPArchive::Release::Architectures "${PKG_ARCH} amd64 all";
+          # Create a minimal Release file
+          cat > repo/dists/stable/Release <<'EOF'
+Origin: SNAP-Connection-Manager
+Label: SNAP Connection Manager
+Suite: stable
+Codename: stable
+Architectures: amd64 all
+Components: main
+Description: SNAP Connection Manager APT repository
 EOF
-          # Replace placeholder with actual arch
-          sed -i "s/\${PKG_ARCH}/${PKG_ARCH}/g" apt-ftparchive.conf
-          apt-ftparchive -c apt-ftparchive.conf release repo/dists/stable > repo/dists/stable/Release
 
           # Sign the Release file (create InRelease and Release.gpg)
           GPG_OPTS="--batch --yes --pinentry-mode loopback --passphrase '${{ secrets.GPG_PASSPHRASE }}'"
           gpg $GPG_OPTS --clearsign -o repo/dists/stable/InRelease repo/dists/stable/Release
           gpg $GPG_OPTS -abs -o repo/dists/stable/Release.gpg repo/dists/stable/Release
 
-          # Append a simple changelog entry into the pages repo (included in Pages)
-          mkdir -p repo/releases
+          # Add a short release note
           echo "- ${PKG_NAME} ${PKG_VERSION} ($(date -u +"%Y-%m-%d %H:%M UTC")): published" >> repo/RELEASES.md
-          echo "Added release note to repo/RELEASES.md"
 
           # Show a short listing for verification in the workflow log
           echo "Repo layout:"
           find repo -maxdepth 5 -type f -print
         shell: bash
 
-      - name: Create GitHub Release and attach .deb
+      - name: Create GitHub Release
+        if: steps.detect.outputs.found_deb == 'true'
         id: create_release
         uses: actions/create-release@v1
         with:
@@ -123,6 +124,7 @@ EOF
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload .deb to GitHub Release
+        if: steps.detect.outputs.found_deb == 'true'
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
@@ -131,11 +133,13 @@ EOF
           asset_content_type: application/vnd.debian.binary-package
 
       - name: Upload Pages Artifact
+        if: steps.detect.outputs.found_deb == 'true'
         uses: actions/upload-pages-artifact@v3
         with:
           path: repo/
 
       - name: Deploy to GitHub Pages
+        if: steps.detect.outputs.found_deb == 'true'
         id: deployment
         uses: actions/deploy-pages@v4
 
