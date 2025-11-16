@@ -25,7 +25,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y dpkg-dev apt-utils gnupg gzip
+          sudo apt-get install -y dpkg-dev apt-utils gnupg gzip curl
 
       - name: Detect .deb and package metadata
         id: detect
@@ -107,11 +107,27 @@ jobs:
           echo "- ${PKG_NAME} ${PKG_VERSION} ($(date -u +"%Y-%m-%d %H:%M UTC")): published" >> repo/RELEASES.md
 
           # Show a short listing for verification in the workflow log
-          find repo -maxdepth 5 -type f -print
+          find repo -maxdepth 6 -type f -print
+        shell: bash
+
+      - name: Check if release tag exists
+        if: steps.detect.outputs.found_deb == 'true'
+        id: check_tag
+        run: |
+          set -euo pipefail
+          TAG="v${{ env.PKG_VERSION }}"
+          REPO="${{ github.repository }}"
+          TOKEN="${{ secrets.GITHUB_TOKEN }}"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token $TOKEN" "https://api.github.com/repos/$REPO/releases/tags/$TAG")
+          if [ "$STATUS" = "200" ]; then
+            echo "tag_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "tag_exists=false" >> $GITHUB_OUTPUT
+          fi
         shell: bash
 
       - name: Create GitHub Release
-        if: steps.detect.outputs.found_deb == 'true'
+        if: steps.check_tag.outputs.tag_exists == 'false' && steps.detect.outputs.found_deb == 'true'
         id: create_release
         uses: actions/create-release@v1
         env:
@@ -123,10 +139,40 @@ jobs:
           draft: false
           prerelease: false
 
+      - name: Get existing release upload_url
+        if: steps.check_tag.outputs.tag_exists == 'true' && steps.detect.outputs.found_deb == 'true'
+        id: get_release
+        run: |
+          set -euo pipefail
+          TAG="v${{ env.PKG_VERSION }}"
+          REPO="${{ github.repository }}"
+          TOKEN="${{ secrets.GITHUB_TOKEN }}"
+          RESPONSE=$(curl -s -H "Authorization: token $TOKEN" "https://api.github.com/repos/$REPO/releases/tags/$TAG")
+          UPLOAD_URL=$(echo "$RESPONSE" | sed -n 's/.*"upload_url": *"\([^"]*\)".*/\1/p' | sed 's/{?name,label}//')
+          echo "upload_url=$UPLOAD_URL" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Determine upload_url
+        if: steps.detect.outputs.found_deb == 'true'
+        id: determine_upload
+        run: |
+          set -euo pipefail
+          # Prefer create_release output if present, otherwise use get_release output
+          UPLOAD_FROM_CREATE="${{ steps.create_release.outputs.upload_url || '' }}"
+          UPLOAD_FROM_GET="${{ steps.get_release.outputs.upload_url || '' }}"
+          if [ -n "$UPLOAD_FROM_CREATE" ]; then
+            echo "upload_url=$UPLOAD_FROM_CREATE" >> $GITHUB_OUTPUT
+          elif [ -n "$UPLOAD_FROM_GET" ]; then
+            echo "upload_url=$UPLOAD_FROM_GET" >> $GITHUB_OUTPUT
+          else
+            echo "upload_url=" >> $GITHUB_OUTPUT
+          fi
+        shell: bash
+
       - name: Debug upload_url
         if: steps.detect.outputs.found_deb == 'true'
         run: |
-          echo "create_release.upload_url=${{ steps.create_release.outputs.upload_url }}"
+          echo "Resolved upload_url=${{ steps.determine_upload.outputs.upload_url }}"
         shell: bash
 
       - name: Upload .deb to GitHub Release
@@ -135,7 +181,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          upload_url: ${{ steps.determine_upload.outputs.upload_url }}
           asset_path: repo/pool/main/${{ env.PKG_NAME }}/${{ env.DEB_FILE }}
           asset_name: ${{ env.DEB_FILE }}
           asset_content_type: application/vnd.debian.binary-package
