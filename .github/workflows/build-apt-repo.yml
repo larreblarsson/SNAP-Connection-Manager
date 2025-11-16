@@ -25,7 +25,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y dpkg-dev gnupg apt-utils gzip apt-ftparchive
+          sudo apt-get install -y dpkg-dev apt-utils gnupg gzip
 
       - name: Detect .deb and package metadata
         id: detect
