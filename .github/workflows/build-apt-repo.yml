@@ -85,18 +85,18 @@ jobs:
           dpkg-scanpackages pool /dev/null > "$DISTDIR_AMD64/Packages"
           gzip -9c "$DISTDIR_AMD64/Packages" > "$DISTDIR_AMD64/Packages.gz"
 
-          # Write apt-ftparchive.conf (heredoc aligned correctly)
+          # Write apt-ftparchive.conf (heredoc aligned correctly — no extra indentation)
           cat > apt-ftparchive.conf <<EOF
-APT::FTPArchive::Release {
-  Origin "SNAP-Connection-Manager";
-  Label "SNAP Connection Manager";
-  Suite "stable";
-  Codename "stable";
-  Architectures "${PKG_ARCH} amd64 all";
-  Components "main";
-  Description "SNAP Connection Manager APT repository";
-};
-EOF
+          APT::FTPArchive::Release {
+            Origin "SNAP-Connection-Manager";
+            Label "SNAP Connection Manager";
+            Suite "stable";
+            Codename "stable";
+            Architectures "${PKG_ARCH} amd64 all";
+            Components "main";
+            Description "SNAP Connection Manager APT repository";
+          };
+          EOF
 
           apt-ftparchive -c apt-ftparchive.conf release dists/stable > dists/stable/Release
 
@@ -109,7 +109,120 @@ EOF
           find . -maxdepth 6 -type f -print
         shell: bash
 
-      # … release creation, upload_url determination, asset deletion, upload-release-asset steps unchanged …
+      - name: Check if release tag exists
+        if: steps.detect.outputs.found_deb == 'true'
+        id: check_tag
+        run: |
+          set -euo pipefail
+          TAG="v${{ env.PKG_VERSION }}"
+          REPO="${{ github.repository }}"
+          TOKEN="${{ secrets.GITHUB_TOKEN }}"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token $TOKEN" "https://api.github.com/repos/$REPO/releases/tags/$TAG")
+          if [ "$STATUS" = "200" ]; then
+            echo "tag_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "tag_exists=false" >> $GITHUB_OUTPUT
+          fi
+        shell: bash
+
+      - name: Create GitHub Release (only if tag missing)
+        if: steps.check_tag.outputs.tag_exists == 'false' && steps.detect.outputs.found_deb == 'true'
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ env.PKG_VERSION }}
+          release_name: ${{ env.PKG_NAME }} ${{ env.PKG_VERSION }}
+          body: Automated release for ${{ env.PKG_NAME }} ${{ env.PKG_VERSION }}
+          draft: false
+          prerelease: false
+
+      - name: Get existing release upload_url (keep template)
+        if: steps.check_tag.outputs.tag_exists == 'true' && steps.detect.outputs.found_deb == 'true'
+        id: get_release
+        run: |
+          set -euo pipefail
+          TAG="v${{ env.PKG_VERSION }}"
+          REPO="${{ github.repository }}"
+          TOKEN="${{ secrets.GITHUB_TOKEN }}"
+          RESPONSE=$(curl -s -H "Authorization: token $TOKEN" "https://api.github.com/repos/$REPO/releases/tags/$TAG")
+          UPLOAD_URL=$(echo "$RESPONSE" | jq -r '.upload_url // empty')
+          if [ -z "$UPLOAD_URL" ]; then
+            echo "upload_url=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          if [[ "$UPLOAD_URL" != *'{'* ]]; then
+            UPLOAD_URL="${UPLOAD_URL}{?name,label}"
+          fi
+          echo "upload_url=$UPLOAD_URL" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Determine upload_url
+        if: steps.detect.outputs.found_deb == 'true'
+        id: determine_upload
+        run: |
+          set -euo pipefail
+          UPLOAD_FROM_CREATE="${{ steps.create_release.outputs.upload_url || '' }}"
+          UPLOAD_FROM_GET="${{ steps.get_release.outputs.upload_url || '' }}"
+          if [ -n "$UPLOAD_FROM_CREATE" ]; then
+            echo "upload_url=$UPLOAD_FROM_CREATE" >> $GITHUB_OUTPUT
+          elif [ -n "$UPLOAD_FROM_GET" ]; then
+            echo "upload_url=$UPLOAD_FROM_GET" >> $GITHUB_OUTPUT
+          else
+            echo "upload_url=" >> $GITHUB_OUTPUT
+          fi
+        shell: bash
+
+      - name: Debug upload_url and file info
+        if: steps.detect.outputs.found_deb == 'true'
+        run: |
+          set -euo pipefail
+          echo "Resolved upload_url=${{ steps.determine_upload.outputs.upload_url }}"
+          echo "Asset path: pool/main/${{ env.PKG_NAME }}/${{ env.DEB_FILE }}"
+          ls -l "pool/main/${{ env.PKG_NAME }}/${{ env.DEB_FILE }}" || true
+        shell: bash
+
+      - name: Prepare release asset (list and delete existing)
+        if: steps.detect.outputs.found_deb == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          REPO="${{ github.repository }}"
+          TAG="v${{ env.PKG_VERSION }}"
+          TOKEN="${GITHUB_TOKEN}"
+          ASSET_NAME="${{ env.DEB_FILE }}"
+
+          echo "Fetching release JSON for tag $TAG"
+          RELEASE_JSON=$(curl -s -H "Authorization: token $TOKEN" "https://api.github.com/repos/$REPO/releases/tags/$TAG")
+          if [ -z "$RELEASE_JSON" ] || [ "$RELEASE_JSON" = "null" ]; then
+            echo "No release JSON returned (release may have just been created)."
+          else
+            echo "Existing assets:"
+            echo "$RELEASE_JSON" | jq -r '.assets[] | "\(.id) \(.name) \(.size) bytes"' || echo "No assets"
+          fi
+
+          ASSET_ID=$(echo "$RELEASE_JSON" | jq -r --arg name "$ASSET_NAME" '.assets[] | select(.name==$name) | .id // empty')
+          if [ -n "$ASSET_ID" ]; then
+            echo "Deleting existing asset id=$ASSET_ID name=$ASSET_NAME"
+            curl -s -X DELETE -H "Authorization: token $TOKEN" "https://api.github.com/repos/$REPO/releases/assets/$ASSET_ID"
+            echo "Deleted asset id=$ASSET_ID"
+          else
+            echo "No existing asset named $ASSET_NAME"
+          fi
+        shell: bash
+
+      - name: Upload .deb to GitHub Release
+        if: steps.detect.outputs.found_deb == 'true'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.determine_upload.outputs.upload_url }}
+          asset_path: pool/main/${{ env.PKG_NAME }}/${{ env.DEB_FILE }}
+          asset_name: ${{ env.DEB_FILE }}
+          asset_content_type: application/vnd.debian.binary-package
 
       - name: Upload Pages Artifact
         if: steps.detect.outputs.found_deb == 'true'
