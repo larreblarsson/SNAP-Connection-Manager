@@ -66,10 +66,7 @@ jobs:
       - name: Build APT repository structure, index and sign
         if: steps.detect.outputs.found_deb == 'true'
         env:
-          DEB_FILE: ${{ env.DEB_FILE }}
-          PKG_NAME: ${{ env.PKG_NAME }}
-          PKG_VERSION: ${{ env.PKG_VERSION }}
-          PKG_ARCH: ${{ env.PKG_ARCH }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
           set -euo pipefail
 
@@ -87,7 +84,7 @@ jobs:
           dpkg-scanpackages repo/pool /dev/null | gzip -9c > "$DISTDIR_AMD64/Packages.gz"
 
           # Create a minimal Release file
-          cat > repo/dists/stable/Release <<'EOF'
+          cat > repo/dists/stable/Release <<'RELEASE'
 Origin: SNAP-Connection-Manager
 Label: SNAP Connection Manager
 Suite: stable
@@ -95,18 +92,17 @@ Codename: stable
 Architectures: amd64 all
 Components: main
 Description: SNAP Connection Manager APT repository
-EOF
+RELEASE
 
           # Sign the Release file (create InRelease and Release.gpg)
-          GPG_OPTS="--batch --yes --pinentry-mode loopback --passphrase '${{ secrets.GPG_PASSPHRASE }}'"
+          GPG_OPTS="--batch --yes --pinentry-mode loopback --passphrase $GPG_PASSPHRASE"
           gpg $GPG_OPTS --clearsign -o repo/dists/stable/InRelease repo/dists/stable/Release
           gpg $GPG_OPTS -abs -o repo/dists/stable/Release.gpg repo/dists/stable/Release
 
-          # Add a short release note
+          # Add a short release note included in Pages
           echo "- ${PKG_NAME} ${PKG_VERSION} ($(date -u +"%Y-%m-%d %H:%M UTC")): published" >> repo/RELEASES.md
 
           # Show a short listing for verification in the workflow log
-          echo "Repo layout:"
           find repo -maxdepth 5 -type f -print
         shell: bash
 
@@ -117,7 +113,7 @@ EOF
         with:
           tag_name: v${{ env.PKG_VERSION }}
           release_name: ${{ env.PKG_NAME }} ${{ env.PKG_VERSION }}
-          body: "Automated release for ${{ env.PKG_NAME }} ${{ env.PKG_VERSION }}"
+          body: Automated release for ${{ env.PKG_NAME }} ${{ env.PKG_VERSION }}
           draft: false
           prerelease: false
         env:
@@ -140,6 +136,5 @@ EOF
 
       - name: Deploy to GitHub Pages
         if: steps.detect.outputs.found_deb == 'true'
-        id: deployment
         uses: actions/deploy-pages@v4
 
