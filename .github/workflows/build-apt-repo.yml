@@ -86,11 +86,11 @@ jobs:
 
           # Create apt-ftparchive config and generate Release metadata
           cat > apt-ftparchive.conf <<'EOF'
-APT::FTPArchive::Release::Suite "stable";
-APT::FTPArchive::Release::Codename "stable";
-APT::FTPArchive::Release::Components "main";
-APT::FTPArchive::Release::Architectures "${PKG_ARCH} amd64 all";
-EOF
+          APT::FTPArchive::Release::Suite "stable";
+          APT::FTPArchive::Release::Codename "stable";
+          APT::FTPArchive::Release::Components "main";
+          APT::FTPArchive::Release::Architectures "${PKG_ARCH} amd64 all";
+          EOF
           # Replace placeholder with actual arch
           sed -i "s/\${PKG_ARCH}/${PKG_ARCH}/g" apt-ftparchive.conf
           apt-ftparchive -c apt-ftparchive.conf release repo/dists/stable > repo/dists/stable/Release
