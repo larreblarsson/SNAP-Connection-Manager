@@ -25,7 +25,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y dpkg-dev apt-utils gnupg gzip curl
+          sudo apt-get install -y dpkg-dev apt-utils gnupg gzip curl jq
 
       - name: Detect .deb and package metadata
         id: detect
@@ -126,7 +126,7 @@ jobs:
           fi
         shell: bash
 
-      - name: Create GitHub Release
+      - name: Create GitHub Release (only if tag missing)
         if: steps.check_tag.outputs.tag_exists == 'false' && steps.detect.outputs.found_deb == 'true'
         id: create_release
         uses: actions/create-release@v1
@@ -139,7 +139,7 @@ jobs:
           draft: false
           prerelease: false
 
-      - name: Get existing release upload_url
+      - name: Get existing release upload_url (keep template)
         if: steps.check_tag.outputs.tag_exists == 'true' && steps.detect.outputs.found_deb == 'true'
         id: get_release
         run: |
@@ -148,7 +148,16 @@ jobs:
           REPO="${{ github.repository }}"
           TOKEN="${{ secrets.GITHUB_TOKEN }}"
           RESPONSE=$(curl -s -H "Authorization: token $TOKEN" "https://api.github.com/repos/$REPO/releases/tags/$TAG")
-          UPLOAD_URL=$(echo "$RESPONSE" | sed -n 's/.*"upload_url": *"\([^"]*\)".*/\1/p' | sed 's/{?name,label}//')
+          # Use jq to extract upload_url; keep template if present
+          UPLOAD_URL=$(echo "$RESPONSE" | jq -r '.upload_url // empty')
+          if [ -z "$UPLOAD_URL" ]; then
+            echo "upload_url=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          # If the upload_url does not contain a template part, append it
+          if [[ "$UPLOAD_URL" != *'{'* ]]; then
+            UPLOAD_URL="${UPLOAD_URL}{?name,label}"
+          fi
           echo "upload_url=$UPLOAD_URL" >> $GITHUB_OUTPUT
         shell: bash
 
