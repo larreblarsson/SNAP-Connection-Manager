@@ -50,7 +50,6 @@ jobs:
         if: steps.detect.outputs.found_deb == 'true'
         run: |
           set -euo pipefail
-          # Use the runner-provided temp directory at runtime
           export GNUPGHOME="$RUNNER_TEMP/gnupg"
           mkdir -p "$GNUPGHOME"
           chmod 700 "$GNUPGHOME"
@@ -71,8 +70,6 @@ jobs:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
           set -euo pipefail
-
-          # Ensure GNUPGHOME matches the import step
           export GNUPGHOME="$RUNNER_TEMP/gnupg"
           mkdir -p "$GNUPGHOME"
           chmod 700 "$GNUPGHOME"
@@ -117,18 +114,26 @@ jobs:
         if: steps.detect.outputs.found_deb == 'true'
         id: create_release
         uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: v${{ env.PKG_VERSION }}
           release_name: ${{ env.PKG_NAME }} ${{ env.PKG_VERSION }}
           body: Automated release for ${{ env.PKG_NAME }} ${{ env.PKG_VERSION }}
           draft: false
           prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Debug upload_url
+        if: steps.detect.outputs.found_deb == 'true'
+        run: |
+          echo "create_release.upload_url=${{ steps.create_release.outputs.upload_url }}"
+        shell: bash
 
       - name: Upload .deb to GitHub Release
         if: steps.detect.outputs.found_deb == 'true'
         uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: repo/pool/main/${{ env.PKG_NAME }}/${{ env.DEB_FILE }}
