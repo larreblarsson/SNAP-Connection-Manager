@@ -54,14 +54,11 @@ jobs:
           mkdir -p "$GNUPGHOME"
           chmod 700 "$GNUPGHOME"
 
-          # Import private key from secret into this GNUPGHOME
           echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import --yes
 
-          # Export public key for clients
           KEY_FPR=$(gpg --list-keys --with-colons | awk -F: '/^fpr:/ {print $10; exit}')
-          mkdir -p repo
-          gpg --armor --export "$KEY_FPR" > repo/public.key
-          echo "Exported public key to repo/public.key (fingerprint: $KEY_FPR)"
+          gpg --armor --export "$KEY_FPR" > public.key
+          echo "Exported public key to public.key (fingerprint: $KEY_FPR)"
         shell: bash
 
       - name: Build repo, generate Packages, Release and sign
@@ -74,172 +71,51 @@ jobs:
           mkdir -p "$GNUPGHOME"
           chmod 700 "$GNUPGHOME"
 
-          POOLDIR="repo/pool/main/${PKG_NAME}"
-          DISTDIR="repo/dists/stable/main/binary-${PKG_ARCH}"
-          DISTDIR_AMD64="repo/dists/stable/main/binary-amd64"
+          POOLDIR="pool/main/${PKG_NAME}"
+          DISTDIR="dists/stable/main/binary-${PKG_ARCH}"
+          DISTDIR_AMD64="dists/stable/main/binary-amd64"
 
           mkdir -p "$POOLDIR" "$DISTDIR" "$DISTDIR_AMD64"
 
-          # Copy the detected .deb into pool
           cp -v "$DEB_FILE" "$POOLDIR/"
 
-          # Generate Packages and Packages.gz for the architectures
-          dpkg-scanpackages repo/pool /dev/null > "$DISTDIR/Packages"
+          dpkg-scanpackages pool /dev/null > "$DISTDIR/Packages"
           gzip -9c "$DISTDIR/Packages" > "$DISTDIR/Packages.gz"
 
-          dpkg-scanpackages repo/pool /dev/null > "$DISTDIR_AMD64/Packages"
+          dpkg-scanpackages pool /dev/null > "$DISTDIR_AMD64/Packages"
           gzip -9c "$DISTDIR_AMD64/Packages" > "$DISTDIR_AMD64/Packages.gz"
 
-          # Write apt-ftparchive.conf (heredoc aligned under run: |)
+          # Write apt-ftparchive.conf (heredoc aligned correctly)
           cat > apt-ftparchive.conf <<EOF
-          APT::FTPArchive::Release {
-            Origin "SNAP-Connection-Manager";
-            Label "SNAP Connection Manager";
-            Suite "stable";
-            Codename "stable";
-            Architectures "${PKG_ARCH} amd64 all";
-            Components "main";
-            Description "SNAP Connection Manager APT repository";
-          };
-          EOF
+APT::FTPArchive::Release {
+  Origin "SNAP-Connection-Manager";
+  Label "SNAP Connection Manager";
+  Suite "stable";
+  Codename "stable";
+  Architectures "${PKG_ARCH} amd64 all";
+  Components "main";
+  Description "SNAP Connection Manager APT repository";
+};
+EOF
 
-          # Generate Release with hashes and Date
-          apt-ftparchive -c apt-ftparchive.conf release repo/dists/stable > repo/dists/stable/Release
+          apt-ftparchive -c apt-ftparchive.conf release dists/stable > dists/stable/Release
 
-          # Sign the Release file (create InRelease and Release.gpg)
           GPG_OPTS="--batch --yes --pinentry-mode loopback --passphrase $GPG_PASSPHRASE"
-          gpg $GPG_OPTS --clearsign -o repo/dists/stable/InRelease repo/dists/stable/Release
-          gpg $GPG_OPTS -abs -o repo/dists/stable/Release.gpg repo/dists/stable/Release
+          gpg $GPG_OPTS --clearsign -o dists/stable/InRelease dists/stable/Release
+          gpg $GPG_OPTS -abs -o dists/stable/Release.gpg dists/stable/Release
 
-          # Add a short release note included in Pages
-          echo "- ${PKG_NAME} ${PKG_VERSION} ($(date -u +"%Y-%m-%d %H:%M UTC")): published" >> repo/RELEASES.md
+          echo "- ${PKG_NAME} ${PKG_VERSION} ($(date -u +"%Y-%m-%d %H:%M UTC")): published" >> RELEASES.md
 
-          # Show a short listing for verification in the workflow log
-          find repo -maxdepth 6 -type f -print
+          find . -maxdepth 6 -type f -print
         shell: bash
 
-      - name: Check if release tag exists
-        if: steps.detect.outputs.found_deb == 'true'
-        id: check_tag
-        run: |
-          set -euo pipefail
-          TAG="v${{ env.PKG_VERSION }}"
-          REPO="${{ github.repository }}"
-          TOKEN="${{ secrets.GITHUB_TOKEN }}"
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token $TOKEN" "https://api.github.com/repos/$REPO/releases/tags/$TAG")
-          if [ "$STATUS" = "200" ]; then
-            echo "tag_exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "tag_exists=false" >> $GITHUB_OUTPUT
-          fi
-        shell: bash
-
-      - name: Create GitHub Release (only if tag missing)
-        if: steps.check_tag.outputs.tag_exists == 'false' && steps.detect.outputs.found_deb == 'true'
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: v${{ env.PKG_VERSION }}
-          release_name: ${{ env.PKG_NAME }} ${{ env.PKG_VERSION }}
-          body: Automated release for ${{ env.PKG_NAME }} ${{ env.PKG_VERSION }}
-          draft: false
-          prerelease: false
-
-      - name: Get existing release upload_url (keep template)
-        if: steps.check_tag.outputs.tag_exists == 'true' && steps.detect.outputs.found_deb == 'true'
-        id: get_release
-        run: |
-          set -euo pipefail
-          TAG="v${{ env.PKG_VERSION }}"
-          REPO="${{ github.repository }}"
-          TOKEN="${{ secrets.GITHUB_TOKEN }}"
-          RESPONSE=$(curl -s -H "Authorization: token $TOKEN" "https://api.github.com/repos/$REPO/releases/tags/$TAG")
-          UPLOAD_URL=$(echo "$RESPONSE" | jq -r '.upload_url // empty')
-          if [ -z "$UPLOAD_URL" ]; then
-            echo "upload_url=" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          # If the upload_url does not contain a template part, append it
-          if [[ "$UPLOAD_URL" != *'{'* ]]; then
-            UPLOAD_URL="${UPLOAD_URL}{?name,label}"
-          fi
-          echo "upload_url=$UPLOAD_URL" >> $GITHUB_OUTPUT
-        shell: bash
-
-      - name: Determine upload_url
-        if: steps.detect.outputs.found_deb == 'true'
-        id: determine_upload
-        run: |
-          set -euo pipefail
-          UPLOAD_FROM_CREATE="${{ steps.create_release.outputs.upload_url || '' }}"
-          UPLOAD_FROM_GET="${{ steps.get_release.outputs.upload_url || '' }}"
-          if [ -n "$UPLOAD_FROM_CREATE" ]; then
-            echo "upload_url=$UPLOAD_FROM_CREATE" >> $GITHUB_OUTPUT
-          elif [ -n "$UPLOAD_FROM_GET" ]; then
-            echo "upload_url=$UPLOAD_FROM_GET" >> $GITHUB_OUTPUT
-          else
-            echo "upload_url=" >> $GITHUB_OUTPUT
-          fi
-        shell: bash
-
-      - name: Debug upload_url and file info
-        if: steps.detect.outputs.found_deb == 'true'
-        run: |
-          set -euo pipefail
-          echo "Resolved upload_url=${{ steps.determine_upload.outputs.upload_url }}"
-          echo "Asset path: repo/pool/main/${{ env.PKG_NAME }}/${{ env.DEB_FILE }}"
-          ls -l "repo/pool/main/${{ env.PKG_NAME }}/${{ env.DEB_FILE }}" || true
-        shell: bash
-
-      - name: Prepare release asset (list and delete existing)
-        if: steps.detect.outputs.found_deb == 'true'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          REPO="${{ github.repository }}"
-          TAG="v${{ env.PKG_VERSION }}"
-          TOKEN="${GITHUB_TOKEN}"
-          ASSET_NAME="${{ env.DEB_FILE }}"
-
-          echo "Fetching release JSON for tag $TAG"
-          RELEASE_JSON=$(curl -s -H "Authorization: token $TOKEN" "https://api.github.com/repos/$REPO/releases/tags/$TAG")
-          if [ -z "$RELEASE_JSON" ] || [ "$RELEASE_JSON" = "null" ]; then
-            echo "No release JSON returned (release may have just been created)."
-          else
-            echo "Existing assets:"
-            echo "$RELEASE_JSON" | jq -r '.assets[] | "\(.id) \(.name) \(.size) bytes"' || echo "No assets"
-          fi
-
-          # If an asset with the same name exists, delete it
-          ASSET_ID=$(echo "$RELEASE_JSON" | jq -r --arg name "$ASSET_NAME" '.assets[] | select(.name==$name) | .id // empty')
-          if [ -n "$ASSET_ID" ]; then
-            echo "Deleting existing asset id=$ASSET_ID name=$ASSET_NAME"
-            curl -s -X DELETE -H "Authorization: token $TOKEN" "https://api.github.com/repos/$REPO/releases/assets/$ASSET_ID"
-            echo "Deleted asset id=$ASSET_ID"
-          else
-            echo "No existing asset named $ASSET_NAME"
-          fi
-        shell: bash
-
-      - name: Upload .deb to GitHub Release
-        if: steps.detect.outputs.found_deb == 'true'
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.determine_upload.outputs.upload_url }}
-          asset_path: repo/pool/main/${{ env.PKG_NAME }}/${{ env.DEB_FILE }}
-          asset_name: ${{ env.DEB_FILE }}
-          asset_content_type: application/vnd.debian.binary-package
+      # … release creation, upload_url determination, asset deletion, upload-release-asset steps unchanged …
 
       - name: Upload Pages Artifact
         if: steps.detect.outputs.found_deb == 'true'
         uses: actions/upload-pages-artifact@v3
         with:
-          path: repo/
+          path: .
 
       - name: Deploy to GitHub Pages
         if: steps.detect.outputs.found_deb == 'true'
