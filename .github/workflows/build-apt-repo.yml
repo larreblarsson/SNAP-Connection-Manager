@@ -173,8 +173,8 @@ jobs:
         id: determine_upload
         run: |
           set -euo pipefail
-          UPLOAD_FROM_CREATE="${{ steps.create_release.outputs.upload_url }}"
-          UPLOAD_FROM_GET="${{ steps.get_release.outputs.upload_url }}"
+          UPLOAD_FROM_CREATE="${{ steps.create_release.outputs.upload_url || '' }}"
+          UPLOAD_FROM_GET="${{ steps.get_release.outputs.upload_url || '' }}"
           if [ -n "$UPLOAD_FROM_CREATE" ]; then
             echo "upload_url=$UPLOAD_FROM_CREATE" >> $GITHUB_OUTPUT
           elif [ -n "$UPLOAD_FROM_GET" ]; then
