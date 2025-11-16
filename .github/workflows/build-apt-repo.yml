@@ -15,8 +15,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      GNUPGHOME: ${{ runner.temp }}/gnupg
 
     steps:
       - name: Checkout repository
@@ -52,9 +50,15 @@ jobs:
         if: steps.detect.outputs.found_deb == 'true'
         run: |
           set -euo pipefail
+          # Use the runner-provided temp directory at runtime
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
           mkdir -p "$GNUPGHOME"
           chmod 700 "$GNUPGHOME"
+
+          # Import private key from secret into this GNUPGHOME
           echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import --yes
+
+          # Export public key for clients
           KEY_FPR=$(gpg --list-keys --with-colons | awk -F: '/^fpr:/ {print $10; exit}')
           mkdir -p repo
           gpg --armor --export "$KEY_FPR" > repo/public.key
@@ -64,13 +68,14 @@ jobs:
       - name: Build repo, index and sign
         if: steps.detect.outputs.found_deb == 'true'
         env:
-          DEB_FILE: ${{ env.DEB_FILE }}
-          PKG_NAME: ${{ env.PKG_NAME }}
-          PKG_VERSION: ${{ env.PKG_VERSION }}
-          PKG_ARCH: ${{ env.PKG_ARCH }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
           set -euo pipefail
+
+          # Ensure GNUPGHOME matches the import step
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          mkdir -p "$GNUPGHOME"
+          chmod 700 "$GNUPGHOME"
 
           POOLDIR="repo/pool/main/${PKG_NAME}"
           DISTDIR_ARCH="repo/dists/stable/main/binary-${PKG_ARCH}"
@@ -85,7 +90,7 @@ jobs:
           dpkg-scanpackages repo/pool /dev/null | gzip -9c > "$DISTDIR_ARCH/Packages.gz"
           dpkg-scanpackages repo/pool /dev/null | gzip -9c > "$DISTDIR_AMD64/Packages.gz"
 
-          # Create a minimal Release file using printf (avoids heredoc indentation issues)
+          # Create a minimal Release file
           printf '%s\n' \
             "Origin: SNAP-Connection-Manager" \
             "Label: SNAP Connection Manager" \
