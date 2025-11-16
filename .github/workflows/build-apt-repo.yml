@@ -64,7 +64,7 @@ jobs:
           echo "Exported public key to repo/public.key (fingerprint: $KEY_FPR)"
         shell: bash
 
-      - name: Build repo, index and sign
+      - name: Build repo, generate Packages, Release and sign
         if: steps.detect.outputs.found_deb == 'true'
         env:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
@@ -75,28 +75,36 @@ jobs:
           chmod 700 "$GNUPGHOME"
 
           POOLDIR="repo/pool/main/${PKG_NAME}"
-          DISTDIR_ARCH="repo/dists/stable/main/binary-${PKG_ARCH}"
+          DISTDIR="repo/dists/stable/main/binary-${PKG_ARCH}"
           DISTDIR_AMD64="repo/dists/stable/main/binary-amd64"
 
-          mkdir -p "$POOLDIR" "$DISTDIR_ARCH" "$DISTDIR_AMD64"
+          mkdir -p "$POOLDIR" "$DISTDIR" "$DISTDIR_AMD64"
 
           # Copy the detected .deb into pool
           cp -v "$DEB_FILE" "$POOLDIR/"
 
-          # Generate Packages.gz from the pool directory (ensures Filename: pool/...)
-          dpkg-scanpackages repo/pool /dev/null | gzip -9c > "$DISTDIR_ARCH/Packages.gz"
-          dpkg-scanpackages repo/pool /dev/null | gzip -9c > "$DISTDIR_AMD64/Packages.gz"
+          # Generate Packages and Packages.gz for the architectures
+          dpkg-scanpackages repo/pool /dev/null > "$DISTDIR/Packages"
+          gzip -9c "$DISTDIR/Packages" > "$DISTDIR/Packages.gz"
 
-          # Create a minimal Release file
-          printf '%s\n' \
-            "Origin: SNAP-Connection-Manager" \
-            "Label: SNAP Connection Manager" \
-            "Suite: stable" \
-            "Codename: stable" \
-            "Architectures: amd64 all" \
-            "Components: main" \
-            "Description: SNAP Connection Manager APT repository" \
-            > repo/dists/stable/Release
+          dpkg-scanpackages repo/pool /dev/null > "$DISTDIR_AMD64/Packages"
+          gzip -9c "$DISTDIR_AMD64/Packages" > "$DISTDIR_AMD64/Packages.gz"
+
+          # Write apt-ftparchive.conf (heredoc aligned under run: |)
+          cat > apt-ftparchive.conf <<EOF
+          APT::FTPArchive::Release {
+            Origin "SNAP-Connection-Manager";
+            Label "SNAP Connection Manager";
+            Suite "stable";
+            Codename "stable";
+            Architectures "${PKG_ARCH} amd64 all";
+            Components "main";
+            Description "SNAP Connection Manager APT repository";
+          };
+          EOF
+
+          # Generate Release with hashes and Date
+          apt-ftparchive -c apt-ftparchive.conf release repo/dists/stable > repo/dists/stable/Release
 
           # Sign the Release file (create InRelease and Release.gpg)
           GPG_OPTS="--batch --yes --pinentry-mode loopback --passphrase $GPG_PASSPHRASE"
@@ -148,7 +156,6 @@ jobs:
           REPO="${{ github.repository }}"
           TOKEN="${{ secrets.GITHUB_TOKEN }}"
           RESPONSE=$(curl -s -H "Authorization: token $TOKEN" "https://api.github.com/repos/$REPO/releases/tags/$TAG")
-          # Use jq to extract upload_url; keep template if present
           UPLOAD_URL=$(echo "$RESPONSE" | jq -r '.upload_url // empty')
           if [ -z "$UPLOAD_URL" ]; then
             echo "upload_url=" >> $GITHUB_OUTPUT
@@ -166,7 +173,6 @@ jobs:
         id: determine_upload
         run: |
           set -euo pipefail
-          # Prefer create_release output if present, otherwise use get_release output
           UPLOAD_FROM_CREATE="${{ steps.create_release.outputs.upload_url || '' }}"
           UPLOAD_FROM_GET="${{ steps.get_release.outputs.upload_url || '' }}"
           if [ -n "$UPLOAD_FROM_CREATE" ]; then
