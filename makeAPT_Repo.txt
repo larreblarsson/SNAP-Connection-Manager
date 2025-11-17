@@ -135,6 +135,7 @@ git push -u origin main
 # Add the GPG key
 curl -sL https://larreblarsson.github.io/SNAP-Connection-Manager/public.key | sudo gpg --dearmor -o /usr/share/keyrings/SNAP-Connection-Manager-keyring.gpg
 
+
 #Add the repository to sources.list
 echo "deb [signed-by=/usr/share/keyrings/SNAP-Connection-Manager-keyring.gpg] https://larreblarsson.github.io/SNAP-Connection-Manager stable main" | sudo tee /etc/apt/sources.list.d/SNAP-Connection-Manager.list
 
@@ -144,16 +145,20 @@ sudo apt update
 sudo apt install snap-connection-manager
 
 
-
-
-
-
-
-
-
-
-
-
+#We could build a small script like this:
+vim install.sh
+a
+#!/bin/bash
+set -e
+curl -sL https://larreblarsson.github.io/SNAP-Connection-Manager/public.key | sudo gpg --dearmor -o /usr/share/keyrings/SNAP-Connection-Manager-keyring.gpg
+echo "deb [signed-by=/usr/share/keyrings/SNAP-Connection-Manager-keyring.gpg] https://larreblarsson.github.io/SNAP-Connection-Manager stable main" | sudo tee /etc/apt/sources.list.d/SNAP-Connection-Manager.list
+sudo apt update
+sudo apt install snap-connection-manager
+<esc>
+:wq!
+#And host in my Github repo root then user could just run:
+curl -sL https://larreblarsson.github.io/SNAP-Connection-Manager/install.sh | bash
+#To install. Then users does not need to fetch the key and to add my APT repo in source list instead I do the same via the above small script
 
 #############################
 # Install pillown and gnupg #
@@ -161,6 +166,8 @@ sudo apt install snap-connection-manager
 sudo apt update
 sudo apt-get install python3-pil python3-pil.imagetk python3-venv python3-tk
 sudo apt-get install python3-gnupg
+
+
 
 
 
