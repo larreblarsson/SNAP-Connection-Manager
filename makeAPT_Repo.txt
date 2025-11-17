@@ -145,7 +145,7 @@ sudo apt update
 sudo apt install snap-connection-manager
 
 
-#We could build a small script like this:
+#We also build a small script like this:
 vim install.sh
 a
 #!/bin/bash
