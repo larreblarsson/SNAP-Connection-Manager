@@ -87,7 +87,9 @@
                     <li><a href="#encryption-change-pass">Changing Your Passphrase</a></li>
                 </ul>
             </li>
+            <li><a href="#appearance">Appearance & Customization</a></li>
             <li><a href="#getting-started">Getting Started</a></li>
+            <li><a href="#installation">Installation Instructions</a></li>
             <li><a href="#troubleshooting">Troubleshooting & Dependencies</a></li>
         </ol>
     </div>
@@ -171,16 +173,46 @@
         <li>The application then re-encrypts your server data file (<code>ssh_servers.json.gpg</code>) with the new passphrase in an atomic operation to prevent data loss.</li>
         <li>Finally, it generates a new salt and hash for the new passphrase and updates the settings file.</li>
     </ol>
+    <h2 id="appearance">4. Appearance & Customization</h2>
+    <p>The <strong>Appearance tab</strong> allows you to fully customize the look and feel of your embedded terminal sessions:</p>
+    <ul>
+        <li><strong>Font Chooser</strong>: Select any system font for your terminal. The default is <code>Ubuntu Mono 12</code>.</li>
+        <li><strong>Color Schemes</strong>: Choose from built-in schemes such as <em>GNOME Light/Dark</em>, <em>Tango</em>, <em>Solarized</em>, or define a <em>Custom</em> scheme.</li>
+        <li><strong>Foreground/Background Colors</strong>: Pick precise colors using the GNOME-style color picker.</li>
+        <li><strong>Palette Selection</strong>: Switch between Tango, Solarized, or None palettes for advanced color control.</li>
+        <li><strong>Scrollback Buffer</strong>: Configure how many lines of history are retained (default: 10,000).</li>
+        <li><strong>Reset to Defaults</strong>: Instantly restore the default font, colors, and palette.</li>
+    </ul>
+    <p>All appearance settings are saved in your <code>snap_cm_settings.json</code> file and applied consistently across sessions.</p>
 
-    <h2 id="getting-started">4. Getting Started</h2>
+    <h2 id="getting-started">5. Getting Started</h2>
     <ol>
         <li><strong>First Launch</strong>: The application will prompt you to <strong>Set Master Passphrase</strong>. Enter a strong, memorable passphrase and confirm it. This initializes your secure storage.</li>
         <li><strong>Subsequent Launches</strong>: You will be prompted to enter your master passphrase to unlock and load your server list. For security, you have a limited number of attempts.</li>
         <li><strong>Add Servers and Folders</strong>: Use the <code>Servers</code> and <code>Folders</code> menus or the right-click context menu to begin building your connection list.</li>
         <li><strong>Connect</strong>: Select a server and double-click it, or use the <code>Connect</code> menu or right-click menu to launch an SSH or SFTP session.</li>
     </ol>
+    <h2 id="installation">6. Installation Instructions</h2>
+    <p>You can install SNAP Connection Manager directly from its official APT repository hosted on GitHub Pages.</p>
+    
+    <h3>6.1 Quick Install Script</h3>
+    <p>Run the following one-liner to add the repository, import the GPG key, and install the application:</p>
+    <pre><code>curl -sL https://raw.githubusercontent.com/larreblarsson/SNAP-Connection-Manager/main/install.sh | bash</code></pre>
+    
+    <h3>6.2 Manual Installation</h3>
+    <p>If you prefer to add the repository manually:</p>
+    <pre><code># Add the GPG key
+    curl -sL https://larreblarsson.github.io/SNAP-Connection-Manager/public.key | sudo gpg --dearmor -o /usr/share/keyrings/SNAP-Connection-Manager-keyring.gpg
+    
+    # Add the repository
+    echo "deb [signed-by=/usr/share/keyrings/SNAP-Connection-Manager-keyring.gpg] https://larreblarsson.github.io/SNAP-Connection-Manager stable main" | sudo tee /etc/apt/sources.list.d/SNAP-Connection-Manager.list
+    
+    # Update and install
+    sudo apt update
+    sudo apt install snap-connection-manager
+    </code></pre>
 
-    <h2 id="troubleshooting">5. Troubleshooting & Dependencies</h2>
+    <h2 id="troubleshooting">7. Troubleshooting & Dependencies</h2>
     <ul>
         <li><strong>"Incorrect master passphrase."</strong>: Your passphrase is case-sensitive. If you have forgotten it, the data is unrecoverable. You would need to delete the files in the data directory (see section 3.2) to start over, which will erase all saved servers.</li>
         <li><strong>"GPG decryption failed."</strong>: This indicates that the <code>ssh_servers.json.gpg</code> file may be corrupt or was encrypted with a different key than what your current settings expect. This can happen if a passphrase change was interrupted. Starting fresh by deleting the data files is the recommended recovery method.</li>
