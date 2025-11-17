@@ -160,6 +160,29 @@ sudo apt install snap-connection-manager
 curl -sL https://larreblarsson.github.io/SNAP-Connection-Manager/install.sh | bash
 #To install. Then users does not need to fetch the key and to add my APT repo in source list instead I do the same via the above small script
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #############################
 # Install pillown and gnupg #
 #############################
