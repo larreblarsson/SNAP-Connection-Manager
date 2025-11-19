@@ -68,10 +68,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y devscripts
           export DEBFULLNAME="Tomas Larsson"
-          export DEBEMAIL="larre.b.larsson@gmail.com"
+          export DEBEMAIL="you@example.com"
           dch --newversion "${VERSION}-1" "Release ${VERSION}"
           head -n 5 debian/changelog
-
+          
       - name: Build repo, generate Packages, Release and sign
         if: steps.detect.outputs.found_deb == 'true'
         env:
