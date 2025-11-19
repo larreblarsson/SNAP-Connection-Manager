@@ -1,0 +1,13 @@
+Source: snap-connection-manager
+Section: utils
+Priority: optional
+Maintainer: Tomas Larsson <you@example.com>
+Build-Depends: debhelper (>= 9), python3, python3-gi, gir1.2-gtk-3.0, gir1.2-vte-2.91
+Standards-Version: 4.5.0
+
+Package: snap-connection-manager
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, python3, python3-gi, gir1.2-gtk-3.0, gir1.2-vte-2.91
+Description: SNAP Connection Manager
+ A GTK-based SSH/SFTP manager with VTE terminal integration.
+
