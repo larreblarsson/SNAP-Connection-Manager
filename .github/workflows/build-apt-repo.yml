@@ -61,6 +61,15 @@ jobs:
           echo "Exported public key to public.key (fingerprint: $KEY_FPR)"
         shell: bash
 
+      - name: Bump Debian changelog version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          echo "Using version: $VERSION"
+          sudo apt-get update
+          sudo apt-get install -y devscripts
+          dch --newversion "${VERSION}-1" "Release ${VERSION}"
+          head -n 5 debian/changelog
+
       - name: Build repo, generate Packages, Release and sign
         if: steps.detect.outputs.found_deb == 'true'
         env:
