@@ -1,18 +1,18 @@
 #Copy the latest snap_connection_manager.py to binary folder in the debian package and rename it then move to that folder
-cp snap_connection_manager.py snap_connection_manager_1.2/usr/bin/snap_connection_manager_1.2.py
+cp snap_connection_manager.py snap_connection_manager_1.2.1/usr/bin/snap_connection_manager_1.2.1.py
         
 #########################
 # Create debian package #
 #########################
 #Create the files and folder structure as per:
-snap_connection_1.1_all/
+snap_connection_manager_1.2.1/
 ├── DEBIAN/
 │   ├── control
 |   ├── postinst
 │   └── postrm
 ├── usr/
     └── bin/
-    │  └── snap_connection_manager_1.2.py
+    │  └── snap_connection_manager_1.2.1.py
     └── share/
         └── applications/
         │   └── snap_connection_manager.desktop
@@ -33,7 +33,7 @@ snap_connection_1.1_all/
 ##Where the following is:
 #File DEBIAN/control:
 Package: snap-connection-manager
-Version: 1.2
+Version: 1.2.1
 Architecture: all
 Depends: python3, python3-gi, gnupg, python3-gnupg, expect, openssh-client, gnome-terminal | x-terminal-emulator
 Maintainer: Tomas Larsson <larre.b.larsson@gmail.com>
@@ -48,11 +48,11 @@ remenbered by the user and to be able to open the program needs to be given and 
 #File usr/share/applications/snap_connection_manager.desktop:
 [Desktop Entry]
 Name=Snap Connection Manager
-Exec=python3 /usr/bin/snap_connection_manager_1.2.py
+Exec=python3 /usr/bin/snap_connection_manager_1.2.1.py
 Icon=/usr/share/icons/hicolor/512x512/apps/snap_icon.png
 Terminal=false
 Type=Application
-StartupWMClass=snap_connection_manager_1.1.py
+StartupWMClass=snap_connection_manager_1.2.1.py
 Categories=Utility;
 
 #File usr/share/snap_connection_manager
@@ -67,15 +67,15 @@ readme.md
 Your Application ICON image
 
 #Set permission to 775 recursive on all in folder
-chmod -R 775 snap_connection_manager_1.2
+chmod -R 775 snap_connection_manager_1.2.1
 #Then build you deb pack by:
-sudo dpkg-deb --root-owner-group --build snap_connection_manager_1.2
+sudo dpkg-deb --root-owner-group --build snap_connection_manager_1.2.1
 
 #This then results in the following deb pack:
-snap_connection_manager_1.2.deb
+snap_connection_manager_1.2.1.deb
 
 #This then we can install using:
-sudo apt install ./snap_connection_manager_1.2.deb
+sudo apt install ./snap_connection_manager_1.2.1.deb
 #Note use the above method to get all dependencies to be installed
 
 #To list our debian package
