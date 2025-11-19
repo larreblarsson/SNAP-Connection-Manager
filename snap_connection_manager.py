@@ -1584,7 +1584,6 @@ class SnapConnectionManager(Gtk.Application):
             # --- Create the VTE Terminal Window ---
             term_window = Gtk.Window(title=title)
             term_window.set_default_size(800, 600)
-            term_window.set_transient_for(self.win)
             term_window.set_modal(False) # Allows interaction with main window
             term_window.set_destroy_with_parent(True)
 
