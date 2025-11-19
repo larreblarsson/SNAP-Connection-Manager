@@ -1589,6 +1589,10 @@ class SnapConnectionManager(Gtk.Application):
 
             terminal = Vte.Terminal()
             self.apply_appearance_to_terminal(terminal, cfg)
+            # Connect the Key Press (for Ctrl+C/V)
+            terminal.connect("key-press-event", self._on_terminal_key_press)
+            #Right click menu
+            terminal.connect("button-press-event", self._on_terminal_button_press)
             
             # This makes sure the temp file is deleted when the terminal exits
             def on_child_exited(_terminal, _status):
@@ -2629,6 +2633,63 @@ class SnapConnectionManager(Gtk.Application):
     
         # --- Scrollback ---
         terminal.set_scrollback_lines(cfg.get("term_scrollback", DEFAULT_TERM_SCROLLBACK))
+
+    def _on_terminal_key_press(self, terminal, event):
+            """
+            Handles Ctrl+C (Smart Copy) and Ctrl+V (Paste) in the terminal.
+            """
+            # Check if Control key is held down
+            if event.state & Gdk.ModifierType.CONTROL_MASK:
+                
+                # --- Handle Ctrl+C ---
+                if event.keyval == Gdk.KEY_c:
+                    # Smart Copy: Only copy if there is an active selection.
+                    # If no selection, return False to let the default SIGINT (Interrupt) happen.
+                    if terminal.get_has_selection():
+                        terminal.copy_clipboard_format(Vte.Format.TEXT)
+                        return True # Return True to consume the event (block SIGINT)
+                
+                # --- Handle Ctrl+V ---
+                elif event.keyval == Gdk.KEY_v:
+                    terminal.paste_clipboard()
+                    return True # Return True to consume the event (block literal insert)
+    
+            # For all other keys, return False to let VTE handle them normally
+            return False
+
+    def _on_terminal_button_press(self, terminal, event):
+            """
+            Handles mouse clicks to show a context menu on right-click.
+            """
+            from gi.repository import Gdk
+            
+            # Check for Right Click (Button 3)
+            if event.type == Gdk.EventType.BUTTON_PRESS and event.button == 3:
+                menu = Gtk.Menu()
+    
+                # ── Copy Item ──
+                # Only enable "Copy" if there is text selected
+                copy_item = Gtk.MenuItem(label="Copy")
+                if terminal.get_has_selection():
+                    copy_item.set_sensitive(True)
+                    copy_item.connect("activate", lambda w: terminal.copy_clipboard_format(Vte.Format.TEXT))
+                else:
+                    copy_item.set_sensitive(False)
+                menu.append(copy_item)
+    
+                # ── Paste Item ──
+                paste_item = Gtk.MenuItem(label="Paste")
+                paste_item.connect("activate", lambda w: terminal.paste_clipboard())
+                menu.append(paste_item)
+    
+                # ── Show Menu ──
+                menu.show_all()
+                # Use popup_at_pointer for modern GTK (3.22+)
+                menu.popup_at_pointer(event)
+                
+                return True # Return True to stop other handlers from processing the click
+            
+            return False
 
 # ── main() ─────────────────────────────────────────────────────────────────────────────
 
