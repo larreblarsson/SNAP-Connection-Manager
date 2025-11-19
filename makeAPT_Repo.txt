@@ -9,6 +9,7 @@ snap_connection_manager_1.2.1/
 ├── DEBIAN/
 │   ├── control
 |   ├── postinst
+|   ├── changelog
 │   └── postrm
 ├── usr/
     └── bin/
