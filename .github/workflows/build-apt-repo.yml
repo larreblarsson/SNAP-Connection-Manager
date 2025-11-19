@@ -63,7 +63,7 @@ jobs:
 
       - name: Bump Debian changelog version
         run: |
-          VERSION=${GITHUB_REF#refs/tags/}
+          VERSION=${GITHUB_REF_NAME}
           echo "Using version: $VERSION"
           sudo apt-get update
           sudo apt-get install -y devscripts
