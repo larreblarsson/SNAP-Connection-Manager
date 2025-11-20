@@ -63,12 +63,16 @@ jobs:
 
       - name: Bump Debian changelog version
         run: |
-          VERSION=${GITHUB_REF_NAME}
+          RAW_VERSION=${GITHUB_REF_NAME}
+          VERSION=${RAW_VERSION#v}   # strips leading "v" if present
           echo "Using version: $VERSION"
+      
           sudo apt-get update
           sudo apt-get install -y devscripts
+      
           export DEBFULLNAME="Tomas Larsson"
-          export DEBEMAIL="you@example.com"
+          export DEBEMAIL="larre.b.larsson@gmail.com"
+      
           dch --newversion "${VERSION}-1" "Release ${VERSION}"
           head -n 5 debian/changelog
           
