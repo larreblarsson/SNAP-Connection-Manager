@@ -3,17 +3,17 @@ name: Build and Publish APT Repo
 on:
   push:
     tags:
-      - '*'   # Trigger only on tag pushes (e.g. 1.2.1 or v1.2.1)
+      - '*'   # Run only when a tag is pushed (e.g. 1.2.1 or v1.2.1)
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout source
         uses: actions/checkout@v3
 
-      - name: Install dependencies
+      - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y devscripts build-essential debhelper \
@@ -32,7 +32,7 @@ jobs:
           dch --newversion "${VERSION}-1" "Release ${VERSION}"
           head -n 5 debian/changelog
 
-      - name: Build package
+      - name: Build Debian package
         run: |
           dpkg-buildpackage -us -uc
 
@@ -42,7 +42,7 @@ jobs:
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
 
-      - name: Publish APT repo
+      - name: Prepare APT repo
         run: |
           REPO_DIR=repo
           CODENAME=stable
