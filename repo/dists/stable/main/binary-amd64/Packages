@@ -1,0 +1,13 @@
+Package: snap-connection-manager
+Architecture: all
+Version: 1.2.1-1
+Maintainer: Tomas Larsson <larre.b.larsson@gmail.com>
+Depends: python3, python3-gi, gnupg, python3-gnupg, expect, openssh-client, gir1.2-vte-2.91
+Filename: repo/pool/snap_connection_manager_1.2.1.deb
+Size: 84202
+MD5sum: 5e2b75b0d38d64c96d0bf591b399bba5
+SHA1: 1dfbbdbddbe6cfb35049745e0d70db10887ad4d2
+SHA256: 259d224d3f9b83b361bfcee46c42f08beb2bc17b31bb7f006cb68bd9428727b6
+SHA512: 9454db627fd409eac7f02674bac787555a1ecfea2d4992dffef5ffd2e73e84e693d53d8cc69747b92a1544de5bbe957cbc7b496eb87a289efb8d20b2ae95f073
+Description: Snap Connection Manager is a very slimmed down SSH/SFTP Connection Manager
+

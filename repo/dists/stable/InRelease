@@ -1,0 +1,36 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+Date: Thu, 20 Nov 2025 12:06:16 +0000
+MD5Sum:
+ 6fbee444bb3748c0e4b943dad6c91d18               38 Release
+ fc0d856b4c24601ea155abcb33f47363              667 main/binary-amd64/Packages
+ 079920e91868a18f98bc0b357fafe37e              480 main/binary-amd64/Packages.gz
+SHA1:
+ c93c4c420db8a57a09ad58acdf9cc7a07f1c173d               38 Release
+ da49d3f20da2ff436b84c792ba2bf96f29b71bd9              667 main/binary-amd64/Packages
+ 33d5c2e34ded0a301ba43cd2e684c239c327f183              480 main/binary-amd64/Packages.gz
+SHA256:
+ 422a630e5765bf57148e2450adbd4faa342f32c22e7acb0dc534142da682dcfb               38 Release
+ 9ad33518675df57dfd89a26719b061671edd7fa3cd6c97c2f031ac9205efc8e7              667 main/binary-amd64/Packages
+ f4ac5e17d42bf78df5a89e824c42a64991e16aebcccb93bfe5072608e5d3adeb              480 main/binary-amd64/Packages.gz
+SHA512:
+ 4a400d7be8019b64d48df786fb95c2d2c3a59ef85334824e0675e459a0e5c8512e7d9045f96246dadc4caca3df6c414b3fa374bab8f18e71dc2644239e165cb9               38 Release
+ 3d31f43be7881fdf514f87db2e3738a91742465d0129acc51d0a94aa6ff2a64ed9f5794eae334a5a5cbcaa14dcbf17c14fe5a859df935163fb8ef2846b1655bd              667 main/binary-amd64/Packages
+ 88f1cb5a5ccc780590da7ddd29a141e827c1ae65599daca95c09b2c54281f234580a85fb1555409fba377061eb5643669ac5c921b13b563aa53ee11c50f0667d              480 main/binary-amd64/Packages.gz
+-----BEGIN PGP SIGNATURE-----
+
+iQIzBAEBCgAdFiEEhmxKIRYJg60Kyucdo6F48+gZdRkFAmkfBDgACgkQo6F48+gZ
+dRm2SA/9ElNRM7zICtgqdi5lKgzDhBbdxjWFthZ+APoPfeTsajS4ggC68tVRQ8Qq
+YpBl97rkl6ps6eO0mxKVlq7jRwNzUaFtVoYzyv2qgq1h+DVZclH2jROR9wve4ar2
++3LuxX+D3pncrGAyqS5qw24x3336OPkZOu/Pv5zpkmbcz/izXRaVmp2cenabNieZ
+2H9W2p01J+HYyd7DMsL1S9qyOUFsmJUaPpmHDLKtfSQ9X1UNP1YL/pdhA1szE6k0
+YfBW+43e+ft4Jc5pD0c/EoIK42/IRDiLAmpK7z0NgiutWRcrrCxu1a2F/iOJ04Hj
+9GJwGASLZZc9Q0E1XTs24MIzVYD4widokfcw2ACJJl+Lwko6ePo0XblmrRQxcK2O
+N3M2VsiuLT4w3llZYTAWJ2l3CPTRtEDszUD+S7jz2Kb8jvyzn8kdaPPaC6fjQz3A
+9/zS8Hhb00PbWNNix818rvePRTLF74xUOItBB5AmljHcFAnsW1cb3lzxZ99CS9D6
+krjRcJjYCbgTb0GCoeAmM7GxbsUFJugFQ0c3aA3W77Mpd2VuF/IGLHq7nNFLpYcS
+yOdPzL8u6ORhecCLU6M3FbNOTqw57f1N04ZYiLZ5fELj7Qq4d/0eLCSww7+irXBU
+3v/+wgYvGrrFGkOtllbaV6HD4qhE2Zrs2ZfZ5Xmpzp4cEHiBpE0=
+=Vm7c
+-----END PGP SIGNATURE-----
