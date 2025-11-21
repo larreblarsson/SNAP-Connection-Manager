@@ -1577,13 +1577,24 @@ class SnapConnectionManager(Gtk.Application):
         # This Tcl code catches the Window Resize signal (WINCH) and
         # forces the inner SSH PTY to match the outer VTE PTY dimensions.
         resize_trap = [
-            "\n# --- Sync Window Size with SSH ---\n",
-            "trap {\n",
-            "  set rows [stty rows]\n",
-            "  set cols [stty columns]\n",
-            "  stty rows $rows columns $cols < $spawn_out(slave,name)\n",
-            "} WINCH\n\n"
+            "\n# --- Robust Window Size Syncing ---\n",
+            "proc sync_term_size {} {\n",
+            "    # Tcl requires us to explicitly import global variables inside a proc\n",
+            "    global spawn_out\n", 
+            "\n",
+            "    # Check if the slave channel exists before trying to resize it\n",
+            "    if {[info exists spawn_out(slave,name)]} {\n",
+            "        set rows [stty rows]\n",
+            "        set cols [stty columns]\n",
+            "        stty rows $rows columns $cols < $spawn_out(slave,name)\n",
+            "    }\n",
+            "}\n\n",
+            "# Trap the resize signal (WINCH) to call our procedure\n",
+            "trap { sync_term_size } WINCH\n\n",
+            "# Force an immediate sync right now\n",
+            "sync_term_size\n\n"
         ]
+
 
         final_lines = list(lines)
         
@@ -1602,6 +1613,8 @@ class SnapConnectionManager(Gtk.Application):
             header.extend(resize_trap)
             
         script_content = "".join(header + final_lines)
+
+
 
         tf = None
         try:
