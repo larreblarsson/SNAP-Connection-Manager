@@ -1573,6 +1573,36 @@ class SnapConnectionManager(Gtk.Application):
         header.append("set timeout -1\n")
         script_content = "".join(header + lines)
 
+        #NEW: RESIZE TRAP LOGIC
+        # This Tcl code catches the Window Resize signal (WINCH) and
+        # forces the inner SSH PTY to match the outer VTE PTY dimensions.
+        resize_trap = [
+            "\n# --- Sync Window Size with SSH ---\n",
+            "trap {\n",
+            "  set rows [stty rows]\n",
+            "  set cols [stty columns]\n",
+            "  stty rows $rows columns $cols < $spawn_out(slave,name)\n",
+            "} WINCH\n\n"
+        ]
+
+        final_lines = list(lines)
+        
+        # We must insert the trap AFTER the 'spawn' command, because 
+        # $spawn_out(slave,name) is only created after spawn runs.
+        spawn_index = -1
+        for i, line in enumerate(final_lines):
+            if line.strip().startswith("spawn"):
+                spawn_index = i
+                break
+        
+        if spawn_index != -1:
+            final_lines[spawn_index+1:spawn_index+1] = resize_trap
+        else:
+            # Fallback: append to header if no spawn found (unlikely)
+            header.extend(resize_trap)
+            
+        script_content = "".join(header + final_lines)
+
         tf = None
         try:
             # Write script to a temporary file
