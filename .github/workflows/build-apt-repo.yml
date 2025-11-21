@@ -65,7 +65,7 @@ jobs:
           # Generate Release
           apt-ftparchive release ${REPO_DIR}/dists/${CODENAME} > ${REPO_DIR}/dists/${CODENAME}/Release
 
-          # Sign Release
+          # Sign Release 
           gpg --batch --yes --clearsign -o ${REPO_DIR}/dists/${CODENAME}/InRelease ${REPO_DIR}/dists/${CODENAME}/Release
           gpg --batch --yes --armor --detach-sign -o ${REPO_DIR}/dists/${CODENAME}/Release.gpg ${REPO_DIR}/dists/${CODENAME}/Release
 
