@@ -1,6 +1,6 @@
 snap-connection-manager (1.2.1-1) stable; urgency=medium
 
-  * Initial release of SNAP Connection Manager.
+  * Initial APT repository release of SNAP Connection Manager.
 
- -- Tomas Larsson <you@example.com>  Wed, 19 Nov 2025 14:40:00 +0100
+ -- Tomas Larsson <larre.b.larsson@gmail.com>  Wed, 19 Nov 2025 14:40:00 +0100
 

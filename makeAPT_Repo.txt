@@ -1,3 +1,29 @@
+#####################
+### New for APT Repository
+##
+snap-connection-manager/
+├── src/
+│   └── snap_connection_manager.py
+├── data/
+│   ├── snap_connection_manager.desktop
+│   └── icons/
+│       ├── snap_icon.png
+│       └── hicolor/512x512/apps/snap_icon.png
+├── docs/
+│   ├── Disclaimer.txt
+│   ├── user_guide.html
+│   ├── readme.md
+│   ├── folder.png
+│   └── server.png
+└── debian/
+    ├── control
+    ├── rules
+    ├── changelog
+    └── install
+
+
+
+
 #Copy the latest snap_connection_manager.py to binary folder in the debian package and rename it then move to that folder
 cp snap_connection_manager.py snap_connection_manager_1.2.1/usr/bin/snap_connection_manager_1.2.1.py
         
