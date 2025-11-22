@@ -18,8 +18,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y devscripts build-essential debhelper \
             python3-all python3-gi gir1.2-gtk-3.0 gir1.2-vte-2.91 \
-            gnupg apt-utils apt-ftparchive
+            gnupg apt-utils
 
+      - name: Check apt-ftparchive
+        run: which apt-ftparchive && apt-ftparchive --version
+        
       - name: Bump Debian changelog version
         run: |
           RAW_VERSION=${GITHUB_REF_NAME}
