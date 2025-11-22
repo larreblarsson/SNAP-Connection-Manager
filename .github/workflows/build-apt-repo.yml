@@ -20,6 +20,9 @@ jobs:
             python3-all python3-gi gir1.2-gtk-3.0 gir1.2-vte-2.91 \
             gnupg apt-utils
 
+      - name: Check apt-ftparchive
+        run: which apt-ftparchive && apt-ftparchive --version
+
       - name: Bump Debian changelog version
         run: |
           RAW_VERSION=${GITHUB_REF_NAME}
@@ -46,28 +49,40 @@ jobs:
         run: |
           REPO_DIR=repo
           CODENAME=stable
-          PACKAGE_DEB=$(ls -t ../*.deb | head -n1)
+          PACKAGE_DEB=$(ls -t ../snap-connection-manager*.deb | head -n1)
 
+          # Clean old repo contents
+          rm -rf ${REPO_DIR}
           mkdir -p ${REPO_DIR}/pool
           mkdir -p ${REPO_DIR}/dists/${CODENAME}/main/binary-amd64
           mkdir -p ${REPO_DIR}/dists/${CODENAME}/main/binary-all
 
           cp ${PACKAGE_DEB} ${REPO_DIR}/pool/
 
+          cd ${REPO_DIR}
+
           # Generate Packages for amd64
-          apt-ftparchive packages ${REPO_DIR}/pool > ${REPO_DIR}/dists/${CODENAME}/main/binary-amd64/Packages
-          gzip -c ${REPO_DIR}/dists/${CODENAME}/main/binary-amd64/Packages > ${REPO_DIR}/dists/${CODENAME}/main/binary-amd64/Packages.gz
+          apt-ftparchive packages pool > dists/${CODENAME}/main/binary-amd64/Packages
+          gzip -c dists/${CODENAME}/main/binary-amd64/Packages > dists/${CODENAME}/main/binary-amd64/Packages.gz
 
           # Generate Packages for all
-          apt-ftparchive packages ${REPO_DIR}/pool > ${REPO_DIR}/dists/${CODENAME}/main/binary-all/Packages
-          gzip -c ${REPO_DIR}/dists/${CODENAME}/main/binary-all/Packages > ${REPO_DIR}/dists/${CODENAME}/main/binary-all/Packages.gz
+          apt-ftparchive packages pool > dists/${CODENAME}/main/binary-all/Packages
+          gzip -c dists/${CODENAME}/main/binary-all/Packages > dists/${CODENAME}/main/binary-all/Packages.gz
 
           # Generate Release
-          apt-ftparchive release ${REPO_DIR}/dists/${CODENAME} > ${REPO_DIR}/dists/${CODENAME}/Release
+          apt-ftparchive release dists/${CODENAME} > dists/${CODENAME}/Release
 
-          # Sign Release 
-          gpg --batch --yes --clearsign -o ${REPO_DIR}/dists/${CODENAME}/InRelease ${REPO_DIR}/dists/${CODENAME}/Release
-          gpg --batch --yes --armor --detach-sign -o ${REPO_DIR}/dists/${CODENAME}/Release.gpg ${REPO_DIR}/dists/${CODENAME}/Release
+          # Sign Release with loopback pinentry
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" \
+            --clearsign -o dists/${CODENAME}/InRelease dists/${CODENAME}/Release
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" \
+            --armor --detach-sign -o dists/${CODENAME}/Release.gpg dists/${CODENAME}/Release
+
+          # Debug: show version in Packages
+          grep Version dists/${CODENAME}/main/binary-amd64/Packages
+          grep Version dists/${CODENAME}/main/binary-all/Packages
+        env:
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
@@ -76,3 +91,8 @@ jobs:
           publish_dir: repo
           publish_branch: gh-pages
           force_orphan: true
+
+      - name: Verify published Packages
+        run: |
+          curl -s https://larreblarsson.github.io/SNAP-Connection-Manager/dists/stable/main/binary-amd64/Packages | grep Version
+
