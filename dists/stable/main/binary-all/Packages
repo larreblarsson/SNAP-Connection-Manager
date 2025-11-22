@@ -1,0 +1,19 @@
+Package: snap-connection-manager
+Architecture: amd64
+Version: 1.2.1-1
+Priority: optional
+Section: utils
+Maintainer: Tomas Larsson <larre.b.larsson@gmail.com>
+Installed-Size: 11
+Depends: python3, python3-gi, gir1.2-gtk-3.0, gir1.2-vte-2.91
+Filename: pool/snap-connection-manager_1.2.1-1_amd64.deb
+Size: 2396
+MD5sum: 566d4e42fe516dd5a8ce7c6db2bcea45
+SHA1: b71d39593bb579ae613275ade3279bf538ca69b7
+SHA256: 9f664c4fd18cca10113a483a45c1bb6bfa905aa23eb22df0aa8d00052e7080af
+SHA512: c95665dca5581d14a6621fe7c86ca09f64700971a4c4784097c25c0c93a448398096dc9f93e16a19229dc085c95a94751c5ce0636e0b975838115a7006c23221
+Homepage: https://github.com/larreblarsson/SNAP-Connection-Manager
+Description: Simple SSH/SFTP connection manager with GTK interface
+ A GTK-based SSH/SFTP manager that provides a user-friendly interface
+ for managing connections. Includes terminal integration and file transfer.
+
