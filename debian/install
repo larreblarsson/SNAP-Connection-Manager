@@ -1,9 +1,9 @@
 src/snap_connection_manager.py usr/bin/
 data/snap_connection_manager.desktop usr/share/applications/
 data/icons/hicolor/512x512/apps/snap_icon.png usr/share/icons/hicolor/512x512/apps/
-docs/Disclaimer.txt usr/share/snap-connection-manager/
-docs/user_guide.html usr/share/snap-connection-manager/
-docs/readme.md usr/share/snap-connection-manager/
-docs/folder.png usr/share/snap-connection-manager/
-docs/server.png usr/share/snap-connection-manager/
+docs/Disclaimer.txt usr/share/snap_connection_manager/
+docs/user_guide.html usr/share/snap_connection_manager/
+docs/readme.md usr/share/snap_connection_manager/
+docs/folder.png usr/share/snap_connection_manager/
+docs/server.png usr/share/snap_connection_manager/
 
