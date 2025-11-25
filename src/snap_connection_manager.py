@@ -356,6 +356,10 @@ class SnapConnectionManager(Gtk.Application):
         self.folder_icon = GdkPixbuf.Pixbuf.new_from_file(FOLDER_ICON)
         self.server_icon = GdkPixbuf.Pixbuf.new_from_file(SERVER_ICON)
 
+        self.rename_timer = None 
+        self.rename_path = None      # The specific path currently allowed to edit
+        self.deferred_path = None    # The path waiting for the timer        
+
         # register actions
         for name, handler in (
             ("import",   self.on_import),
@@ -611,12 +615,16 @@ class SnapConnectionManager(Gtk.Application):
         # handle the drop (correct signal name)
         self.tree.connect("drag-data-received",  self.on_tree_row_dropped)
 
+        self.tree.connect("key-press-event", self.on_tree_key_press)
+
         # Cell renderers & column with inline‐rename for folders
         pix_renderer = Gtk.CellRendererPixbuf()
         txt_renderer = Gtk.CellRendererText()
 
         txt_renderer.set_property("editable", False)
-        txt_renderer.connect("edited", self._on_folder_cell_edited)
+        txt_renderer.connect("edited", self._on_cell_edited)
+
+        txt_renderer.connect("editing-canceled", self._on_editing_canceled)
 
         col = Gtk.TreeViewColumn()
         col.pack_start(pix_renderer, False)
@@ -626,7 +634,7 @@ class SnapConnectionManager(Gtk.Application):
         col.add_attribute(txt_renderer, "text",   1)
 
         # Only folder rows (not Session root) become editable
-        col.set_cell_data_func(txt_renderer, self._folder_cell_data_func)
+        col.set_cell_data_func(txt_renderer, self._cell_data_func)
 
         self.tree.append_column(col)
         self.tree.connect("row-activated", self.on_tree_activate)
@@ -1133,8 +1141,7 @@ class SnapConnectionManager(Gtk.Application):
         else:
             dlg.destroy()
 
-
-    # ── File Menu: Export Servers ───────────────────────────────────────
+# ── File Menu: Export Servers ───────────────────────────────────────
     def on_export(self, action, param):
         # Pass self.win as parent for dialogs called from UI actions
         dlg = Gtk.FileChooserDialog(
@@ -1160,8 +1167,32 @@ class SnapConnectionManager(Gtk.Application):
         filt_gpg.add_pattern("*.gpg")
         dlg.add_filter(filt_gpg)
     
+        # Set default name initially
         dlg.set_current_name("ssh_servers_export.json")
-    
+
+        def _on_filter_changed(dialog, pspec):
+            current_filter = dialog.get_filter()
+            current_name = dialog.get_current_name()
+            
+            if not current_filter or not current_name:
+                return
+
+            # Strip existing known extensions
+            base_name = current_name
+            if base_name.lower().endswith(".json"):
+                base_name = base_name[:-5]
+            elif base_name.lower().endswith(".gpg"):
+                base_name = base_name[:-4]
+            
+            # Apply new extension based on selected filter
+            if current_filter.get_name() == "GPG Encrypted Files":
+                dialog.set_current_name(f"{base_name}.gpg")
+            elif current_filter.get_name() == "JSON files":
+                dialog.set_current_name(f"{base_name}.json")
+
+        # Connect the signal "notify::filter" to our handler
+        dlg.connect("notify::filter", _on_filter_changed)
+
         if dlg.run() == Gtk.ResponseType.OK:
             filename = dlg.get_filename()
             dlg.destroy()
@@ -1438,6 +1469,52 @@ class SnapConnectionManager(Gtk.Application):
         self.reload_folders()
         self.populate_tree()
         self.tree.expand_row(Gtk.TreePath.new_from_string("0"), False)
+
+    def on_tree_key_press(self, tree, event):
+        """
+        Handles keyboard shortcuts on the TreeView:
+        - Delete: Deletes selected item
+        - Ctrl+C: Copy Server
+        - Ctrl+V: Paste Server
+        """
+        # Check if Control key is held down
+        is_ctrl = (event.state & Gdk.ModifierType.CONTROL_MASK)
+
+        # ── Handle Ctrl+C (Copy) ──
+        if is_ctrl and event.keyval == Gdk.KEY_c:
+            # We call the existing handler directly. 
+            # Note: on_copy_server handles its own validation 
+            # (e.g., checking if a server is actually selected).
+            self.on_copy_server(None, None)
+            return True # Consume event
+
+        # ── Handle Ctrl+V (Paste) ──
+        if is_ctrl and event.keyval == Gdk.KEY_v:
+            # Only try to paste if we actually have something copied
+            if hasattr(self, "_copied_server"):
+                self.on_paste_server(None, None)
+            return True # Consume event
+
+        # ── Handle Delete Key (Existing Logic) ──
+        if event.keyval == Gdk.KEY_Delete:
+            selection = tree.get_selection()
+            model, it = selection.get_selected()
+            
+            if not it:
+                return False
+
+            node, val = model.get_value(it, 2)
+            
+            if node == "folder":
+                if val == ROOT_FOLDER: return False
+                self.on_delete_folder(None, None)
+                return True
+            
+            elif node == "server":
+                self.on_delete_server(None, None)
+                return True
+
+        return False
 
     # ── Connect Actions (SSH & SFTP) ─────────────────────────────────────────
     def on_ssh(self, action, param):
@@ -1761,26 +1838,57 @@ class SnapConnectionManager(Gtk.Application):
         save_settings(self.settings)
         self._info("Disclaimer will be shown again on next launch.")
 
-    # catch right-clicks and popup a menu
     def on_tree_button_press(self, tree, event):
+        # 1. Handle Right Click
         if event.button == Gdk.BUTTON_SECONDARY:
-            # figure out what was clicked
             x, y = int(event.x), int(event.y)
-            hit = tree.get_path_at_pos(x, y)
-            if not hit:
+            path_info = tree.get_path_at_pos(x, y)
+            if path_info:
+                path, col, cx, cy = path_info
+                tree.grab_focus()
+                tree.set_cursor(path, col, False)
+                model, it = tree.get_selection().get_selected()
+                node, val = model.get_value(it, 2)
+                menu = self._create_context_menu(node, val)
+                menu.popup_at_pointer(event)
+                return True
+            return False
+
+        # 2. Handle Left Click (Smart Rename Logic)
+        if event.button == Gdk.BUTTON_PRIMARY:
+            # Always cancel any pending rename if a new click happens
+            if self.rename_timer:
+                GLib.source_remove(self.rename_timer)
+                self.rename_timer = None
+                self.deferred_path = None
+
+            # If Double Click -> Let default handler run (Connect)
+            if event.type == Gdk.EventType._2BUTTON_PRESS:
+                return False 
+
+            # Check what we clicked
+            path_info = tree.get_path_at_pos(int(event.x), int(event.y))
+            if not path_info: return False
+            path, col, cx, cy = path_info
+
+            # Check if this row is ALREADY selected
+            selection = tree.get_selection()
+            model, rows = selection.get_selected_rows()
+            
+            is_selected = False
+            for r in rows:
+                if r == path:
+                    is_selected = True
+                    break
+            
+            if is_selected:
+                # Clicked on already selected item -> Start Timer
+                # If no second click comes in 500ms, _trigger_rename runs
+                self.deferred_path = path
+                self.rename_timer = GLib.timeout_add(500, self._trigger_rename)
+                # We return False to allow the click to update focus/selection normally
                 return False
-            path, col, cx, cy = hit
-            tree.grab_focus()
-            tree.set_cursor(path, col, False)
-
-            # get the selected node info
-            model, it = tree.get_selection().get_selected()
-            node, val = model.get_value(it, 2)
-
-            # build & show the context menu
-            menu = self._create_context_menu(node, val)
-            menu.popup_at_pointer(event)
-            return True
+        
         return False
 
     # build a context menu based on whether it's a folder, server or root
@@ -1833,60 +1941,91 @@ class SnapConnectionManager(Gtk.Application):
         menu.show_all()
         return menu
 
-    # natural_key already in your file above
-    
-    def _folder_cell_data_func(self, column, renderer, model, tree_iter, data):
-        """
-        Only user-defined folders (not the root Session) are inline-editable.
-        """
+     # ── In-line Renaming Logic (Click-Wait-Click) ─────────────────────────────
+    def _cell_data_func(self, column, renderer, model, tree_iter, data):
         node, val = model.get_value(tree_iter, 2)
-        editable = (node == "folder" and val in self.user_folders)
-        renderer.set_property("editable", editable)
+        
+        is_editable = False
+        
+        # Folders: Always editable (or you can apply the same logic if desired)
+        if node == "folder" and val in self.user_folders:
+            is_editable = True
+            
+        # Servers: Only editable if we explicitly triggered it via the Timer
+        elif node == "server":
+            path = model.get_path(tree_iter)
+            if self.rename_path and self.rename_path == path:
+                is_editable = True
+        
+        renderer.set_property("editable", is_editable)
 
-    def _on_folder_cell_edited(self, widget, path, new_text):
-        """
-        Validate and commit an inline rename of a user-defined folder.
-        """
-        it = self.store.get_iter(path)
-        node, old_name = self.store.get_value(it, 2)
+    def _trigger_rename(self):
+        """Called by the timer to enable editing."""
+        self.rename_timer = None
+        if not self.deferred_path: return False
+        
+        self.rename_path = self.deferred_path
+        self.deferred_path = None
+        
+        # Focus the cell and start editing
+        # We assume the text column is the first one (column 0)
+        col = self.tree.get_column(0)
+        self.tree.set_cursor(self.rename_path, col, True) # True = start editing
+        return False
 
-        # Only allow renaming of folders in user_folders
-        if node != "folder" or old_name not in self.user_folders:
-            return
+    def _on_editing_canceled(self, renderer):
+        """Reset state if user presses Escape."""
+        self.rename_path = None
 
+    def _on_cell_edited(self, widget, path_str, new_text):
+        """Validate and commit the rename."""
+        # 1. Always reset the edit state first
+        self.rename_path = None
+        
+        it = self.store.get_iter(path_str)
+        node_type, payload = self.store.get_value(it, 2)
         new_name = new_text.strip()
-        # No-op if name didn't change
-        if new_name == old_name:
-            return
+        
+        # [Existing Validation Logic ...]
+        if node_type == "folder":
+            old_name = payload
+            if old_name not in self.user_folders: return
+            if not new_name or new_name == old_name: return
+            if new_name in self.user_folders:
+                return self._error(f"Folder '{new_name}' already exists.")
 
-        if not new_name:
-            self._error("Folder name cannot be empty.")
-            return
+            idx = self.user_folders.index(old_name)
+            self.user_folders[idx] = new_name
+            self.settings["folders"] = self.user_folders
+            save_settings(self.settings)
 
-        if new_name in self.user_folders:
-            self._error(f"Folder '{new_name}' already exists.")
-            return
+            for s in self.servers:
+                if s.get("folder") == old_name:
+                    s["folder"] = new_name
+            try:
+                save_servers(self.servers, self.master_passphrase)
+            except Exception as e:
+                self._error(f"Failed to save servers: {e}")
 
-        # 1) Update the user_folders list & save settings
-        idx = self.user_folders.index(old_name)
-        self.user_folders[idx] = new_name
-        self.settings["folders"] = self.user_folders
-        save_settings(self.settings) # No passphrase needed for settings
+        elif node_type == "server":
+            idx = payload
+            old_name = self.servers[idx]["name"]
+            if not new_name or new_name == old_name: return
+            
+            if any(s["name"] == new_name for i, s in enumerate(self.servers) if i != idx):
+                return self._error(f"A server named '{new_name}' already exists.")
 
-        # 2) Update any servers assigned to this folder & save
-        for s in self.servers:
-            if s.get("folder") == old_name:
-                s["folder"] = new_name
-        try:
-            save_servers(self.servers, self.master_passphrase) # UPDATED CALL
-        except Exception as e:
-            self._error(f"Failed to save servers after folder rename: {e}")
+            self.servers[idx]["name"] = new_name
+            try:
+                save_servers(self.servers, self.master_passphrase)
+            except Exception as e:
+                self._error(f"Failed to save server rename: {e}")
 
-        # 3) Rebuild and refresh the tree view
+        # Refresh UI
         self.reload_folders()
         self.populate_tree()
-        self.tree.expand_row(Gtk.TreePath.new_from_string("0"), False)
-
+        self.tree.expand_to_path(Gtk.TreePath.new_from_string(path_str))
+        
     def on_user_guide(self, action, param):
             """
             Opens the user guide by starting a local web server and pointing
