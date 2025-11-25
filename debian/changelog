@@ -1,3 +1,13 @@
+snap-connection-manager (1.2.2-1) stable; urgency=medium
+
+  * New release 1.2.2
+  * Inline server name change added
+  * At export config when changing from default clear text json to encrypted gpg the file name the extenstion on from .json to .gpg
+  * Introduced Delete server and folders at push on Delete key on keyboard
+  * Introduced Ctrl C and Ctrl V for copy paste servers
+  
+ -- Tomas Larsson <larre.b.larsson@gmail.com>  Thu, 25 Nov 2025 07:00:00 +0100
+
 snap-connection-manager (1.2.1-1) stable; urgency=medium
 
   * Initial APT repository release of SNAP Connection Manager.
