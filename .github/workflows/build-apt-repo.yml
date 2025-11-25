@@ -69,8 +69,8 @@ jobs:
           apt-ftparchive packages pool > dists/${CODENAME}/main/binary-all/Packages
           gzip -c dists/${CODENAME}/main/binary-all/Packages > dists/${CODENAME}/main/binary-all/Packages.gz
 
-          # Generate Release
-          apt-ftparchive release dists/${CODENAME} > dists/${CODENAME}/Release
+          # Generate Release with config
+           apt-ftparchive -c .github/apt-release.conf release dists/${CODENAME} > dists/${CODENAME}/Release
 
           # Sign Release with loopback pinentry
           gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" \

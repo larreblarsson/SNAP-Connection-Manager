@@ -1,3 +1,9 @@
+snap-connection-manager (1.2.3-1) stable; urgency=medium
+
+  * Fixed error at atp update
+  
+ -- Tomas Larsson <larre.b.larsson@gmail.com>  Thu, 25 Nov 2025 07:00:00 +0100
+
 snap-connection-manager (1.2.2-1) stable; urgency=medium
 
   * New release 1.2.2
