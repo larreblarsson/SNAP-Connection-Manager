@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Snap Connection Manager
+Exec=python3 /usr/bin/snap_connection_manager.py
+Icon=/usr/share/icons/hicolor/512x512/apps/snap_icon.png
+Terminal=false
+Type=Application
+StartupWMClass=snap_connection_manager.py
+Categories=Utility;
