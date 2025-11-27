@@ -539,6 +539,7 @@ class SnapConnectionManager(Gtk.Application):
             "File":    [
                 ("Import…", self.on_import),
                 ("Export…", self.on_export),
+                ("Global Settings…", self.on_global_settings),                
                 ("Change Passphrase…", self.on_change_passphrase),
                 ("Quit",    self.on_quit),
             ],
@@ -1243,6 +1244,133 @@ class SnapConnectionManager(Gtk.Application):
         else:
             dlg.destroy()
 
+    def on_global_settings(self, action, param):
+            """
+            Opens a dialog to configure application-wide defaults for new servers.
+            """
+            dlg = Gtk.Dialog(title="Global Settings", transient_for=self.win, modal=True)
+            dlg.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL, Gtk.STOCK_OK, Gtk.ResponseType.OK)
+            dlg.set_default_response(Gtk.ResponseType.OK)
+            dlg.set_default_size(500, 450)
+            
+            content = dlg.get_content_area()
+            grid = Gtk.Grid(column_spacing=12, row_spacing=12, margin=20)
+            content.add(grid)
+    
+            # Helper to read current global setting or fall back to factory default
+            def get_def(key, factory):
+                return self.settings.get(key, factory)
+    
+            row = 0
+            
+            # 1. Palette
+            lbl_pal = Gtk.Label(label="Default Palette:", halign=Gtk.Align.START)
+            pal_cb = Gtk.ComboBoxText()
+            pal_cb.set_hexpand(True)
+            for p in ["None", "Tango", "Solarized Light", "Solarized Dark", "GNOME"]:
+                pal_cb.append_text(p)
+            current_pal = get_def("global_palette", "None")
+            try: pal_cb.set_active(["None", "Tango", "Solarized Light", "Solarized Dark", "GNOME"].index(current_pal))
+            except: pal_cb.set_active(0)
+            
+            grid.attach(lbl_pal, 0, row, 1, 1); grid.attach(pal_cb, 1, row, 1, 1); row += 1
+    
+            # 2. Scheme
+            lbl_sch = Gtk.Label(label="Default Scheme:", halign=Gtk.Align.START)
+            sch_cb = Gtk.ComboBoxText()
+            for name in BUILTIN_SCHEMES.keys():
+                sch_cb.append_text(name)
+            current_sch = get_def("global_scheme", "Black on light yellow")
+            try: sch_cb.set_active(list(BUILTIN_SCHEMES.keys()).index(current_sch))
+            except: sch_cb.set_active(0)
+            
+            grid.attach(lbl_sch, 0, row, 1, 1); grid.attach(sch_cb, 1, row, 1, 1); row += 1
+    
+            # 3. Text Color
+            lbl_fg = Gtk.Label(label="Default Text Color:", halign=Gtk.Align.START)
+            btn_fg = Gtk.ColorButton()
+            fg_color = Gdk.RGBA(); fg_color.parse(get_def("global_fg", "#000000"))
+            btn_fg.set_rgba(fg_color)
+            grid.attach(lbl_fg, 0, row, 1, 1); grid.attach(btn_fg, 1, row, 1, 1); row += 1
+    
+            # 4. Background Color
+            lbl_bg = Gtk.Label(label="Default Background:", halign=Gtk.Align.START)
+            btn_bg = Gtk.ColorButton()
+            bg_color = Gdk.RGBA(); bg_color.parse(get_def("global_bg", "#FFFFDD"))
+            btn_bg.set_rgba(bg_color)
+            grid.attach(lbl_bg, 0, row, 1, 1); grid.attach(btn_bg, 1, row, 1, 1); row += 1
+    
+            # 5. Font
+            lbl_font = Gtk.Label(label="Default Font:", halign=Gtk.Align.START)
+            en_font = Gtk.Entry(text=get_def("global_font", "Ubuntu Mono 12"))
+            btn_sel_font = Gtk.Button(label="Select")
+            def _choose_font(_):
+                fd = Gtk.FontChooserDialog(title="Select Default Font", transient_for=dlg)
+                fd.set_font(en_font.get_text())
+                if fd.run() == Gtk.ResponseType.OK:
+                    en_font.set_text(fd.get_font())
+                fd.destroy()
+            btn_sel_font.connect("clicked", _choose_font)
+            box_font = Gtk.Box(spacing=5)
+            box_font.pack_start(en_font, True, True, 0); box_font.pack_start(btn_sel_font, False, False, 0)
+            grid.attach(lbl_font, 0, row, 1, 1); grid.attach(box_font, 1, row, 1, 1); row += 1
+    
+            # 6. Buffer Lines
+            lbl_buf = Gtk.Label(label="Default Buffer Lines:", halign=Gtk.Align.START)
+            spin_buf = Gtk.SpinButton.new_with_range(100, 100000, 100)
+            spin_buf.set_value(int(get_def("global_scrollback", 10000)))
+            grid.attach(lbl_buf, 0, row, 1, 1); grid.attach(spin_buf, 1, row, 1, 1); row += 1
+    
+            # 7. Default Logging Folder (Replaces Reset Button)
+            grid.attach(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), 0, row, 2, 1); row += 1
+            
+            lbl_log = Gtk.Label(label="Default Log Folder:", halign=Gtk.Align.START)
+            # FileChooserButton in SELECT_FOLDER mode
+            btn_log_dir = Gtk.FileChooserButton(title="Select Log Folder", action=Gtk.FileChooserAction.SELECT_FOLDER)
+            current_log_dir = get_def("global_log_dir", "/tmp")
+            if os.path.exists(current_log_dir):
+                btn_log_dir.set_filename(current_log_dir)
+            else:
+                btn_log_dir.set_current_folder(os.path.expanduser("~"))
+    
+            grid.attach(lbl_log, 0, row, 1, 1); grid.attach(btn_log_dir, 1, row, 1, 1); row += 1
+    
+            # --- Handle Scheme Changes (Same as in Edit Server) ---
+            def on_scheme_changed(cb):
+                name = cb.get_active_text()
+                if name and name in BUILTIN_SCHEMES and BUILTIN_SCHEMES[name]:
+                    sch = BUILTIN_SCHEMES[name]
+                    f = Gdk.RGBA(); f.parse(sch["term_fg"]); btn_fg.set_rgba(f)
+                    b = Gdk.RGBA(); b.parse(sch["term_bg"]); btn_bg.set_rgba(b)
+                    p = sch["term_palette"]
+                    if p != "None":
+                        try: pal_cb.set_active(["None", "Tango", "Solarized Light", "Solarized Dark", "GNOME"].index(p))
+                        except: pass
+            sch_cb.connect("changed", on_scheme_changed)
+    
+            dlg.show_all()
+            response = dlg.run()
+            
+            if response == Gtk.ResponseType.OK:
+                # Save to self.settings
+                self.settings["global_palette"] = pal_cb.get_active_text()
+                self.settings["global_scheme"] = sch_cb.get_active_text()
+                self.settings["global_fg"] = btn_fg.get_rgba().to_string()
+                self.settings["global_bg"] = btn_bg.get_rgba().to_string()
+                self.settings["global_font"] = en_font.get_text()
+                self.settings["global_scrollback"] = int(spin_buf.get_value())
+                
+                # Save Log Directory
+                ldir = btn_log_dir.get_filename()
+                if ldir:
+                    self.settings["global_log_dir"] = ldir
+                
+                # Commit to disk
+                save_settings(self.settings)
+                self._info("Global settings saved. New servers will use these defaults.")
+    
+            dlg.destroy()
+
     def on_change_passphrase(self, action, param):
         # 0) Ensure we have servers in memory and a verified session passphrase
         if not getattr(self, "master_passphrase", None):
@@ -1893,53 +2021,64 @@ class SnapConnectionManager(Gtk.Application):
 
     # build a context menu based on whether it's a folder, server or root
     def _create_context_menu(self, node, val):
-        menu = Gtk.Menu()
-
-        # root Session node
-        if node == "folder" and val == ROOT_FOLDER:
-            mi = Gtk.MenuItem(label="Add Server")
-            mi.connect("activate", lambda w: self.on_add_server(None, None))
-            menu.append(mi)
-
-            mi = Gtk.MenuItem(label="New Folder")
-            mi.connect("activate", lambda w: self.on_new_folder(None, None))
-            menu.append(mi)
-
-        # any user-defined folder
-        elif node == "folder":
-            for lbl, fn in (
-                ("Add Server", self.on_add_server),
-                ("New Folder", self.on_new_folder),
-                ("Rename Folder", self.on_rename_folder),
-                ("Delete Folder", self.on_delete_folder),
-            ):
-                mi = Gtk.MenuItem(label=lbl)
-                mi.connect("activate", lambda w, f=fn: f(None, None))
+            menu = Gtk.Menu()
+    
+            # ─── FOLDER CONTEXT MENU ─────────────────────────────
+            if node == "folder":
+                # 1. Add Server (Available on all folders)
+                mi = Gtk.MenuItem(label="Add Server")
+                # We pass 'val' (the folder name) as the param to ensure we add to this specific folder
+                mi.connect("activate", lambda w: self.on_add_server(None, None)) 
                 menu.append(mi)
-
-        # a server
-        elif node == "server":
-            for lbl, fn in (
-                ("SSH",         self.on_ssh),
-                ("SFTP",        self.on_sftp),
-                ("Edit Server", self.on_edit_server),
-                ("Delete Server", self.on_delete_server),
-            ):
-                mi = Gtk.MenuItem(label=lbl)
-                mi.connect("activate", lambda w, f=fn: f(None, None))
+    
+                # 2. New Folder (Available on all folders)
+                mi = Gtk.MenuItem(label="New Folder")
+                mi.connect("activate", lambda w: self.on_new_folder(None, None))
                 menu.append(mi)
-
-            mi = Gtk.MenuItem(label="Copy Server")
-            mi.connect("activate", lambda w: self.on_copy_server(None, None))
-            menu.append(mi)
+    
+                # 3. Paste Server (NEW: Only if something is copied)
+                if hasattr(self, "_copied_server") and self._copied_server:
+                    mi = Gtk.MenuItem(label="Paste Server")
+                    # IMPORTANT: We pass 'val' (the folder name) as the second argument (param)
+                    # usage: handler(widget, user_data) -> on_paste_server(widget, folder_name)
+                    mi.connect("activate", self.on_paste_server, val)
+                    menu.append(mi)
+    
+                # Separator before destructive actions
+                menu.append(Gtk.SeparatorMenuItem())
+    
+                # 4. Rename/Delete (Only for user-defined folders, not Root)
+                if val != ROOT_FOLDER:
+                    mi = Gtk.MenuItem(label="Rename Folder")
+                    mi.connect("activate", lambda w: self.on_rename_folder(None, None))
+                    menu.append(mi)
+    
+                    mi = Gtk.MenuItem(label="Delete Folder")
+                    mi.connect("activate", lambda w: self.on_delete_folder(None, None))
+                    menu.append(mi)
+    
+            # ─── SERVER CONTEXT MENU ─────────────────────────────
+            elif node == "server":
+                # (Keep your existing server menu logic here)
+                # ...
+                # 1. Connect
+                mi = Gtk.MenuItem(label="Connect")
+                # NOTE: Ensure 'on_ssh' or your specific connect function name is correct here
+                mi.connect("activate", self.on_ssh, val) 
+                menu.append(mi)
                 
-            mi = Gtk.MenuItem(label="Paste Server")
-            mi.set_sensitive(hasattr(self, "_copied_server"))  # only if something copied
-            mi.connect("activate", lambda w: self.on_paste_server(None, None))
-            menu.append(mi)
-
-        menu.show_all()
-        return menu
+                # 2. Edit / Copy / Delete ...
+                for lbl, fn in (
+                    ("Edit Server", self.on_edit_server),
+                    ("Copy Server", self.on_copy_server),
+                    ("Delete Server", self.on_delete_server),
+                ):
+                    mi = Gtk.MenuItem(label=lbl)
+                    mi.connect("activate", lambda w, f=fn: f(None, None))
+                    menu.append(mi)
+    
+            menu.show_all()
+            return menu
 
      # ── In-line Renaming Logic (Click-Wait-Click) ─────────────────────────────
     def _cell_data_func(self, column, renderer, model, tree_iter, data):
@@ -2342,21 +2481,36 @@ class SnapConnectionManager(Gtk.Application):
         btn_reset = Gtk.Button(label="Reset to Defaults")
         
         def on_reset_defaults(_):
-            en_font.set_text(getattr(self, "DEFAULT_TERM_FONT", "Ubuntu Mono 12"))
-            fg = Gdk.RGBA(); fg.parse(getattr(self, "DEFAULT_TERM_FG", "#000000")); btn_fg.set_rgba(fg)
-            bg = Gdk.RGBA(); bg.parse(getattr(self, "DEFAULT_TERM_BG", "#FFFFDD")); btn_bg.set_rgba(bg)
-            pal_default = getattr(self, "DEFAULT_TERM_PALETTE", "None")
+            # Load from Global Settings (or fall back to factory defaults)
+            def_font = self.settings.get("global_font", "Ubuntu Mono 12")
+            def_fg   = self.settings.get("global_fg", "#000000")
+            def_bg   = self.settings.get("global_bg", "#FFFFDD")
+            def_pal  = self.settings.get("global_palette", "None")
+            def_buf  = self.settings.get("global_scrollback", 10000)
+            def_sch  = self.settings.get("global_scheme", "Black on light yellow")
+
+            en_font.set_text(def_font)
+            fg = Gdk.RGBA(); fg.parse(def_fg); btn_fg.set_rgba(fg)
+            bg = Gdk.RGBA(); bg.parse(def_bg); btn_bg.set_rgba(bg)
+            	
             try:
-                pal_cb.set_active(["None", "Tango", "Solarized Light", "Solarized Dark", "GNOME"].index(pal_default))
+                pal_cb.set_active(["None", "Tango", "Solarized Light", "Solarized Dark", "GNOME"].index(def_pal))
             except ValueError:
                 pal_cb.set_active(0)
-            spin_buf.set_value(getattr(self, "DEFAULT_TERM_SCROLLBACK", 1000))
+            
+            spin_buf.set_value(def_buf)
+            
             try:
-                idx_scheme = list(BUILTIN_SCHEMES.keys()).index("Black on light yellow")
-            except Exception:
+                # Find the scheme in the list
                 idx_scheme = 0
-            scheme_cb.set_active(idx_scheme)
-        
+                for i, name in enumerate(BUILTIN_SCHEMES.keys()):
+                    if name == def_sch:
+                        idx_scheme = i
+                        break
+                scheme_cb.set_active(idx_scheme)
+            except Exception:
+                scheme_cb.set_active(0)
+
         btn_reset.connect("clicked", on_reset_defaults)
         grid.attach(lbl_defaults, 0, row, 1, 1)
         grid.attach(btn_reset,   1, row, 1, 1)
@@ -2378,33 +2532,47 @@ class SnapConnectionManager(Gtk.Application):
                 scheme_cb.set_active(list(BUILTIN_SCHEMES.keys()).index(scheme_name))
             else:
                 scheme_cb.set_active(list(BUILTIN_SCHEMES.keys()).index("Custom"))
+
         if not cfg:
+            # Load Global Defaults
+            def_font = self.settings.get("global_font", "Ubuntu Mono 12")
+            def_fg   = self.settings.get("global_fg", "#000000")
+            def_bg   = self.settings.get("global_bg", "#FFFFDD")
+            def_pal  = self.settings.get("global_palette", "None")
+            def_buf  = self.settings.get("global_scrollback", 10000)
+            def_sch  = self.settings.get("global_scheme", "Black on light yellow")
+            
             # Font
-            en_font.set_text(DEFAULT_TERM_FONT)
+            en_font.set_text(def_font)
         
             # Colors
-            fg = Gdk.RGBA(); fg.parse(DEFAULT_TERM_FG); btn_fg.set_rgba(fg)
-            bg = Gdk.RGBA(); bg.parse(DEFAULT_TERM_BG); btn_bg.set_rgba(bg)
+            fg = Gdk.RGBA(); fg.parse(def_fg); btn_fg.set_rgba(fg)
+            bg = Gdk.RGBA(); bg.parse(def_bg); btn_bg.set_rgba(bg)
         
             # Palette
             try:
-                pal_cb.set_active(["None", "Tango", "Solarized Light", "Solarized Dark", "GNOME"].index(DEFAULT_TERM_PALETTE))
+                pal_cb.set_active(["None", "Tango", "Solarized Light", "Solarized Dark", "GNOME"].index(def_pal))
             except ValueError:
                 pal_cb.set_active(0)
         
             # Buffer
-            spin_buf.set_value(DEFAULT_TERM_SCROLLBACK)
+            spin_buf.set_value(def_buf)
         
             # Scheme
             try:
-                idx_scheme = list(BUILTIN_SCHEMES.keys()).index(DEFAULT_TERM_SCHEME)
-            except Exception:
                 idx_scheme = 0
-            scheme_cb.set_active(idx_scheme)
-
-
-
-        
+                for i, name in enumerate(BUILTIN_SCHEMES.keys()):
+                    if name == def_sch:
+                        idx_scheme = i
+                        break
+                scheme_cb.set_active(idx_scheme)
+            except Exception:
+                scheme_cb.set_active(0)
+                
+            # --- ALSO SET DEFAULT LOG PATH ---
+            def_log_dir = self.settings.get("global_log_dir", "/tmp")
+            log_entry.set_text(os.path.join(def_log_dir, "snapcm_log.txt"))
+       
         # --- Scheme change handler ---
         def on_scheme_changed(cb):
             idx = cb.get_active()
@@ -2719,37 +2887,65 @@ class SnapConnectionManager(Gtk.Application):
         self.log(f"Copied server '{self._copied_server['name']}' to clipboard.")
     
     def on_paste_server(self, action, param):
-        if not hasattr(self, "_copied_server"):
-            return self._info("No server copied.")
-        # Determine target folder from selection
-        folder = ROOT_FOLDER
-        model, it = self.tree.get_selection().get_selected()
-        if it:
-            node, val = model.get_value(it, 2)
-            if node == "folder":
-                folder = val
-            elif node == "server":
-                # same folder as selected server
-                folder = self.servers[val].get("folder", ROOT_FOLDER)
-        import copy
-        new_srv = copy.deepcopy(self._copied_server)
-        # Ensure new name is unique
-        base_name = new_srv["name"]
-        existing_names = {s["name"] for s in self.servers}
-        suffix = 1
-        while new_srv["name"] in existing_names:
-            new_srv["name"] = f"{base_name} Copy {suffix}"
-            suffix += 1
-        new_srv["folder"] = folder
-        self.servers.append(new_srv)
-        try:
-            save_servers(self.servers, self.master_passphrase)
-        except Exception as e:
-            return self._error(f"Failed to save after paste: {e}")
-        self.reload_folders()
-        self.populate_tree()
-        self.tree.expand_row(Gtk.TreePath.new_from_string("0"), False)
-        self.log(f"Pasted server as '{new_srv['name']}' into folder '{folder}'.")
+            """
+            param: Can be a folder name string (from context menu) or None (from key shortcut).
+            """
+            if not hasattr(self, "_copied_server") or not self._copied_server:
+                return self._info("No server copied.")
+    
+            target_folder = None
+    
+            # 1. Check if a specific target folder was passed (Context Menu)
+            if param and isinstance(param, str):
+                target_folder = param
+    
+            # 2. If no param, infer target from current selection (Ctrl+V)
+            else:
+                model, it = self.tree.get_selection().get_selected()
+                if it:
+                    node, val = model.get_value(it, 2)
+                    if node == "folder":
+                        target_folder = val
+                    elif node == "server":
+                        # If pasting onto a server, put it in that server's folder
+                        target_folder = self.servers[val].get("folder", ROOT_FOLDER)
+    
+            if not target_folder:
+                return self._info("Could not determine target folder.")
+    
+            # --- Perform the Paste ---
+            import copy
+            new_srv = copy.deepcopy(self._copied_server)
+            
+            # Create unique name
+            base_name = new_srv["name"]
+            existing_names = {s["name"] for s in self.servers}
+            
+            # If it's a direct copy, maybe append "Copy". If repeated, append number.
+            if base_name in existing_names:
+                new_name = f"{base_name} Copy"
+            else:
+                new_name = base_name
+    
+            suffix = 1
+            final_name = new_name
+            while final_name in existing_names:
+                final_name = f"{new_name} {suffix}"
+                suffix += 1
+                
+            new_srv["name"] = final_name
+            new_srv["folder"] = target_folder
+            
+            self.servers.append(new_srv)
+            try:
+                save_servers(self.servers, self.master_passphrase)
+            except Exception as e:
+                return self._error(f"Failed to save after paste: {e}")
+    
+            self.reload_folders()
+            self.populate_tree()
+            self.tree.expand_all() # Optional: ensure we see the new item
+            self.log(f"Pasted server as '{final_name}' into '{target_folder}'.")
 
     def apply_appearance_to_terminal(self, terminal, cfg):
         """Apply font, colors, palette and scrollback to a Vte.Terminal."""
