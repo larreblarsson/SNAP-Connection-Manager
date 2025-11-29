@@ -1,0 +1,48 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+Codename: stable
+Date: Sat, 29 Nov 2025 08:15:04 +0000
+Label: SNAP Connection Manager
+Origin: SNAP-Connection-Manager
+Suite: stable
+MD5Sum:
+ 11dc0fe4604d8210e5b0d46f81875af7              132 Release
+ 4b26fd19585b5eabba54ca232291f1b9              926 main/binary-all/Packages
+ 4365ab0284f375cbaf8e7fb66d575107              616 main/binary-all/Packages.gz
+ 4b26fd19585b5eabba54ca232291f1b9              926 main/binary-amd64/Packages
+ 4365ab0284f375cbaf8e7fb66d575107              616 main/binary-amd64/Packages.gz
+SHA1:
+ f175572f21719d0044f0dffcc1f31d2489a1eec6              132 Release
+ 7b860c83cf83914b9c456e5795d70ef7f4ba43e0              926 main/binary-all/Packages
+ b4039ccb1ea1d0b1e21cc6b41d3907bac8988236              616 main/binary-all/Packages.gz
+ 7b860c83cf83914b9c456e5795d70ef7f4ba43e0              926 main/binary-amd64/Packages
+ b4039ccb1ea1d0b1e21cc6b41d3907bac8988236              616 main/binary-amd64/Packages.gz
+SHA256:
+ 773c14fbbe5d07bba4adda89d1bea48529d3333b53a51e90b5cf91acb43419b5              132 Release
+ 497080eb8a530b332675879f93a39577d5babceb5af5758de78004c59cde2d67              926 main/binary-all/Packages
+ ce0490ca048d46e4b6e1a0a83e400202f922b8d13bea199609b61d66f4d2a7e5              616 main/binary-all/Packages.gz
+ 497080eb8a530b332675879f93a39577d5babceb5af5758de78004c59cde2d67              926 main/binary-amd64/Packages
+ ce0490ca048d46e4b6e1a0a83e400202f922b8d13bea199609b61d66f4d2a7e5              616 main/binary-amd64/Packages.gz
+SHA512:
+ ab9f398fde9feebca8e0d9acf521ab236b19ad8717c663c704482d7993fb7bb56003de5fb74733fd887adc8121d2633c266af680516d980987ff1dd7bf68263e              132 Release
+ 16f0e1c835b99214fa6a7dcd8ced0daee2efe67413a8919a1eae905fd3c4817e51932f29073863c36d9357b69d7ac5e7eef071a6ae353b9ee77f7328e055921d              926 main/binary-all/Packages
+ 5463f2f22dadf99850dcc31504a1c1efb84ae5b06bd40eafc8e0e651c930e15804c1f6356b80b14b09dc056f143f2110a587673e64b7330e75a6040705376cd4              616 main/binary-all/Packages.gz
+ 16f0e1c835b99214fa6a7dcd8ced0daee2efe67413a8919a1eae905fd3c4817e51932f29073863c36d9357b69d7ac5e7eef071a6ae353b9ee77f7328e055921d              926 main/binary-amd64/Packages
+ 5463f2f22dadf99850dcc31504a1c1efb84ae5b06bd40eafc8e0e651c930e15804c1f6356b80b14b09dc056f143f2110a587673e64b7330e75a6040705376cd4              616 main/binary-amd64/Packages.gz
+-----BEGIN PGP SIGNATURE-----
+
+iQIzBAEBCgAdFiEEhmxKIRYJg60Kyucdo6F48+gZdRkFAmkqq4gACgkQo6F48+gZ
+dRkQCA/+IlRKWN0LGXwPDCGDMu977CBh/iVZq203cFYArKhOT5h9GpVlB0aWi6J+
+xbggv2+G8AazYhs5ExBpfCVVAGFCZvfTyw0ajjNPcbql8AqzBf7GAM3OlslS8muR
+Ools/pw/Tu79CyjwSG0t51wVfMvbcYnEagnbj9UmyJfym8HRN/NOmtF//KwNiMt4
+WG/KOA87HH69Z+xL1NnolFQxxc8ph/BQYLey0iIQwpASnaZxJ9BW6roA9BAxe4zd
+S67TA7z41f30tNM3nvLlcSUqR5xA1plGiwA02Pks++7Lz+H+FcltGFHlSsRTb1A3
+pIt8BGBTZN25tuAEXsgM4KoYQwIfhh778YCtBUEskU63Ht8oVCJVfGQ8oTwpd7fc
+VdD8xx47bHWixTKlvQSQpAVMGYeXI3yLSI39egv2EdE3tY3VIPGSpNI31mLXF2EI
+eaGvSwufhVtI5X/8+pRwLZGOoHPyt+XT0+QvkNMNpj7vkLmtE/vbQgQHYJmWpBTK
+jfZ+sr/sIIyJBqEcBYi1QEWIdt6wvFGHkVQXUElgy6ENPtvleElYb74/nbQQHRQj
+RuOFheQ71x00qdqiFW5XXbNNyooT68h/rxm7ipQSy+rJzUeBCI8lnQGt4N7mStJO
+McI3HtglmrF1QT2DbAQSfCLdBJU9OlcyXqdiDrQCvu0nfuSnbiE=
+=CQWh
+-----END PGP SIGNATURE-----
