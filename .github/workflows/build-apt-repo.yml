@@ -100,7 +100,7 @@ jobs:
         id: changelog
         run: |
           echo 'RELEASE_BODY<<EOF' >> $GITHUB_ENV
-          echo "### ✨ Changes in version ${{ github.ref_name }}" >> $GITHUB_ENV
+          echo "### Changes in version ${{ github.ref_name }}" >> $GITHUB_ENV
           dpkg-parsechangelog --count 1 | grep '^ \*' | sed 's/^ \* /- /' >> $GITHUB_ENV
           echo 'EOF' >> $GITHUB_ENV
 

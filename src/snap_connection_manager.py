@@ -1835,6 +1835,12 @@ class SnapConnectionManager(Gtk.Application):
             term_window.set_modal(False) # Allows interaction with main window
             term_window.set_destroy_with_parent(True)
 
+            # Create a separate WindowGroup for this terminal.
+            # This ensures it remains interactive even when a Modal Dialog is open in the main app.
+            wg = Gtk.WindowGroup()
+            wg.add_window(term_window)
+            term_window._wg = wg  # Keep a reference so it doesn't get garbage collected
+
             terminal = Vte.Terminal()
             self.apply_appearance_to_terminal(terminal, cfg)
             # Connect the Key Press (for Ctrl+C/V)
@@ -1954,7 +1960,7 @@ class SnapConnectionManager(Gtk.Application):
             transient_for=parent_window, # Can be None
             modal=True,
             program_name=APP_TITLE,
-            version="1.2.0",
+            version="1.2.5",
             authors=["Copilot, Gemini, Tomas Larsson"],
             artists=["Tomas Larsson"],
             comments="A GTK-based SSH/SFTP session manager"
