@@ -87,7 +87,11 @@
                     <li><a href="#encryption-change-pass">Changing Your Passphrase</a></li>
                 </ul>
             </li>
-            <li><a href="#appearance">Appearance & Customization</a></li>
+            <li><a href="#appearance">Appearance & Customization</a>
+                <ul>
+                    <li><a href="#appearance-global">Global Settings</a></li>
+                </ul>
+            </li>
             <li><a href="#getting-started">Getting Started</a></li>
             <li><a href="#installation">Installation Instructions</a></li>
             <li><a href="#troubleshooting">Troubleshooting & Dependencies</a></li>
@@ -104,37 +108,43 @@
     <ul>
         <li><strong>Hierarchical Organization</strong>: Organize your servers into user-defined folders for clarity. Servers not assigned to a specific folder reside in the default <code>Session</code> root.</li>
         <li><strong>Full CRUD Operations</strong>: Easily <strong>Add</strong>, <strong>Edit</strong>, and <strong>Delete</strong> server configurations and folders through intuitive menus and right-click context menus.</li>
-        <li><strong>Drag-and-Drop</strong>: Reorder servers within a folder or move servers between folders simply by dragging and dropping them in the main list. The application intelligently maintains the visual order.</li>
-        <li><strong>Inline Folder Renaming</strong>: Quickly rename a folder by double-clicking its name in the tree view and pressing <code>Enter</code> to confirm.</li>
-        <li><strong>Copy & Paste Servers</strong>: Duplicate an existing server configuration with a simple copy/paste action, which intelligently renames the copy to avoid conflicts.</li>
-        <li><strong>Natural Sorting</strong>: All servers and folders are sorted using a natural alphanumeric algorithm (e.g., <code>server10</code> appears after <code>server9</code>), making lists easy to navigate.</li>
+        <li><strong>Inline Renaming</strong>: Quickly rename any folder or server directly in the tree view. Simply select the item, wait a brief moment, and click it again (slow double-click) to enter edit mode.</li>
+        <li><strong>Drag-and-Drop</strong>: Reorder servers within a folder or move servers between folders simply by dragging and dropping them in the main list.</li>
+        <li><strong>Copy & Paste</strong>:
+            <ul>
+                <li><strong>Via Menu</strong>: Use the right-click menu to Copy a server and Paste it into any folder.</li>
+                <li><strong>Via Shortcuts</strong>: Use <code>Ctrl+C</code> to copy a selected server and <code>Ctrl+V</code> to paste it.</li>
+            </ul>
+        </li>
+        <li><strong>Keyboard Shortcuts</strong>:
+            <ul>
+                <li><code>Delete</code>: Deletes the selected server or folder (with confirmation).</li>
+                <li><code>Ctrl+C</code> / <code>Ctrl+V</code>: Copy and Paste servers.</li>
+            </ul>
+        </li>
+        <li><strong>Natural Sorting</strong>: All servers and folders are sorted using a natural alphanumeric algorithm (e.g., <code>server10</code> appears after <code>server9</code>).</li>
     </ul>
 
     <h3 id="features-connection">2.2 Connection & Automation</h3>
     <ul>
-        <li><strong>Dual Protocol Support</strong>: Launch connections using either <strong>SSH</strong> (for interactive shell access) or <strong>SFTP</strong> (for file transfers) for any configured server.</li>
-        <li><strong>Embedded Terminal</strong>: Connections are launched in a new, dedicated terminal window powered by the VTE (Virtual Terminal Emulator) widget. This provides a native, feature-rich terminal experience separate from the main application.</li>
-        <li><strong>Flexible Authentication</strong>:
+        <li><strong>Dual Protocol Support</strong>: Launch connections using either <strong>SSH</strong> (for interactive shell access) or <strong>SFTP</strong> (for file transfers).</li>
+        <li><strong>Embedded VTE Terminal</strong>: Connections launch in a native, high-performance terminal window with advanced features:
             <ul>
-                <li><strong>Password-based</strong>: The application automatically handles password prompts using the <code>expect</code> utility.</li>
-                <li><strong>Key File-based</strong>: Specify the path to a private key file, which will be passed to the <code>ssh</code> or <code>sftp</code> command using the <code>-i</code> flag.</li>
+                <li><strong>Smart Copy/Paste</strong>: Use <code>Ctrl+C</code> to copy text (if text is highlighted) or send an interrupt signal (if nothing is highlighted). Use <code>Ctrl+V</code> to paste.</li>
+                <li><strong>Context Menu</strong>: Right-click anywhere in the terminal to access Copy and Paste options.</li>
+                <li><strong>Auto-Resize Sync</strong>: The terminal automatically synchronizes its dimensions with the remote host, preventing broken text wrapping when resizing windows.</li>
             </ul>
         </li>
-        <li><strong>Automated Login Sequences</strong>: For each server, you can define a series of "Expect/Send" steps. This is perfect for automating multi-step logins, entering <code>sudo</code> passwords, running initial commands, or navigating to specific directories upon connection.</li>
-        <li><strong>Advanced Port Forwarding</strong>: Configure port forwarding rules for each server directly within the UI:
-            <ul>
-                <li><strong>Local Forwarding (<code>-L</code>)</strong>: Access a service on a remote network as if it were on your local machine.</li>
-                <li><strong>Remote Forwarding (<code>-R</code>)</strong>: Expose a service on your local machine to a remote server.</li>
-                <li><strong>Dynamic Forwarding (<code>-D</code>)</strong>: Create a SOCKS proxy for dynamic, on-the-fly tunneling of your network traffic through the remote server.</li>
-            </ul>
-        </li>
+        <li><strong>Authentication</strong>: Supports both Password-based (automated via <code>expect</code>) and Key File-based (via <code>-i</code> flag) authentication.</li>
+        <li><strong>Automated Login Sequences</strong>: Define "Expect/Send" steps to automate complex login procedures, sudo prompts, or initial commands. You can also hide specific "Send" steps (like passwords) from the UI.</li>
+        <li><strong>Advanced Port Forwarding</strong>: Configure Local (<code>-L</code>), Remote (<code>-R</code>), and Dynamic (<code>-D</code>) forwarding rules visually.</li>
     </ul>
 
     <h3 id="features-data">2.3 Data Management & Logging</h3>
     <ul>
-        <li><strong>Encrypted Import/Export</strong>: Export all your servers and folder structures into a single file. You can choose between a standard plaintext <code>JSON</code> file or a securely encrypted <code>GPG</code> file, which can only be imported by another instance of the application using the same master passphrase.</li>
-        <li><strong>GUI Log Pane</strong>: A log view at the bottom of the main window provides real-time feedback on application actions, connection attempts, and errors.</li>
-        <li><strong>Per-Server Session Logging</strong>: For debugging or auditing purposes, you can enable logging for individual servers. The entire terminal output of a session will be saved to a specified file on your local disk.</li>
+        <li><strong>Encrypted Import/Export</strong>: Export your data to <code>JSON</code> (plaintext) or <code>GPG</code> (encrypted). The application intelligently switches the file extension based on your selection.</li>
+        <li><strong>GUI Log Pane</strong>: A log view at the bottom of the main window provides real-time feedback.</li>
+        <li><strong>Per-Server Session Logging</strong>: Enable logging for individual servers to save terminal output to a local file.</li>
     </ul>
 
     <h2 id="encryption">3. The "Super Safe" Encryption System</h2>
@@ -142,65 +152,52 @@
 
     <h3 id="encryption-how">3.1 How It Works</h3>
     <ol>
-        <li><strong>Master Passphrase Creation</strong>: On the very first launch, you are required to set a <strong>Master Passphrase</strong>. This is the single most important key to your data. <em>If you lose it, your data cannot be recovered.</em></li>
-        <li><strong>State-of-the-Art Hashing</strong>: Your Master Passphrase is never stored directly. Instead, it is converted into a secure hash using the <strong>PBKDF2-HMAC-SHA256</strong> algorithm.
-            <ul>
-                <li>A unique, cryptographically secure <strong>salt</strong> (16 bytes) is generated to protect against rainbow table attacks.</li>
-                <li>The hashing function is performed <strong>600,000 times</strong> (<code>iterations</code>). This high number makes brute-force attacks extremely slow and computationally expensive.</li>
-            </ul>
-        </li>
-        <li><strong>Symmetric GPG Encryption</strong>: Your actual server data (including hosts, usernames, passwords, key file paths, and auto-sequences) is saved in a file named <code>ssh_servers.json.gpg</code>. This file is symmetrically encrypted using the industry-standard <strong>AES256</strong> cipher via GnuPG (GPG). The key used for this encryption is your Master Passphrase.</li>
-        <li><strong>On-Demand Decryption</strong>: Each time you start the application, you must enter your Master Passphrase. This is used to decrypt <code>ssh_servers.json.gpg</code> in memory for the current session. When you close the application, the data only exists in its encrypted form on the disk.</li>
+        <li><strong>Master Passphrase Creation</strong>: On the very first launch, you are required to set a <strong>Master Passphrase</strong>.</li>
+        <li><strong>State-of-the-Art Hashing</strong>: Your passphrase is hashed using <strong>PBKDF2-HMAC-SHA256</strong> with a unique salt and 600,000 iterations.</li>
+        <li><strong>Symmetric GPG Encryption</strong>: Server data is stored in <code>ssh_servers.json.gpg</code>, encrypted using the <strong>AES256</strong> cipher via GnuPG.</li>
+        <li><strong>On-Demand Decryption</strong>: Data is only decrypted in memory while the application is running.</li>
     </ol>
 
     <h3 id="encryption-storage">3.2 Data Storage Location</h3>
-    <p>The application respects the XDG Base Directory Specification and stores its data in a hidden directory:</p>
     <ul>
         <li><strong>Path</strong>: <code>~/.local/share/snap_connection_manager/</code></li>
-        <li><strong>Files</strong>:
-            <ul>
-                <li><code>snap_cm_settings.json</code>: This file stores non-sensitive settings, your custom folder list, and the <strong>hash and salt</strong> of your master passphrase. The hash is computationally infeasible to reverse, protecting your actual passphrase.</li>
-                <li><code>ssh_servers.json.gpg</code>: This is the <strong>fully encrypted</strong> file containing all your sensitive server configurations.</li>
-            </ul>
-        </li>
+        <li><strong>Files</strong>: <code>snap_cm_settings.json</code> (Settings) and <code>ssh_servers.json.gpg</code> (Encrypted Data).</li>
     </ul>
 
     <h3 id="encryption-change-pass">3.3 Changing Your Passphrase</h3>
-    <p>You can change your master passphrase at any time via the <code>File -> Change Passphrase...</code> menu. The process is secure:
-    <ol>
-        <li>You are prompted for your <em>current</em> passphrase to authorize the change.</li>
-        <li>You are asked to provide and confirm a <em>new</em> passphrase.</li>
-        <li>The application then re-encrypts your server data file (<code>ssh_servers.json.gpg</code>) with the new passphrase in an atomic operation to prevent data loss.</li>
-        <li>Finally, it generates a new salt and hash for the new passphrase and updates the settings file.</li>
-    </ol>
+    <p>You can securely rotate your key via <code>File -> Change Passphrase...</code>. This re-encrypts your data file atomically with the new credentials.</p>
+
     <h2 id="appearance">4. Appearance & Customization</h2>
-    <p>The <strong>Appearance tab</strong> allows you to fully customize the look and feel of your embedded terminal sessions:</p>
+    
+    <h3 id="appearance-server">4.1 Per-Server Customization</h3>
+    <p>The <strong>Appearance tab</strong> in the Server Editor allows you to customize individual connections:</p>
     <ul>
-        <li><strong>Font Chooser</strong>: Select any system font for your terminal. The default is <code>Ubuntu Mono 12</code>.</li>
-        <li><strong>Color Schemes</strong>: Choose from built-in schemes such as <em>GNOME Light/Dark</em>, <em>Tango</em>, <em>Solarized</em>, or define a <em>Custom</em> scheme.</li>
-        <li><strong>Foreground/Background Colors</strong>: Pick precise colors using the GNOME-style color picker.</li>
-        <li><strong>Palette Selection</strong>: Switch between Tango, Solarized, or None palettes for advanced color control.</li>
-        <li><strong>Scrollback Buffer</strong>: Configure how many lines of history are retained (default: 10,000).</li>
-        <li><strong>Reset to Defaults</strong>: Instantly restore the default font, colors, and palette.</li>
+        <li><strong>Font & Colors</strong>: Select system fonts, custom foreground/background colors, and palettes (Tango, Solarized, etc.).</li>
+        <li><strong>Scrollback</strong>: Configure history size (default: 10,000 lines).</li>
     </ul>
-    <p>All appearance settings are saved in your <code>snap_cm_settings.json</code> file and applied consistently across sessions.</p>
+
+    <h3 id="appearance-global">4.2 Global Settings</h3>
+    <p>Accessed via <code>File -> Global Settings...</code>, this dialog allows you to define the <strong>default configuration</strong> for the application.</p>
+    <ul>
+        <li><strong>Default Appearance</strong>: Set the font, colors, and palette that will be applied to all <em>newly created</em> servers.</li>
+        <li><strong>Default Log Folder</strong>: Specify the default directory where session logs will be saved.</li>
+        <li><strong>Reset to Defaults</strong>: When editing a server, the "Reset to Defaults" button will restore that server's settings to match these Global Settings.</li>
+    </ul>
 
     <h2 id="getting-started">5. Getting Started</h2>
     <ol>
-        <li><strong>First Launch</strong>: The application will prompt you to <strong>Set Master Passphrase</strong>. Enter a strong, memorable passphrase and confirm it. This initializes your secure storage.</li>
-        <li><strong>Subsequent Launches</strong>: You will be prompted to enter your master passphrase to unlock and load your server list. For security, you have a limited number of attempts.</li>
-        <li><strong>Add Servers and Folders</strong>: Use the <code>Servers</code> and <code>Folders</code> menus or the right-click context menu to begin building your connection list.</li>
-        <li><strong>Connect</strong>: Select a server and double-click it, or use the <code>Connect</code> menu or right-click menu to launch an SSH or SFTP session.</li>
+        <li><strong>First Launch</strong>: Set your Master Passphrase to initialize the secure storage.</li>
+        <li><strong>Add Servers</strong>: Right-click the "Session" folder and select "Add Server".</li>
+        <li><strong>Connect</strong>: Double-click a server to launch the terminal.</li>
     </ol>
+
     <h2 id="installation">6. Installation Instructions</h2>
-    <p>You can install SNAP Connection Manager directly from its official APT repository hosted on GitHub Pages.</p>
+    <p>You can install SNAP Connection Manager directly from its official APT repository.</p>
     
     <h3>6.1 Quick Install Script</h3>
-    <p>Run the following one-liner to add the repository, import the GPG key, and install the application:</p>
     <pre><code>curl -sL https://raw.githubusercontent.com/larreblarsson/SNAP-Connection-Manager/main/install.sh | bash</code></pre>
     
     <h3>6.2 Manual Installation</h3>
-    <p>If you prefer to add the repository manually:</p>
     <pre><code># Add the GPG key
     curl -sL https://larreblarsson.github.io/SNAP-Connection-Manager/public.key | sudo gpg --dearmor -o /usr/share/keyrings/SNAP-Connection-Manager-keyring.gpg
     
@@ -214,11 +211,8 @@
 
     <h2 id="troubleshooting">7. Troubleshooting & Dependencies</h2>
     <ul>
-        <li><strong>"Incorrect master passphrase."</strong>: Your passphrase is case-sensitive. If you have forgotten it, the data is unrecoverable. You would need to delete the files in the data directory (see section 3.2) to start over, which will erase all saved servers.</li>
-        <li><strong>"GPG decryption failed."</strong>: This indicates that the <code>ssh_servers.json.gpg</code> file may be corrupt or was encrypted with a different key than what your current settings expect. This can happen if a passphrase change was interrupted. Starting fresh by deleting the data files is the recommended recovery method.</li>
-        <li><strong>"expect not found."</strong>: The application relies on the <code>expect</code> command-line utility to automate password entry and login sequences. Please install it using your system's package manager (e.g., <code>sudo apt-get install expect</code> on Debian/Ubuntu).</li>
-        <li><strong>"VTE library not found."</strong>: The embedded terminal requires the VTE GObject introspection library. Please install it using your system's package manager (e.g., <code>sudo apt-get install gir1.2-vte-2.91</code> on Debian/Ubuntu).</li>
-        <li><strong>GnuPG is Required</strong>: The core encryption functionality depends on having <code>gpg</code> installed and available in your system's <code>PATH</code>.</li>
+        <li><strong>"Incorrect master passphrase."</strong>: Data is unrecoverable without the passphrase. Delete <code>~/.local/share/snap_connection_manager/</code> to reset.</li>
+        <li><strong>Dependencies</strong>: The app requires <code>python3-gi</code>, <code>gir1.2-gtk-3.0</code>, <code>gir1.2-vte-2.91</code>, <code>expect</code>, and <code>gnupg</code>.</li>
     </ul>
 
 </body>
