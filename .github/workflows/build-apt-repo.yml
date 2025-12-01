@@ -32,11 +32,8 @@ jobs:
           export DEBFULLNAME="Tomas Larsson"
           export DEBEMAIL="larre.b.larsson@gmail.com"
 
-          # Create new changelog entry with proper distribution
-          dch --newversion "${VERSION}-1" --distribution stable "Release ${VERSION}"
-
-          # Mark the entry as a real release (not UNRELEASED)
-          dch --release
+          dch --no-editor --newversion "${VERSION}-1" --distribution stable "Release ${VERSION}"
+          dch --no-editor --release
 
           head -n 12 debian/changelog
 
