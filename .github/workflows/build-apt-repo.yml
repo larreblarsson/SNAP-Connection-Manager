@@ -31,10 +31,11 @@ jobs:
 
           export DEBFULLNAME="Tomas Larsson"
           export DEBEMAIL="larre.b.larsson@gmail.com"
-          export DEBIAN_FRONTEND=noninteractive
+          export EDITOR=true
+          export DEBCHANGE_EDITOR=true
 
-          dch --newversion "${VERSION}-1" --distribution stable "Release ${VERSION}"
-          dch --release
+          dch --force-bad-version --changelog debian/changelog \
+              --newversion "${VERSION}-1" --distribution stable "Release ${VERSION}"
 
           head -n 12 debian/changelog
 
