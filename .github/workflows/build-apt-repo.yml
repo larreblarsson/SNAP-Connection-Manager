@@ -96,13 +96,13 @@ jobs:
         run: |
           curl -s https://larreblarsson.github.io/SNAP-Connection-Manager/dists/stable/main/binary-amd64/Packages | grep Version
 
-      - name: Extract and format changelog
+      - name: Extract full changelog entry
         id: changelog
         run: |
           echo 'RELEASE_BODY<<EOF' >> $GITHUB_ENV
-          echo "### Changes in version ${{ github.ref_name }}" >> $GITHUB_ENV
-          dpkg-parsechangelog --count 1 | grep '^ \*' | sed 's/^ \* /- /' >> $GITHUB_ENV
+          dpkg-parsechangelog --count 1 >> $GITHUB_ENV
           echo 'EOF' >> $GITHUB_ENV
+          
 
       - name: Create GitHub Release and upload .deb
         uses: softprops/action-gh-release@v1
