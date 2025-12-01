@@ -539,7 +539,7 @@ class SnapConnectionManager(Gtk.Application):
             "File":    [
                 ("Import…", self.on_import),
                 ("Export…", self.on_export),
-                ("Global Settings…", self.on_global_settings),                
+                ("Default Settings…", self.on_global_settings),                
                 ("Change Passphrase…", self.on_change_passphrase),
                 ("Quit",    self.on_quit),
             ],
@@ -1248,7 +1248,7 @@ class SnapConnectionManager(Gtk.Application):
             """
             Opens a dialog to configure application-wide defaults for new servers.
             """
-            dlg = Gtk.Dialog(title="Global Settings", transient_for=self.win, modal=True)
+            dlg = Gtk.Dialog(title="Default Settings", transient_for=self.win, modal=True)
             dlg.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL, Gtk.STOCK_OK, Gtk.ResponseType.OK)
             dlg.set_default_response(Gtk.ResponseType.OK)
             dlg.set_default_size(500, 450)
@@ -1367,7 +1367,7 @@ class SnapConnectionManager(Gtk.Application):
                 
                 # Commit to disk
                 save_settings(self.settings)
-                self._info("Global settings saved. New servers will use these defaults.")
+                self._info("Default Settings saved. New servers will use these defaults.")
     
             dlg.destroy()
 
@@ -1802,6 +1802,20 @@ class SnapConnectionManager(Gtk.Application):
 
 
         final_lines = list(lines)
+
+        # Check if Anti-idle is enabled in the config
+        if cfg.get("anti_idle_enabled", False):
+            idle_int = cfg.get("anti_idle_int", 300)
+            idle_str = cfg.get("anti_idle_str", "\\r")
+            
+            # Construct the Tcl command with timeout
+            new_interact = f'interact timeout {idle_int} {{ send "{idle_str}" }}\n'
+            
+            # Scan the lines and replace the plain 'interact' command
+            for i, line in enumerate(final_lines):
+                if line.strip() == "interact":
+                    final_lines[i] = new_interact
+                    break
         
         # We must insert the trap AFTER the 'spawn' command, because 
         # $spawn_out(slave,name) is only created after spawn runs.
@@ -2234,13 +2248,40 @@ class SnapConnectionManager(Gtk.Application):
         en_port = Gtk.Entry();   en_port.set_size_request(300, -1)
         en_user = Gtk.Entry();   en_user.set_size_request(300, -1)
         folder_cb = Gtk.ComboBoxText(); folder_cb.set_size_request(300, -1)
+
+        # Create a horizontal box to hold: [Check] Send string: [Entry] every [Spin] seconds
+        box_idle = Gtk.Box(spacing=5)
+        
+        chk_idle = Gtk.CheckButton(label="Anti-idle")
+        lbl_send = Gtk.Label(label="Send string:")
+        ent_idle_str = Gtk.Entry(); ent_idle_str.set_width_chars(6)
+        lbl_every = Gtk.Label(label="every")
+        spin_idle = Gtk.SpinButton.new_with_range(1, 9999, 1)
+        lbl_sec = Gtk.Label(label="seconds")
+
+        box_idle.pack_start(chk_idle, False, False, 0)
+        box_idle.pack_start(lbl_send, False, False, 0)
+        box_idle.pack_start(ent_idle_str, False, False, 0)
+        box_idle.pack_start(lbl_every, False, False, 0)
+        box_idle.pack_start(spin_idle, False, False, 0)
+        box_idle.pack_start(lbl_sec, False, False, 0)
+
+        # Logic to enable/disable inputs based on checkbox
+        def _toggle_idle(chk):
+            sensitive = chk.get_active()
+            ent_idle_str.set_sensitive(sensitive)
+            spin_idle.set_sensitive(sensitive)
+        chk_idle.connect("toggled", _toggle_idle)
     
         en_port.set_text(str(cfg.get("port", 22)) if cfg else "22")
         if cfg:
             en_name.set_text(cfg["name"])
             en_host.set_text(cfg["host"])
             en_user.set_text(cfg.get("user", ""))
-    
+            chk_idle.set_active(cfg.get("anti_idle_enabled", False))
+            ent_idle_str.set_text(cfg.get("anti_idle_str", "\\r")) # Default to \r
+            spin_idle.set_value(cfg.get("anti_idle_int", 300))     # Default to 300s
+   
         folder_cb.append_text(ROOT_FOLDER)
         for f in self.subfolders:
             folder_cb.append_text(f)
@@ -2254,7 +2295,8 @@ class SnapConnectionManager(Gtk.Application):
         add_row("Port:",   en_port,   2)
         add_row("User:",   en_user,   3)
         add_row("Folder:", folder_cb, 4)
-    
+        grid.attach(box_idle, 0, 5, 2, 1) # Span 2 columns
+   
         # Auth tab
         auth_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin=10)
         nb.append_page(auth_page, Gtk.Label(label="Auth"))
@@ -2487,7 +2529,7 @@ class SnapConnectionManager(Gtk.Application):
         btn_reset = Gtk.Button(label="Reset to Defaults")
         
         def on_reset_defaults(_):
-            # Load from Global Settings (or fall back to factory defaults)
+            # Load from Default Settings (or fall back to factory defaults)
             def_font = self.settings.get("global_font", "Ubuntu Mono 12")
             def_fg   = self.settings.get("global_fg", "#000000")
             def_bg   = self.settings.get("global_bg", "#FFFFDD")
@@ -2623,6 +2665,9 @@ class SnapConnectionManager(Gtk.Application):
                 "key_file":     key_entry.get_text().strip(),
                 "logging_enabled": log_enable.get_active(),
                 "log_path":        log_entry.get_text().strip(),
+                "anti_idle_enabled": chk_idle.get_active(),
+                "anti_idle_str":     ent_idle_str.get_text(),
+                "anti_idle_int":     int(spin_idle.get_value()),
                 "auto_sequence": [
                     {"expect": seq_store[i][0], "send": seq_store[i][1], "hide": seq_store[i][2]}
                     for i in range(len(seq_store))
