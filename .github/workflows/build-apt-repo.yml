@@ -26,14 +26,19 @@ jobs:
       - name: Bump Debian changelog version
         run: |
           RAW_VERSION=${GITHUB_REF_NAME}
-          VERSION=${RAW_VERSION#v}   # strip leading "v" if present
+          VERSION=${RAW_VERSION#v}
           echo "Using version: $VERSION"
 
           export DEBFULLNAME="Tomas Larsson"
-          export DEBEMAIL="you@example.com"
+          export DEBEMAIL="larre.b.larsson@gmail.com"
 
-          dch --newversion "${VERSION}-1" "Release ${VERSION}"
-          head -n 5 debian/changelog
+          # Create new changelog entry with proper distribution
+          dch --newversion "${VERSION}-1" --distribution stable "Release ${VERSION}"
+
+          # Mark the entry as a real release (not UNRELEASED)
+          dch --release
+
+          head -n 12 debian/changelog
 
       - name: Build Debian package
         run: |
