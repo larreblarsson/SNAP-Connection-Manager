@@ -1,3 +1,9 @@
+snap-connection-manager (1.2.6-2) stable; urgency=medium
+
+  * Changed look of Anti Idle funciton
+  
+ -- Tomas Larsson <larre.b.larsson@gmail.com>  Thu, 04 Dec 2025 07:00:00 +0100
+
 snap-connection-manager (1.2.6-1) stable; urgency=medium
 
   * Changed name of "Global Settings" to "Default Settings"

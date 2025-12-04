@@ -2248,29 +2248,45 @@ class SnapConnectionManager(Gtk.Application):
         en_port = Gtk.Entry();   en_port.set_size_request(300, -1)
         en_user = Gtk.Entry();   en_user.set_size_request(300, -1)
         folder_cb = Gtk.ComboBoxText(); folder_cb.set_size_request(300, -1)
+        
+        # Row 5: Header Label
+        lbl_idle_header = Gtk.Label(label="Anti-idle:")
+        lbl_idle_header.set_halign(Gtk.Align.START)
+        grid.attach(lbl_idle_header, 0, 5, 2, 1) # Span 2 columns
 
-        # Create a horizontal box to hold: [Check] Send string: [Entry] every [Spin] seconds
+        # Row 6: The Controls Box
+        # Layout: [Check "Send string:"] [Entry] [Label "every"] [Spin] [Label "seconds"]
         box_idle = Gtk.Box(spacing=5)
         
-        chk_idle = Gtk.CheckButton(label="Anti-idle")
-        lbl_send = Gtk.Label(label="Send string:")
-        ent_idle_str = Gtk.Entry(); ent_idle_str.set_width_chars(6)
+        # Checkbox with label "Send string:"
+        chk_idle = Gtk.CheckButton(label="Send string:")
+        
+        # String Entry (small width)
+        ent_idle_str = Gtk.Entry()
+        ent_idle_str.set_width_chars(6)
+        
         lbl_every = Gtk.Label(label="every")
+        
+        # Spin Button
         spin_idle = Gtk.SpinButton.new_with_range(1, 9999, 1)
+        
         lbl_sec = Gtk.Label(label="seconds")
 
+        # Pack them into the horizontal box
         box_idle.pack_start(chk_idle, False, False, 0)
-        box_idle.pack_start(lbl_send, False, False, 0)
         box_idle.pack_start(ent_idle_str, False, False, 0)
         box_idle.pack_start(lbl_every, False, False, 0)
         box_idle.pack_start(spin_idle, False, False, 0)
         box_idle.pack_start(lbl_sec, False, False, 0)
 
-        # Logic to enable/disable inputs based on checkbox
+        # Toggle logic: Disable inputs if checkbox is unchecked
         def _toggle_idle(chk):
             sensitive = chk.get_active()
             ent_idle_str.set_sensitive(sensitive)
+            lbl_every.set_sensitive(sensitive)
             spin_idle.set_sensitive(sensitive)
+            lbl_sec.set_sensitive(sensitive)
+            
         chk_idle.connect("toggled", _toggle_idle)
     
         en_port.set_text(str(cfg.get("port", 22)) if cfg else "22")
@@ -2278,9 +2294,19 @@ class SnapConnectionManager(Gtk.Application):
             en_name.set_text(cfg["name"])
             en_host.set_text(cfg["host"])
             en_user.set_text(cfg.get("user", ""))
+            
+            # Load saved Anti-idle values
             chk_idle.set_active(cfg.get("anti_idle_enabled", False))
-            ent_idle_str.set_text(cfg.get("anti_idle_str", "\\r")) # Default to \r
-            spin_idle.set_value(cfg.get("anti_idle_int", 300))     # Default to 300s
+            ent_idle_str.set_text(cfg.get("anti_idle_str", "\\r")) 
+            spin_idle.set_value(cfg.get("anti_idle_int", 300))     
+        else:
+            # Default values for new server
+            ent_idle_str.set_text("\\r")
+            spin_idle.set_value(300)
+            _toggle_idle(chk_idle) # Apply initial sensitive state
+
+        # Refresh sensitive state based on loaded config
+        _toggle_idle(chk_idle)
    
         folder_cb.append_text(ROOT_FOLDER)
         for f in self.subfolders:
@@ -2295,8 +2321,16 @@ class SnapConnectionManager(Gtk.Application):
         add_row("Port:",   en_port,   2)
         add_row("User:",   en_user,   3)
         add_row("Folder:", folder_cb, 4)
-        grid.attach(box_idle, 0, 5, 2, 1) # Span 2 columns
-   
+        
+        # Attach the controls box to Row 6 (Header is on Row 5)
+        grid.attach(box_idle, 0, 6, 2, 1) # Span 2 columns   
+
+
+
+
+
+
+
         # Auth tab
         auth_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin=10)
         nb.append_page(auth_page, Gtk.Label(label="Auth"))
