@@ -1656,7 +1656,7 @@ class SnapConnectionManager(Gtk.Application):
         cfg = self.servers[idx]
         self.current_logging_enabled = cfg.get("logging_enabled", False)
         self.current_log_path = cfg.get("log_path", "")
-    
+        self.current_log_mode = cfg.get("log_mode", "append")
         self.log(f"Launching SSH: {cfg['name']}")
     
         # Build forwarding flags using -L/-R/-D syntax (avoids the -o parsing issue)
@@ -1721,7 +1721,7 @@ class SnapConnectionManager(Gtk.Application):
         cfg = self.servers[idx]
         self.current_logging_enabled = cfg.get("logging_enabled", False)
         self.current_log_path = cfg.get("log_path", "")
-    
+        self.current_log_mode = cfg.get("log_mode", "append") 
         self.log(f"Launching SFTP: {cfg['name']}")
     
         auth       = cfg.get("auth_method")
@@ -1774,6 +1774,9 @@ class SnapConnectionManager(Gtk.Application):
         ]
         if getattr(self, "current_logging_enabled", False) and self.current_log_path:
             os.makedirs(os.path.dirname(self.current_log_path), exist_ok=True)
+            # Check log mode: "append" adds -a flag, "overwrite" uses no flag (default expect behavior)
+            mode_flag = "-a " if getattr(self, "current_log_mode", "append") == "append" else ""
+            header.append(f"log_file {mode_flag}{self.current_log_path}\n")
             header.append(f"log_file -a {self.current_log_path}\n")
         header.append("set timeout -1\n")
         script_content = "".join(header + lines)
@@ -2256,38 +2259,6 @@ class SnapConnectionManager(Gtk.Application):
 
         # Row 6: The Controls Box
         # Layout: [Check "Send string:"] [Entry] [Label "every"] [Spin] [Label "seconds"]
-        box_idle = Gtk.Box(spacing=5)
-        
-        # Checkbox with label "Send string:"
-        chk_idle = Gtk.CheckButton(label="Send string:")
-        
-        # String Entry (small width)
-        ent_idle_str = Gtk.Entry()
-        ent_idle_str.set_width_chars(6)
-        
-        lbl_every = Gtk.Label(label="every")
-        
-        # Spin Button
-        spin_idle = Gtk.SpinButton.new_with_range(1, 9999, 1)
-        
-        lbl_sec = Gtk.Label(label="seconds")
-
-        # Pack them into the horizontal box
-        box_idle.pack_start(chk_idle, False, False, 0)
-        box_idle.pack_start(ent_idle_str, False, False, 0)
-        box_idle.pack_start(lbl_every, False, False, 0)
-        box_idle.pack_start(spin_idle, False, False, 0)
-        box_idle.pack_start(lbl_sec, False, False, 0)
-
-        # Toggle logic: Disable inputs if checkbox is unchecked
-        def _toggle_idle(chk):
-            sensitive = chk.get_active()
-            ent_idle_str.set_sensitive(sensitive)
-            lbl_every.set_sensitive(sensitive)
-            spin_idle.set_sensitive(sensitive)
-            lbl_sec.set_sensitive(sensitive)
-            
-        chk_idle.connect("toggled", _toggle_idle)
     
         en_port.set_text(str(cfg.get("port", 22)) if cfg else "22")
         if cfg:
@@ -2295,10 +2266,6 @@ class SnapConnectionManager(Gtk.Application):
             en_host.set_text(cfg["host"])
             en_user.set_text(cfg.get("user", ""))
             
-            # Load saved Anti-idle values
-            chk_idle.set_active(cfg.get("anti_idle_enabled", False))
-            ent_idle_str.set_text(cfg.get("anti_idle_str", "\\r")) 
-            spin_idle.set_value(cfg.get("anti_idle_int", 300))     
         else:
             # Default values for new server
             ent_idle_str.set_text("\\r")
@@ -2321,15 +2288,6 @@ class SnapConnectionManager(Gtk.Application):
         add_row("Port:",   en_port,   2)
         add_row("User:",   en_user,   3)
         add_row("Folder:", folder_cb, 4)
-        
-        # Attach the controls box to Row 6 (Header is on Row 5)
-        grid.attach(box_idle, 0, 6, 2, 1) # Span 2 columns   
-
-
-
-
-
-
 
         # Auth tab
         auth_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin=10)
@@ -2368,22 +2326,119 @@ class SnapConnectionManager(Gtk.Application):
     
         pw_entry.set_sensitive(auth_pw.get_active())
     
-        # Logging tab
-        log_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin=10)
-        nb.append_page(log_page, Gtk.Label(label="Logging"))
+
+
+
+
+        # ── Terminal Tab (Combines Logging, Anti-Idle, Buffer) ────────────────
+        term_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, margin=12)
+        nb.append_page(term_page, Gtk.Label(label="Terminal"))
     
+        # --- Section 1: Session Logging ---
+        lbl_log_head = Gtk.Label(label="<b>Session Logging</b>", use_markup=True, xalign=0)
+        term_page.pack_start(lbl_log_head, False, False, 0)
+    
+        log_grid = Gtk.Grid(column_spacing=12, row_spacing=6)
+        log_grid.set_margin_start(12) # Indent content
+        term_page.pack_start(log_grid, False, False, 0)
+    
+        # Enable Checkbox
         log_enable = Gtk.CheckButton(label="Enable Logging")
-        log_enable.set_active(cfg.get("logging_enabled", False) if cfg else False)
-        log_entry = Gtk.Entry(); log_entry.set_size_request(300, -1)
+        log_grid.attach(log_enable, 0, 0, 2, 1)
+    
+        # Path Entry + Browse
+        log_entry = Gtk.Entry(); log_entry.set_size_request(280, -1)
         log_btn   = Gtk.Button(label="Browse")
         log_btn.connect("clicked", lambda w: browse_log(dlg, log_entry))
-        log_box   = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        log_box.pack_start(log_entry, True, True, 0)
-        log_box.pack_start(log_btn,   False, False, 0)
+        log_grid.attach(log_entry, 0, 1, 1, 1)
+        log_grid.attach(log_btn,   1, 1, 1, 1)
     
-        log_page.pack_start(log_enable, False, False, 0)
-        log_page.pack_start(log_box,    False, False, 0)
-        log_entry.set_text(cfg.get("log_path", "/tmp/snapcm_log.txt") if cfg else "/tmp/snapcm_log.txt")
+        # Append / Overwrite Mode
+        hbox_logmode = Gtk.Box(spacing=12)
+        rb_append = Gtk.RadioButton.new_with_label(None, "Append to file")
+        rb_overwr = Gtk.RadioButton.new_with_label_from_widget(rb_append, "Overwrite file")
+        hbox_logmode.pack_start(rb_append, False, False, 0)
+        hbox_logmode.pack_start(rb_overwr, False, False, 0)
+        
+        log_grid.attach(Gtk.Label(label="Mode:", xalign=0), 0, 2, 1, 1)
+        log_grid.attach(hbox_logmode, 1, 2, 1, 1)
+    
+        # --- Section 2: Anti-Idle (Moved from General) ---
+        term_page.pack_start(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), False, False, 0)
+        lbl_idle_head = Gtk.Label(label="<b>Anti-idle</b>", use_markup=True, xalign=0)
+        term_page.pack_start(lbl_idle_head, False, False, 0)
+    
+        box_idle = Gtk.Box(spacing=6)
+        box_idle.set_margin_start(12)
+        
+        chk_idle = Gtk.CheckButton(label="Send string:")
+        ent_idle_str = Gtk.Entry(); ent_idle_str.set_width_chars(6)
+        lbl_every = Gtk.Label(label="every")
+        spin_idle = Gtk.SpinButton.new_with_range(1, 9999, 1)
+        lbl_sec = Gtk.Label(label="seconds")
+    
+        box_idle.pack_start(chk_idle, False, False, 0)
+        box_idle.pack_start(ent_idle_str, False, False, 0)
+        box_idle.pack_start(lbl_every, False, False, 0)
+        box_idle.pack_start(spin_idle, False, False, 0)
+        box_idle.pack_start(lbl_sec, False, False, 0)
+        
+        term_page.pack_start(box_idle, False, False, 0)
+    
+        def _toggle_idle(chk):
+            sen = chk.get_active()
+            ent_idle_str.set_sensitive(sen)
+            spin_idle.set_sensitive(sen)
+            lbl_every.set_sensitive(sen)
+            lbl_sec.set_sensitive(sen)
+        chk_idle.connect("toggled", _toggle_idle)
+    
+        # --- Section 3: Buffer (Moved from Appearance) ---
+        term_page.pack_start(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), False, False, 0)
+        lbl_buf_head = Gtk.Label(label="<b>Scrollback Buffer</b>", use_markup=True, xalign=0)
+        term_page.pack_start(lbl_buf_head, False, False, 0)
+    
+        box_buf = Gtk.Box(spacing=6)
+        box_buf.set_margin_start(12)
+        spin_buf = Gtk.SpinButton.new_with_range(100, 100000, 100)
+        box_buf.pack_start(Gtk.Label(label="Lines:"), False, False, 0)
+        box_buf.pack_start(spin_buf, False, False, 0)
+        term_page.pack_start(box_buf, False, False, 0)
+    
+        # --- Load Values ---
+        if cfg:
+            # Logging
+            log_enable.set_active(cfg.get("logging_enabled", False))
+            log_entry.set_text(cfg.get("log_path", "/tmp/snapcm_log.txt"))
+            if cfg.get("log_mode", "append") == "overwrite":
+                rb_overwr.set_active(True)
+            else:
+                rb_append.set_active(True)
+            
+            # Anti-Idle
+            chk_idle.set_active(cfg.get("anti_idle_enabled", False))
+            ent_idle_str.set_text(cfg.get("anti_idle_str", "\\r"))
+            spin_idle.set_value(cfg.get("anti_idle_int", 300))
+            
+            # Buffer
+            spin_buf.set_value(int(cfg.get("term_scrollback", getattr(self, "DEFAULT_TERM_SCROLLBACK", 10000))))
+            
+        else:
+            # Defaults
+            def_log_dir = self.settings.get("global_log_dir", "/tmp")
+            log_entry.set_text(os.path.join(def_log_dir, "snapcm_log.txt"))
+            rb_append.set_active(True)
+            ent_idle_str.set_text("\\r")
+            spin_idle.set_value(300)
+            spin_buf.set_value(int(self.settings.get("global_scrollback", 10000)))
+    
+        _toggle_idle(chk_idle)
+
+
+
+
+
+
     
         # Login Actions tab
         seq_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin=10)
@@ -2546,17 +2601,6 @@ class SnapConnectionManager(Gtk.Application):
         grid.attach(font_box, 1, row, 1, 1)
         row += 1
         
-        # Buffer
-        lbl_buf = Gtk.Label(); lbl_buf.set_markup("<b>Buffer:</b>")
-        lbl_buf.set_halign(Gtk.Align.START)
-        spin_buf = Gtk.SpinButton.new_with_range(100, 100000, 100)
-        buf_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        buf_box.pack_start(Gtk.Label(label="Lines:"), False, False, 0)
-        buf_box.pack_start(spin_buf, False, False, 0)
-        grid.attach(lbl_buf, 0, row, 1, 1)
-        grid.attach(buf_box, 1, row, 1, 1)
-        row += 1
-        
         # Defaults
         lbl_defaults = Gtk.Label(); lbl_defaults.set_markup("<b>Defaults:</b>")
         lbl_defaults.set_halign(Gtk.Align.START)
@@ -2608,7 +2652,6 @@ class SnapConnectionManager(Gtk.Application):
                 pal_cb.set_active(["None", "Tango", "Solarized Light", "Solarized Dark", "GNOME"].index(pal))
             except ValueError:
                 pal_cb.set_active(0)
-            spin_buf.set_value(int(cfg.get("term_scrollback", getattr(self, "DEFAULT_TERM_SCROLLBACK", 1000))))
             scheme_name = cfg.get("term_scheme")
             if scheme_name and scheme_name in BUILTIN_SCHEMES:
                 scheme_cb.set_active(list(BUILTIN_SCHEMES.keys()).index(scheme_name))
