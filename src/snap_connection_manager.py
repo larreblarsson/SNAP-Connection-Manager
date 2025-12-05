@@ -2252,14 +2252,6 @@ class SnapConnectionManager(Gtk.Application):
         en_user = Gtk.Entry();   en_user.set_size_request(300, -1)
         folder_cb = Gtk.ComboBoxText(); folder_cb.set_size_request(300, -1)
         
-        # Row 5: Header Label
-        lbl_idle_header = Gtk.Label(label="Anti-idle:")
-        lbl_idle_header.set_halign(Gtk.Align.START)
-        grid.attach(lbl_idle_header, 0, 5, 2, 1) # Span 2 columns
-
-        # Row 6: The Controls Box
-        # Layout: [Check "Send string:"] [Entry] [Label "every"] [Spin] [Label "seconds"]
-    
         en_port.set_text(str(cfg.get("port", 22)) if cfg else "22")
         if cfg:
             en_name.set_text(cfg["name"])
