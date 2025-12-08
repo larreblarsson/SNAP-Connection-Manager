@@ -1,3 +1,11 @@
+snap-connection-manager (1.2.7-1) stable; urgency=medium
+
+  * Introduce new Terminal Tab and move of Buffer and Anti-Idle to new Terminal Tab 
+  * Added append/overwright option for logging
+  * Fixed carbage character log file output
+  
+ -- Tomas Larsson <larre.b.larsson@gmail.com>  Thu, 04 Dec 2025 07:00:00 +0100
+
 snap-connection-manager (1.2.6-2) stable; urgency=medium
 
   * Changed look of Anti Idle funciton
