@@ -1947,6 +1947,49 @@ class SnapConnectionManager(Gtk.Application):
             final_lines[spawn_index+1:spawn_index+1] = resize_trap
         else:
             header.extend(resize_trap)
+            
+        # ▼▼▼▼ STARTUP COMMAND FILE LOGIC ▼▼▼▼
+        # We inject this logic right BEFORE the 'interact' command
+        if cfg.get("cmd_file_enabled", False):
+            cpath = cfg.get("cmd_file_path", "")
+            if cpath and os.path.exists(cpath):
+                try:
+                    with open(cpath, "r") as f:
+                        file_lines = f.readlines()
+                    
+                    cmd_block = []
+                    cmd_block.append("after 500\n") # Brief pause to let shell init
+                    
+                    for line in file_lines:
+                        # 1. Clean raw newlines
+                        l = line.rstrip('\r\n')
+                        # 2. Escape special Tcl characters (\, ", [, ], $)
+                        # Order is important: backslash first!
+                        l_esc = l.replace('\\', '\\\\') \
+                                 .replace('"', '\\"')   \
+                                 .replace('[', '\\[')   \
+                                 .replace(']', '\\]')   \
+                                 .replace('$', '\\$')
+                        
+                        # 3. Create send command
+                        cmd_block.append(f'send -- "{l_esc}\\r"\n')
+                        cmd_block.append("after 100\n") # Typing delay
+                    
+                    # Insert before 'interact'
+                    idx_interact = -1
+                    for i, ln in enumerate(final_lines):
+                        if ln.strip().startswith("interact"):
+                            idx_interact = i
+                            break
+                    
+                    if idx_interact != -1:
+                        final_lines[idx_interact:idx_interact] = cmd_block
+                    else:
+                        final_lines.extend(cmd_block)
+                        
+                except Exception as e:
+                    self.log(f"Error reading command file: {e}")
+        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         if fifo_path:
             final_lines.append('\ncatch {close $log_fifo}\n')
@@ -1960,8 +2003,7 @@ class SnapConnectionManager(Gtk.Application):
             tf.close()
             os.chmod(tf.name, 0o700)
 
-            # We create the Vte.Terminal object here so we have a reference to it
-            # before we create the button that needs to control it.
+            # --- Create Terminal First ---
             terminal = Vte.Terminal()
             self.apply_appearance_to_terminal(terminal, cfg)
             terminal.connect("key-press-event", self._on_terminal_key_press)
@@ -1981,15 +2023,13 @@ class SnapConnectionManager(Gtk.Application):
             # --- Create Settings Button ---
             btn_settings = Gtk.Button.new_from_icon_name("open-menu-symbolic", Gtk.IconSize.MENU)
             btn_settings.set_tooltip_text("Edit Server Settings")
-            
-            btn_settings.connect("clicked", self._on_term_settings_clicked, (cfg, terminal, term_window))            
+            btn_settings.connect("clicked", self._on_term_settings_clicked, (cfg, terminal, term_window))
             hb.pack_end(btn_settings)
 
             wg = Gtk.WindowGroup()
             wg.add_window(term_window)
             term_window._wg = wg
 
-            # Cleanup handler
             def on_child_exited(_terminal, _status):
                 term_window.close()
                 if os.path.exists(tf.name):
@@ -1997,7 +2037,6 @@ class SnapConnectionManager(Gtk.Application):
             
             terminal.connect("child-exited", on_child_exited)
             
-            # Launch Process
             argv = [expect, "-f", tf.name]
 
             import warnings
@@ -2026,6 +2065,7 @@ class SnapConnectionManager(Gtk.Application):
                 os.remove(tf.name)
             if fifo_path and os.path.exists(fifo_path):
                 os.remove(fifo_path)
+
 
 
 
@@ -2362,7 +2402,7 @@ class SnapConnectionManager(Gtk.Application):
         nb.set_vexpand(True)
         content.pack_start(nb, True, True, 0)
     
-        # General tab
+        # ── General tab ──────────────────────
         grid = Gtk.Grid(column_spacing=6, row_spacing=6, margin=10)
         nb.append_page(grid, Gtk.Label(label="General"))
     
@@ -2398,7 +2438,8 @@ class SnapConnectionManager(Gtk.Application):
         add_row("User:",   en_user,   3)
         add_row("Folder:", folder_cb, 4)
 
-        # Auth tab
+
+        # ── Auth tab ──────────────────────
         auth_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin=10)
         nb.append_page(auth_page, Gtk.Label(label="Auth"))
     
@@ -2434,8 +2475,9 @@ class SnapConnectionManager(Gtk.Application):
             key_entry.set_text(cfg.get("key_file", ""))
     
         pw_entry.set_sensitive(auth_pw.get_active())
+
     
-        # ── Terminal Tab (Combines Logging, Anti-Idle, Buffer) ──────────────────────
+        # ── Terminal Tab (Combines Logging, Anti-Idle, Buffer, Startup Script) ──────
         term_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, margin=12)
         nb.append_page(term_page, Gtk.Label(label="Terminal"))
     
@@ -2444,37 +2486,29 @@ class SnapConnectionManager(Gtk.Application):
         term_page.pack_start(lbl_log_head, False, False, 0)
     
         log_grid = Gtk.Grid(column_spacing=12, row_spacing=6)
-        log_grid.set_margin_start(12) # Indent content
+        log_grid.set_margin_start(12) 
         term_page.pack_start(log_grid, False, False, 0)
     
-        # Enable Checkbox
+        # Row 0: Enable Checkbox
         log_enable = Gtk.CheckButton(label="Enable Logging")
         log_grid.attach(log_enable, 0, 0, 2, 1)
     
-        # Path Entry + Browse
+        # Row 1: Path Entry + Browse
         log_entry = Gtk.Entry(); log_entry.set_size_request(280, -1)
         log_btn   = Gtk.Button(label="Browse")
         log_btn.connect("clicked", lambda w: browse_log(dlg, log_entry))
         log_grid.attach(log_entry, 0, 1, 1, 1)
         log_grid.attach(log_btn,   1, 1, 1, 1)
     
-        # Append / Overwrite Mode
-        hbox_mode_row = Gtk.Box(spacing=12)
-        
-        # Add the label to the box
-        hbox_mode_row.pack_start(Gtk.Label(label="Mode:"), False, False, 0)
-
-        # Create the buttons
+        # Row 2: Mode
+        hbox_mode = Gtk.Box(spacing=12)
+        hbox_mode.pack_start(Gtk.Label(label="Mode:"), False, False, 0)
         rb_append = Gtk.RadioButton.new_with_label(None, "Append to file")
         rb_overwr = Gtk.RadioButton.new_with_label_from_widget(rb_append, "Overwrite file")
-        
-        # Add buttons to the box
-        hbox_mode_row.pack_start(rb_append, False, False, 0)
-        hbox_mode_row.pack_start(rb_overwr, False, False, 0)
-        
-        # Attach the ENTIRE box to the grid
-        # arguments: widget, column, row, width(span), height
-        log_grid.attach(hbox_mode_row, 0, 2, 2, 1)    
+        hbox_mode.pack_start(rb_append, False, False, 0)
+        hbox_mode.pack_start(rb_overwr, False, False, 0)
+        log_grid.attach(hbox_mode, 0, 2, 2, 1)
+    
         # --- Section 2: Anti-Idle ---
         term_page.pack_start(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), False, False, 0)
         lbl_idle_head = Gtk.Label(label="<b>Anti-idle</b>", use_markup=True, xalign=0)
@@ -2494,17 +2528,14 @@ class SnapConnectionManager(Gtk.Application):
         box_idle.pack_start(lbl_every, False, False, 0)
         box_idle.pack_start(spin_idle, False, False, 0)
         box_idle.pack_start(lbl_sec, False, False, 0)
-        
         term_page.pack_start(box_idle, False, False, 0)
     
-        # DEFINE _toggle_idle HERE (before it's used)
         def _toggle_idle(chk):
             sen = chk.get_active()
             ent_idle_str.set_sensitive(sen)
             spin_idle.set_sensitive(sen)
             lbl_every.set_sensitive(sen)
             lbl_sec.set_sensitive(sen)
-        
         chk_idle.connect("toggled", _toggle_idle)
     
         # --- Section 3: Buffer ---
@@ -2518,6 +2549,38 @@ class SnapConnectionManager(Gtk.Application):
         box_buf.pack_start(Gtk.Label(label="Lines:"), False, False, 0)
         box_buf.pack_start(spin_buf, False, False, 0)
         term_page.pack_start(box_buf, False, False, 0)
+    
+        # --- Section 4: Startup Command File (NEW) ---
+        term_page.pack_start(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), False, False, 0)
+        lbl_cmd_head = Gtk.Label(label="<b>Startup Command File</b>", use_markup=True, xalign=0)
+        term_page.pack_start(lbl_cmd_head, False, False, 0)
+    
+        cmd_grid = Gtk.Grid(column_spacing=12, row_spacing=6)
+        cmd_grid.set_margin_start(12)
+        term_page.pack_start(cmd_grid, False, False, 0)
+    
+        chk_cmd = Gtk.CheckButton(label="Send file content at login")
+        
+        ent_cmd = Gtk.Entry(); ent_cmd.set_size_request(280, -1)
+        btn_cmd = Gtk.Button(label="Browse")
+    
+        def _browse_cmd(w):
+            d = Gtk.FileChooserDialog("Select Command File", dlg, Gtk.FileChooserAction.OPEN)
+            d.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL, Gtk.STOCK_OPEN, Gtk.ResponseType.OK)
+            if d.run() == Gtk.ResponseType.OK:
+                ent_cmd.set_text(d.get_filename())
+            d.destroy()
+        btn_cmd.connect("clicked", _browse_cmd)
+    
+        cmd_grid.attach(chk_cmd, 0, 0, 2, 1)
+        cmd_grid.attach(ent_cmd, 0, 1, 1, 1)
+        cmd_grid.attach(btn_cmd, 1, 1, 1, 1)
+    
+        def _toggle_cmd(chk):
+            sen = chk.get_active()
+            ent_cmd.set_sensitive(sen)
+            btn_cmd.set_sensitive(sen)
+        chk_cmd.connect("toggled", _toggle_cmd)
     
         # --- Load Values ---
         if cfg:
@@ -2535,21 +2598,30 @@ class SnapConnectionManager(Gtk.Application):
             spin_idle.set_value(cfg.get("anti_idle_int", 300))
             
             # Buffer
-            spin_buf.set_value(int(cfg.get("term_scrollback", DEFAULT_TERM_SCROLLBACK)))
+            spin_buf.set_value(int(cfg.get("term_scrollback", getattr(self, "DEFAULT_TERM_SCROLLBACK", 10000))))
+    
+            # Startup Command
+            chk_cmd.set_active(cfg.get("cmd_file_enabled", False))
+            ent_cmd.set_text(cfg.get("cmd_file_path", ""))
+            
+            # Apply States
+            _toggle_idle(chk_idle)
+            _toggle_cmd(chk_cmd)
             
         else:
-            # Defaults for new server
+            # Defaults
             def_log_dir = self.settings.get("global_log_dir", "/tmp")
             log_entry.set_text(os.path.join(def_log_dir, "snapcm_log.txt"))
             rb_append.set_active(True)
             ent_idle_str.set_text("\\r")
             spin_idle.set_value(300)
-            spin_buf.set_value(int(self.settings.get("global_scrollback", DEFAULT_TERM_SCROLLBACK)))
+            spin_buf.set_value(int(self.settings.get("global_scrollback", getattr(self, "DEFAULT_TERM_SCROLLBACK", 10000))))
+            
+            _toggle_idle(chk_idle)
+            _toggle_cmd(chk_cmd)
+
     
-        # Apply initial sensitive state for idle controls
-        _toggle_idle(chk_idle)
-    
-        # Login Actions tab
+        # ──  Login Actions Tab ──────────────────────
         seq_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin=10)
         nb.append_page(seq_page, Gtk.Label(label="Login Actions"))
     
@@ -2599,8 +2671,9 @@ class SnapConnectionManager(Gtk.Application):
         if cfg:
             for step in cfg.get("auto_sequence", []):
                 seq_store.append([step["expect"], step["send"], step.get("hide", True)])
+ 
     
-        # Port Forwarding tab
+        # ── Port Forwarding Tab ──────────────────────
         fwd_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin=10)
         nb.append_page(fwd_page, Gtk.Label(label="Port Forwarding"))
     
@@ -2642,7 +2715,8 @@ class SnapConnectionManager(Gtk.Application):
                     rule
                 ])
 
-        # ── Appearance tab (Grid layout for alignment) ───────────────────────────────
+
+        # ── Appearance Tab (Grid layout for alignment) ───────────────────────────────
         app_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, margin=12)
         nb.append_page(app_page, Gtk.Label(label="Appearance"))
         
@@ -2852,6 +2926,8 @@ class SnapConnectionManager(Gtk.Application):
                 "logging_enabled": log_enable.get_active(),
                 "log_path":        log_entry.get_text().strip(),
                 "log_mode": "overwrite" if rb_overwr.get_active() else "append",
+                "cmd_file_enabled": chk_cmd.get_active(),
+                "cmd_file_path":    ent_cmd.get_text().strip(),
                 "anti_idle_enabled": chk_idle.get_active(),
                 "anti_idle_str":     ent_idle_str.get_text(),
                 "anti_idle_int":     int(spin_idle.get_value()),

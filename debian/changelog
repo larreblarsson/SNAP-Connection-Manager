@@ -1,3 +1,9 @@
+snap-connection-manager (1.2.9-1) stable; urgency=medium
+
+  * Introduce send a command file at login
+  
+ -- Tomas Larsson <larre.b.larsson@gmail.com>  Thu, 08 Dec 2025 15:00:00 +0100
+
 snap-connection-manager (1.2.8-1) stable; urgency=medium
 
   * Introduce inline setting on terminal session window 
