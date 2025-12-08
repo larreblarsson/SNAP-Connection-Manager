@@ -9,7 +9,7 @@
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
             line-height: 1.6;
             color: #333;
-            max-width: 800px;
+            max-width: 900px;
             margin: 0 auto;
             padding: 20px;
             background-color: #f9f9f9;
@@ -18,11 +18,11 @@
             color: #2c3e50;
             border-bottom: 1px solid #ddd;
             padding-bottom: 5px;
-            margin-top: 2em;
+            margin-top: 1.5em;
         }
-        h1 { font-size: 2em; }
+        h1 { font-size: 2.2em; margin-bottom: 0.5em; }
         h2 { font-size: 1.75em; }
-        h3 { font-size: 1.5em; }
+        h3 { font-size: 1.4em; border-bottom: none; color: #34495e; margin-bottom: 0.5em; }
         a {
             color: #3498db;
             text-decoration: none;
@@ -32,188 +32,206 @@
         }
         code {
             font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
-            background-color: #eee;
-            padding: 2px 4px;
+            background-color: #e8e8e8;
+            padding: 2px 5px;
             border-radius: 3px;
             font-size: 0.9em;
+            color: #d63384;
         }
         pre {
-            background-color: #eee;
-            padding: 10px;
-            border-radius: 4px;
+            background-color: #2d2d2d;
+            color: #f8f8f2;
+            padding: 15px;
+            border-radius: 5px;
             overflow-x: auto;
+            font-size: 0.95em;
         }
         .toc {
             background-color: #fff;
             border: 1px solid #ddd;
             border-radius: 5px;
-            padding: 15px;
+            padding: 20px;
             margin-bottom: 2em;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
         }
         .toc h2 {
             margin-top: 0;
             border-bottom: none;
+            font-size: 1.5em;
         }
-        .toc ul {
+        .toc ul, .toc ol {
             padding-left: 20px;
         }
-        .toc > ol {
-             padding-left: 20px;
+        .feature-box {
+            background: #fff;
+            border-left: 4px solid #3498db;
+            padding: 15px;
+            margin: 15px 0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }
         li {
             margin-bottom: 0.5em;
+        }
+        .note {
+            font-size: 0.9em;
+            color: #666;
+            font-style: italic;
         }
     </style>
 </head>
 <body>
 
-    <h1>SNAP Connection Manager - User & Technical Guide</h1>
+    <h1>SNAP Connection Manager v1.2.8</h1>
+    <p><strong>User & Technical Guide</strong></p>
 
     <div class="toc">
         <h2>Table of Contents</h2>
         <ol>
             <li><a href="#introduction">Introduction</a></li>
-            <li><a href="#core-features">Core Features</a>
+            <li><a href="#management">Server & Folder Management</a></li>
+            <li><a href="#connection">Connection & Automation Features</a>
                 <ul>
-                    <li><a href="#features-management">Server & Folder Management</a></li>
-                    <li><a href="#features-connection">Connection & Automation</a></li>
-                    <li><a href="#features-data">Data Management & Logging</a></li>
+                    <li><a href="#conn-terminal">The VTE Terminal</a></li>
+                    <li><a href="#conn-live-settings">Live Settings (In-Session)</a></li>
+                    <li><a href="#conn-startup">Startup Command Files</a></li>
+                    <li><a href="#conn-automation">Login Automation (Expect)</a></li>
+                    <li><a href="#conn-forwarding">Port Forwarding</a></li>
                 </ul>
             </li>
-            <li><a href="#encryption">The "Super Safe" Encryption System</a>
+            <li><a href="#logging">Logging & Data Management</a>
                 <ul>
-                    <li><a href="#encryption-how">How It Works</a></li>
-                    <li><a href="#encryption-storage">Data Storage Location</a></li>
-                    <li><a href="#encryption-change-pass">Changing Your Passphrase</a></li>
+                    <li><a href="#log-session">Clean Session Logging</a></li>
+                    <li><a href="#log-export">Import / Export</a></li>
                 </ul>
             </li>
-            <li><a href="#appearance">Appearance & Customization</a>
-                <ul>
-                    <li><a href="#appearance-global">Default Settings</a></li>
-                </ul>
-            </li>
-            <li><a href="#getting-started">Getting Started</a></li>
-            <li><a href="#installation">Installation Instructions</a></li>
-            <li><a href="#troubleshooting">Troubleshooting & Dependencies</a></li>
+            <li><a href="#encryption">Security & Encryption</a></li>
+            <li><a href="#appearance">Appearance & Customization</a></li>
+            <li><a href="#installation">Installation</a></li>
         </ol>
     </div>
 
     <h2 id="introduction">1. Introduction</h2>
-    <p>Welcome to the <strong>SNAP Connection Manager</strong>, a powerful and secure GTK3-based desktop application for managing and launching SSH and SFTP connections. Designed with security and usability in mind, this tool allows you to organize numerous server configurations into folders, automate complex login sequences, and tunnel traffic with port forwarding.</p>
-    <p>The cornerstone of this application is its robust, GnuPG-based encryption system, which ensures that all your sensitive connection details (passwords, key file paths, etc.) are never stored unencrypted on your disk.</p>
+    <p>Welcome to the <strong>SNAP Connection Manager</strong>, a professional-grade GTK3 application designed for managing SSH and SFTP connections. It combines a secure, encrypted database with a high-performance terminal emulator, allowing system administrators and developers to organize, automate, and monitor their connections with ease.</p>
 
-    <h2 id="core-features">2. Core Features</h2>
-
-    <h3 id="features-management">2.1 Server & Folder Management</h3>
-    <ul>
-        <li><strong>Hierarchical Organization</strong>: Organize your servers into user-defined folders for clarity. Servers not assigned to a specific folder reside in the default <code>Session</code> root.</li>
-        <li><strong>Full CRUD Operations</strong>: Easily <strong>Add</strong>, <strong>Edit</strong>, and <strong>Delete</strong> server configurations and folders through intuitive menus and right-click context menus.</li>
-        <li><strong>Inline Renaming</strong>: Quickly rename any folder or server directly in the tree view. Simply select the item, wait a brief moment, and click it again (slow double-click) to enter edit mode.</li>
-        <li><strong>Drag-and-Drop</strong>: Reorder servers within a folder or move servers between folders simply by dragging and dropping them in the main list.</li>
-        <li><strong>Copy & Paste</strong>:
-            <ul>
-                <li><strong>Via Menu</strong>: Use the right-click menu to Copy a server and Paste it into any folder.</li>
-                <li><strong>Via Shortcuts</strong>: Use <code>Ctrl+C</code> to copy a selected server and <code>Ctrl+V</code> to paste it.</li>
-            </ul>
-        </li>
-        <li><strong>Keyboard Shortcuts</strong>:
-            <ul>
-                <li><code>Delete</code>: Deletes the selected server or folder (with confirmation).</li>
-                <li><code>Ctrl+C</code> / <code>Ctrl+V</code>: Copy and Paste servers.</li>
-            </ul>
-        </li>
-        <li><strong>Natural Sorting</strong>: All servers and folders are sorted using a natural alphanumeric algorithm (e.g., <code>server10</code> appears after <code>server9</code>).</li>
-    </ul>
-
-    <h3 id="features-connection">2.2 Connection & Automation</h3>
-    <ul>
-        <li><strong>Dual Protocol Support</strong>: Launch connections using either <strong>SSH</strong> (for interactive shell access) or <strong>SFTP</strong> (for file transfers).</li>
-        <li><strong>Embedded VTE Terminal</strong>: Connections launch in a native, high-performance terminal window with advanced features:
-            <ul>
-                <li><strong>Smart Copy/Paste</strong>: Use <code>Ctrl+C</code> to copy text (if text is highlighted) or send an interrupt signal (if nothing is highlighted). Use <code>Ctrl+V</code> to paste.</li>
-                <li><strong>Context Menu</strong>: Right-click anywhere in the terminal to access Copy and Paste options.</li>
-                <li><strong>Auto-Resize Sync</strong>: The terminal automatically synchronizes its dimensions with the remote host, preventing broken text wrapping when resizing windows.</li>
-            </ul>
-        </li>
-        <li><strong>Authentication</strong>: Supports both Password-based (automated via <code>expect</code>) and Key File-based (via <code>-i</code> flag) authentication.</li>
-        <li><strong>Automated Login Sequences</strong>: Define "Expect/Send" steps to automate complex login procedures, sudo prompts, or initial commands. You can also hide specific "Send" steps (like passwords) from the UI.</li>
-        <li><strong>Advanced Port Forwarding</strong>: Configure Local (<code>-L</code>), Remote (<code>-R</code>), and Dynamic (<code>-D</code>) forwarding rules visually.</li>
-    </ul>
-
-    <h3 id="features-data">2.3 Data Management & Logging</h3>
-    <ul>
-        <li><strong>Encrypted Import/Export</strong>: Export your data to <code>JSON</code> (plaintext) or <code>GPG</code> (encrypted). The application intelligently switches the file extension based on your selection.</li>
-        <li><strong>GUI Log Pane</strong>: A log view at the bottom of the main window provides real-time feedback.</li>
-        <li><strong>Per-Server Session Logging</strong>: Enable logging for individual servers to save terminal output to a local file.</li>
-    </ul>
-
-    <h2 id="encryption">3. The "Super Safe" Encryption System</h2>
-    <p>Your security is paramount. The application's design ensures that your sensitive server credentials are never left vulnerable on your hard drive.</p>
-
-    <h3 id="encryption-how">3.1 How It Works</h3>
-    <ol>
-        <li><strong>Master Passphrase Creation</strong>: On the very first launch, you are required to set a <strong>Master Passphrase</strong>.</li>
-        <li><strong>State-of-the-Art Hashing</strong>: Your passphrase is hashed using <strong>PBKDF2-HMAC-SHA256</strong> with a unique salt and 600,000 iterations.</li>
-        <li><strong>Symmetric GPG Encryption</strong>: Server data is stored in <code>ssh_servers.json.gpg</code>, encrypted using the <strong>AES256</strong> cipher via GnuPG.</li>
-        <li><strong>On-Demand Decryption</strong>: Data is only decrypted in memory while the application is running.</li>
-    </ol>
-
-    <h3 id="encryption-storage">3.2 Data Storage Location</h3>
-    <ul>
-        <li><strong>Path</strong>: <code>~/.local/share/snap_connection_manager/</code></li>
-        <li><strong>Files</strong>: <code>snap_cm_settings.json</code> (Settings) and <code>ssh_servers.json.gpg</code> (Encrypted Data).</li>
-    </ul>
-
-    <h3 id="encryption-change-pass">3.3 Changing Your Passphrase</h3>
-    <p>You can securely rotate your key via <code>File -> Change Passphrase...</code>. This re-encrypts your data file atomically with the new credentials.</p>
-
-    <h2 id="appearance">4. Appearance & Customization</h2>
+    <h2 id="management">2. Server & Folder Management</h2>
+    <p>SNAP allows you to organize hundreds of servers into a logical hierarchy. The main interface is built around a "Session" tree view.</p>
     
-    <h3 id="appearance-server">4.1 Per-Server Customization</h3>
-    <p>The <strong>Appearance tab</strong> in the Server Editor allows you to customize individual connections:</p>
+    <div class="feature-box">
+        <h3>Organization Tools</h3>
+        <ul>
+            <li><strong>Folders:</strong> Create custom folders to group servers (e.g., "Production", "Staging", "AWS"). Servers not in a folder appear in the root.</li>
+            <li><strong>Drag-and-Drop:</strong> Move servers between folders or reorder them by simply dragging them with your mouse.</li>
+            <li><strong>Natural Sorting:</strong> The list automatically sorts items intelligently (e.g., <code>Web-2</code> comes before <code>Web-10</code>).</li>
+        </ul>
+    </div>
+
+    <div class="feature-box">
+        <h3>Editing & Actions</h3>
+        <ul>
+            <li><strong>Inline Renaming:</strong> Click a selected server or folder (wait 1 second after selecting) to rename it directly in the tree, or press <code>F2</code>.</li>
+            <li><strong>Copy/Paste:</strong> 
+                <ul>
+                    <li>Right-click a server and select <strong>Copy Server</strong> (or press <code>Ctrl+C</code>).</li>
+                    <li>Select a destination folder and choose <strong>Paste Server</strong> (or press <code>Ctrl+V</code>). This creates a deep copy with a unique name.</li>
+                </ul>
+            </li>
+            <li><strong>Context Menus:</strong> Right-click any item to access specific actions like Connect, Edit, or Delete.</li>
+        </ul>
+    </div>
+
+    <h2 id="connection">3. Connection & Automation Features</h2>
+
+    <h3 id="conn-terminal">3.1 The VTE Terminal</h3>
+    <p>Connections launch in a native, hardware-accelerated terminal window based on the <strong>VTE</strong> library (the same engine used by GNOME Terminal). It supports:</p>
     <ul>
-        <li><strong>Font & Colors</strong>: Select system fonts, custom foreground/background colors, and palettes (Tango, Solarized, etc.).</li>
-        <li><strong>Scrollback</strong>: Configure history size (default: 10,000 lines).</li>
+        <li><strong>256 Colors & TrueColor:</strong> Full support for rich terminal applications like <code>htop</code>, <code>vim</code>, and <code>tmux</code>.</li>
+        <li><strong>Smart Resize:</strong> The local terminal window size is synchronized with the remote host (<code>SIGWINCH</code>), ensuring text wraps correctly when you resize the window.</li>
+        <li><strong>Anti-Idle:</strong> Keep connections alive by automatically sending a "keepalive" character (default: a hidden null packet or newline) at a set interval. Configurable in the <strong>Terminal</strong> tab.</li>
     </ul>
 
-    <h3 id="appearance-global">4.2 Default Settings</h3>
-    <p>Accessed via <code>File -> Default Settings...</code>, this dialog allows you to define the <strong>default configuration</strong> for the application.</p>
+    <h3 id="conn-live-settings">3.2 Live Settings (In-Session)</h3>
+    <p>You can adjust a server's configuration without disconnecting.</p>
     <ul>
-        <li><strong>Default Appearance</strong>: Set the font, colors, and palette that will be applied to all <em>newly created</em> servers.</li>
-        <li><strong>Default Log Folder</strong>: Specify the default directory where session logs will be saved.</li>
-        <li><strong>Reset to Defaults</strong>: When editing a server, the "Reset to Defaults" button will restore that server's settings to match these Default Settings.</li>
+        <li>Look for the <strong>Menu Button</strong> (<span style="font-size:1.2em">≡</span>) in the header bar of any active terminal window.</li>
+        <li>Clicking this opens the <strong>Edit Server</strong> dialog for that active connection.</li>
+        <li><strong>Instant Apply:</strong> If you change the Font, Color Scheme, or Scrollback limit and click <strong>OK</strong>, the open window updates immediately to reflect your changes.</li>
     </ul>
 
-    <h2 id="getting-started">5. Getting Started</h2>
-    <ol>
-        <li><strong>First Launch</strong>: Set your Master Passphrase to initialize the secure storage.</li>
-        <li><strong>Add Servers</strong>: Right-click the "Session" folder and select "Add Server".</li>
-        <li><strong>Connect</strong>: Double-click a server to launch the terminal.</li>
-    </ol>
+    <h3 id="conn-startup">3.3 Startup Command Files</h3>
+    <p>Located in the <strong>Terminal</strong> tab of the Server Editor, this feature allows you to automate post-login tasks.</p>
+    <ul>
+        <li><strong>How it works:</strong> Select a local text file on your computer.</li>
+        <li><strong>Execution:</strong> Immediately after logging in, SNAP reads the file and types each line into the terminal automatically.</li>
+        <li><strong>Use Cases:</strong>
+            <ul>
+                <li>Setting environment variables (<code>export TERM=xterm-256color</code>).</li>
+                <li>Sourcing custom scripts (<code>source ~/.my_aliases</code>).</li>
+                <li>Navigating to a deep directory structure (<code>cd /var/www/html/project/logs</code>).</li>
+                <li>Running system health checks (<code>htop</code> or <code>docker ps</code>).</li>
+            </ul>
+        </li>
+    </ul>
 
-    <h2 id="installation">6. Installation Instructions</h2>
-    <p>You can install SNAP Connection Manager directly from its official APT repository.</p>
-    
-    <h3>6.1 Quick Install Script</h3>
+    <h3 id="conn-automation">3.4 Login Automation (Expect)</h3>
+    <p>For servers that require complex authentication steps (like 2FA prompts, legal disclaimers, or sudo passwords), use the <strong>Login Actions</strong> tab.</p>
+    <ul>
+        <li><strong>Expect:</strong> Define a text string the application should wait for (e.g., <code>Verification code:</code>).</li>
+        <li><strong>Send:</strong> Define the response to type (e.g., your code).</li>
+        <li><strong>Hide:</strong> Check this box to prevent the sent text from appearing in the log or screen (useful for passwords).</li>
+    </ul>
+
+    <h3 id="conn-forwarding">3.5 Port Forwarding</h3>
+    <p>Tunnel traffic securely through your SSH connection using the <strong>Port Forwarding</strong> tab.</p>
+    <ul>
+        <li><strong>Local (-L):</strong> Access a service on the remote network (e.g., an internal web dashboard) via <code>localhost</code> on your machine.</li>
+        <li><strong>Remote (-R):</strong> Expose a local service on your machine to the remote server.</li>
+        <li><strong>Dynamic (-D):</strong> Creates a SOCKS proxy that allows you to route browser traffic through the remote server.</li>
+    </ul>
+
+    <h2 id="logging">4. Logging & Data Management</h2>
+
+    <h3 id="log-session">4.1 Clean Session Logging</h3>
+    <p>SNAP features a sophisticated logging engine designed for troubleshooting and auditing.</p>
+    <ul>
+        <li><strong>Enable Logging:</strong> In the <strong>Terminal</strong> tab, check "Enable Logging" and select a file path.</li>
+        <li><strong>Modes:</strong>
+            <ul>
+                <li><strong>Append:</strong> Adds new session data to the end of the file. Useful for keeping a history of multiple sessions.</li>
+                <li><strong>Overwrite:</strong> Wipes the file clean every time you connect. Perfect for "current state" debugging.</li>
+            </ul>
+        </li>
+        <li><strong>"Clean Text" Technology:</strong> The application automatically strips out terminal control codes (ANSI colors, progress bars, window title updates) in real-time. The resulting log file is clean, human-readable text, perfect for use with <code>grep</code> or sharing with colleagues.</li>
+    </ul>
+
+    <h3 id="log-export">4.2 Import / Export</h3>
+    <p>Backup or share your configuration via the <strong>File</strong> menu.</p>
+    <ul>
+        <li><strong>JSON Export:</strong> Saves a plaintext <code>.json</code> file. <em>Warning: This includes passwords in plain text.</em></li>
+        <li><strong>GPG Export:</strong> Saves an encrypted <code>.json.gpg</code> file. You will be prompted for the Master Passphrase to encrypt it. This allows you to safely move your configuration between computers.</li>
+    </ul>
+
+    <h2 id="encryption">5. Security & Encryption</h2>
+    <p>Your credentials are protected by industry-standard cryptography.</p>
+    <ul>
+        <li><strong>Storage:</strong> Data is saved in <code>~/.local/share/snap_connection_manager/ssh_servers.json.gpg</code>.</li>
+        <li><strong>Algorithm:</strong> The file is encrypted using <strong>AES256</strong> via GnuPG.</li>
+        <li><strong>Keys:</strong> Your Master Passphrase is hashed using <strong>PBKDF2-HMAC-SHA256</strong> (600,000 iterations) with a unique salt to derive the encryption key.</li>
+        <li><strong>Memory Safety:</strong> Passwords are decrypted only in RAM and are never written to disk in plain text during normal operation.</li>
+    </ul>
+
+    <h2 id="appearance">6. Appearance & Customization</h2>
+    <p>Make the terminal your own via the <strong>Appearance</strong> tab.</p>
+    <ul>
+        <li><strong>Palettes:</strong> Choose from built-in schemes like <em>Solarized</em>, <em>Tango</em>, or <em>GNOME</em>, or define custom foreground/background colors.</li>
+        <li><strong>Fonts:</strong> Select any monospaced font installed on your system.</li>
+        <li><strong>Defaults:</strong> Set your preferred baseline settings in <code>File -> Default Settings...</code>. New servers will automatically inherit these choices.</li>
+    </ul>
+
+    <h2 id="installation">7. Installation</h2>
+    <p>To install or update to the latest version:</p>
     <pre><code>curl -sL https://raw.githubusercontent.com/larreblarsson/SNAP-Connection-Manager/main/install.sh | bash</code></pre>
-    
-    <h3>6.2 Manual Installation</h3>
-    <pre><code># Add the GPG key
-    curl -sL https://larreblarsson.github.io/SNAP-Connection-Manager/public.key | sudo gpg --dearmor -o /usr/share/keyrings/SNAP-Connection-Manager-keyring.gpg
-    
-    # Add the repository
-    echo "deb [signed-by=/usr/share/keyrings/SNAP-Connection-Manager-keyring.gpg] https://larreblarsson.github.io/SNAP-Connection-Manager stable main" | sudo tee /etc/apt/sources.list.d/SNAP-Connection-Manager.list
-    
-    # Update and install
-    sudo apt update
-    sudo apt install snap-connection-manager
-    </code></pre>
 
-    <h2 id="troubleshooting">7. Troubleshooting & Dependencies</h2>
-    <ul>
-        <li><strong>"Incorrect master passphrase."</strong>: Data is unrecoverable without the passphrase. Delete <code>~/.local/share/snap_connection_manager/</code> to reset.</li>
-        <li><strong>Dependencies</strong>: The app requires <code>python3-gi</code>, <code>gir1.2-gtk-3.0</code>, <code>gir1.2-vte-2.91</code>, <code>expect</code>, and <code>gnupg</code>.</li>
-    </ul>
+    <p class="note">© 2025 SNAP Connection Manager. Built with Python & GTK3.</p>
 
 </body>
 </html>
