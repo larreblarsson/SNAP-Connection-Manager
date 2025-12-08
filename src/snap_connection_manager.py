@@ -1777,50 +1777,46 @@ class SnapConnectionManager(Gtk.Application):
     # ── Helper: Strip ANSI Codes & Normalize Newlines ──────────────────────────
     def _strip_ansi(self, text):
         """
-        Removes ANSI escape codes and normalizes line endings without 
-        destroying genuine blank lines.
+        Removes ANSI escape codes and strictly normalizes line endings.
         """
         # 1. Remove ANSI OSC sequences (Window Titles, Hyperlinks)
-        #    Matches ESC ] ... BEL(\x07) or ESC \
         text = re.sub(r'\x1B\][^\x07\x1B]*(\x07|\x1B\\)', '', text)
         
         # 2. Remove ANSI CSI sequences (Colors, Cursor moves)
         text = re.sub(r'\x1B\[[0-9;?]*[a-zA-Z]', '', text)
         
-        # 3. Remove other Escape sequences (like line drawing sets)
+        # 3. Remove other Escape sequences
         text = re.sub(r'\x1B[\(\)][0-9A-Z]', '', text)
 
-        # 4. Normalize Line Endings
-        #    a) Convert Windows/Network CRLF (\r\n) to Unix (\n)
+        # 4. Normalize Line Endings (Strict Mode)
+        #    Since we read with newline='', we see the raw characters.
+        #    Terminal usually sends \r\n. We want just \n.
         text = text.replace('\r\n', '\n')
         
-        #    b) Remove any remaining raw Carriage Returns (\r).
-        #       This prevents "double newlines" if a \r and \n get split across 
-        #       two log chunks, and cleans up progress-bar style overwrites.
+        #    Clean up any leftover raw CRs (which cause formatting glitches)
         text = text.replace('\r', '')
         
-        # REMOVED: The aggressive collapse (re.sub \n+ -> \n) 
-        # This ensures that if the server sends a blank line, it stays in the log.
+        return text             
+
+
         
-        return text
-             
-        
-# ── Helper: Background Log Monitor ────────────────────────────────────────
+    # ── Helper: Background Log Monitor ────────────────────────────────────────
     def _log_monitor(self, raw_path, final_path, stop_event):
         """
-        Reads raw log data, buffers ONLY incomplete ANSI codes, 
-        and writes cleaned text immediately.
+        Reads raw log data (preserving exact line endings), buffers incomplete 
+        ANSI codes, and writes cleaned text immediately.
         """
         import time
         partial_buffer = ""
         
         # Regex to detect a trailing INCOMPLETE escape sequence.
-        # Matches an ESC at the end, or ESC followed by chars that aren't a terminator yet.
         incomplete_esc_re = re.compile(r'\x1B(\[[\d;?]*|\][^\x07\x1B]*)?$')
 
         try:
-            with open(raw_path, 'r', encoding='utf-8', errors='ignore') as f_raw, \
-                 open(final_path, 'a', encoding='utf-8') as f_final:
+            # This prevents Python from auto-converting \r\n to \n during read.
+            # We must handle the raw formatting ourselves in _strip_ansi.
+            with open(raw_path, 'r', encoding='utf-8', errors='ignore', newline='') as f_raw, \
+                 open(final_path, 'a', encoding='utf-8', newline='') as f_final:
                 
                 while not stop_event.is_set():
                     data = f_raw.read()
@@ -1828,14 +1824,12 @@ class SnapConnectionManager(Gtk.Application):
                         time.sleep(0.1)
                         continue
                     
-                    # Prepend any leftovers from the previous chunk
                     text = partial_buffer + data
                     partial_buffer = ""
                     
-                    # Check if the text ENDS with a partial ANSI code (like a cut-off color code)
+                    # Buffer trailing partial ANSI codes
                     match = incomplete_esc_re.search(text)
                     if match:
-                        # Found a split code at the very end. Buffer it for the next loop.
                         span = match.span()
                         partial_buffer = text[span[0]:] 
                         text = text[:span[0]]           
@@ -1845,7 +1839,7 @@ class SnapConnectionManager(Gtk.Application):
                         f_final.write(clean)
                         f_final.flush()
                 
-                # Flush whatever is left when session ends
+                # Final flush
                 rest = f_raw.read()
                 full = partial_buffer + rest
                 if full:
@@ -1857,6 +1851,8 @@ class SnapConnectionManager(Gtk.Application):
         finally:
             if os.path.exists(raw_path):
                 os.remove(raw_path)
+
+
 
 
 
@@ -2098,7 +2094,7 @@ class SnapConnectionManager(Gtk.Application):
             transient_for=parent_window, # Can be None
             modal=True,
             program_name=APP_TITLE,
-            version="1.2.5",
+            version="1.2.7",
             authors=["Copilot, Gemini, Tomas Larsson"],
             artists=["Tomas Larsson"],
             comments="A GTK-based SSH/SFTP session manager"
