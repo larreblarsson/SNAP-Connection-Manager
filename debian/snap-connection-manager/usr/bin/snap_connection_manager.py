@@ -1713,8 +1713,6 @@ class SnapConnectionManager(Gtk.Application):
     
         self._launch_expect(lines, f"{cfg['name']} SSH", cfg)
 
-
-
     def on_sftp(self, action, param):
         model, it = self.tree.get_selection().get_selected()
         if not it:
@@ -1798,8 +1796,6 @@ class SnapConnectionManager(Gtk.Application):
         
         return text             
 
-
-        
     # ── Helper: Background Log Monitor ────────────────────────────────────────
     def _log_monitor(self, raw_path, final_path, stop_event):
         """
@@ -1851,54 +1847,55 @@ class SnapConnectionManager(Gtk.Application):
         finally:
             if os.path.exists(raw_path):
                 os.remove(raw_path)
-
-
-
-
-
-
+                
+    # ── Helper: Open Settings from Terminal Window ────────────────────────────
+    def _on_term_settings_clicked(self, button, data):
+        # Unpack the tuple: (config, terminal_widget, window_object)
+        cfg, terminal, win = data
+        
+        try:
+            idx = self.servers.index(cfg)
+            
+            # This makes the Dialog a "child" of the Terminal Window.
+            # When the dialog closes, focus will naturally return here.
+            self._open_server_dialog(cfg, idx, target_window=win)
+            
+            # Apply visual changes immediately
+            self.apply_appearance_to_terminal(terminal, cfg)
+            
+        except ValueError:
+            self._error("This server configuration no longer exists.")
 
     # ── Generate & Launch Expect Script ───────────────────────────────────────
     def _launch_expect(self, lines, title, cfg):
+        # 1. Verify Expect
         expect = shutil.which("expect")
         if not expect:
             return self._error("'expect' not found. Please install the 'expect' package.")
 
-        # --- 1. Setup Logging (Temp File Strategy) ---
-        raw_log_path = None
-        logging_stop_event = None
-        
+        # --- 2. Setup Real-time Logging (FIFO) ---
+        fifo_path = None
         if getattr(self, "current_logging_enabled", False) and self.current_log_path:
             try:
-                # A. Handle Overwrite Mode Manually
-                log_mode = getattr(self, "current_log_mode", "append")
-                if log_mode == "overwrite":
-                    # Truncate the final log file now so we start fresh
-                    with open(self.current_log_path, 'w') as f:
-                        f.write("")
-                
-                # B. Create a unique TEMP file for raw output
                 import uuid
-                raw_log_path = os.path.join(tempfile.gettempdir(), f"snapcm_raw_{uuid.uuid4().hex[:8]}.log")
-                # Create it empty
-                open(raw_log_path, 'w').close()
+                fifo_path = os.path.join(tempfile.gettempdir(), f"snapcm_{uuid.uuid4().hex[:8]}.fifo")
+                if not os.path.exists(fifo_path):
+                    os.mkfifo(fifo_path)
                 
-                # C. Start the Monitor Thread
-                logging_stop_event = threading.Event()
+                log_mode = getattr(self, "current_log_mode", "append")
                 t = threading.Thread(
                     target=self._log_monitor,
-                    args=(raw_log_path, self.current_log_path, logging_stop_event)
+                    args=(fifo_path, self.current_log_path, log_mode)
                 )
                 t.daemon = True 
                 t.start()
-                
             except Exception as e:
-                print(f"Failed to setup logging: {e}", file=sys.stderr)
-                if raw_log_path and os.path.exists(raw_log_path):
-                    os.remove(raw_log_path)
-                raw_log_path = None
+                self.log(f"Failed to setup logging: {e}")
+                if fifo_path and os.path.exists(fifo_path):
+                    os.remove(fifo_path)
+                fifo_path = None
 
-        # --- 2. Create the expect script ---
+        # --- 3. Create the expect script ---
         header = [
             "#!/usr/bin/env expect\n",
             "set env(TERM) \"xterm-256color\"\n", 
@@ -1906,13 +1903,10 @@ class SnapConnectionManager(Gtk.Application):
             "log_user 1\n",
         ]
         
-        if raw_log_path:
-            # Tcl: Open the file
-            header.append(f'set log_handle [open "{raw_log_path}" w]\n')
-            # Tcl: CRITICAL - Disable buffering so data is written instantly
-            header.append('fconfigure $log_handle -buffering none\n')
-            # Tcl: Tell Expect to use this unbuffered handle
-            header.append('log_file -open $log_handle\n')
+        if fifo_path:
+            header.append(f'set log_fifo [open "{fifo_path}" w]\n')
+            header.append('fconfigure $log_fifo -buffering none\n')
+            header.append('log_file -open $log_fifo\n')
         
         header.append("set timeout -1\n")
         
@@ -1953,6 +1947,9 @@ class SnapConnectionManager(Gtk.Application):
             final_lines[spawn_index+1:spawn_index+1] = resize_trap
         else:
             header.extend(resize_trap)
+
+        if fifo_path:
+            final_lines.append('\ncatch {close $log_fifo}\n')
             
         script_content = "".join(header + final_lines)
 
@@ -1963,32 +1960,44 @@ class SnapConnectionManager(Gtk.Application):
             tf.close()
             os.chmod(tf.name, 0o700)
 
-            term_window = Gtk.Window(title=title)
+            # We create the Vte.Terminal object here so we have a reference to it
+            # before we create the button that needs to control it.
+            terminal = Vte.Terminal()
+            self.apply_appearance_to_terminal(terminal, cfg)
+            terminal.connect("key-press-event", self._on_terminal_key_press)
+            terminal.connect("button-press-event", self._on_terminal_button_press)
+
+            # --- Create Window and HeaderBar ---
+            term_window = Gtk.Window()
             term_window.set_default_size(800, 600)
             term_window.set_modal(False)
             term_window.set_destroy_with_parent(True)
+
+            hb = Gtk.HeaderBar()
+            hb.set_show_close_button(True)
+            hb.set_title(title)
+            term_window.set_titlebar(hb)
+
+            # --- Create Settings Button ---
+            btn_settings = Gtk.Button.new_from_icon_name("open-menu-symbolic", Gtk.IconSize.MENU)
+            btn_settings.set_tooltip_text("Edit Server Settings")
+            
+            btn_settings.connect("clicked", self._on_term_settings_clicked, (cfg, terminal, term_window))            
+            hb.pack_end(btn_settings)
 
             wg = Gtk.WindowGroup()
             wg.add_window(term_window)
             term_window._wg = wg
 
-            terminal = Vte.Terminal()
-            self.apply_appearance_to_terminal(terminal, cfg)
-            terminal.connect("key-press-event", self._on_terminal_key_press)
-            terminal.connect("button-press-event", self._on_terminal_button_press)
-            
+            # Cleanup handler
             def on_child_exited(_terminal, _status):
-                # 1. Signal logging thread to stop
-                if logging_stop_event:
-                    logging_stop_event.set()
-                
-                # 2. Cleanup
                 term_window.close()
                 if os.path.exists(tf.name):
                     os.remove(tf.name)
             
             terminal.connect("child-exited", on_child_exited)
             
+            # Launch Process
             argv = [expect, "-f", tf.name]
 
             import warnings
@@ -2015,13 +2024,8 @@ class SnapConnectionManager(Gtk.Application):
             self._error(f"Failed to launch terminal: {e}")
             if tf and os.path.exists(tf.name):
                 os.remove(tf.name)
-            if logging_stop_event:
-                logging_stop_event.set()
-            if raw_log_path and os.path.exists(raw_log_path):
-                os.remove(raw_log_path)
-
-
-
+            if fifo_path and os.path.exists(fifo_path):
+                os.remove(fifo_path)
 
 
 
@@ -2330,15 +2334,22 @@ class SnapConnectionManager(Gtk.Application):
             else:
                 self._error("Could not start the local help server to display the user guide.")
 
-    def _open_server_dialog(self, cfg=None, idx=None):
+    def _open_server_dialog(self, cfg=None, idx=None, target_window=None):
         is_edit = cfg is not None
     
-        parent_window = self.win if hasattr(self, 'win') and self.win else None
+        # Determine the parent. If we came from a specific terminal window, use that.
+        # Otherwise, fall back to the main application window.
+        if target_window:
+            parent_window = target_window
+        else:
+            parent_window = self.win if hasattr(self, 'win') and self.win else None
+            
         dlg = Gtk.Dialog(
             title="Edit Server" if is_edit else "Add Server",
             transient_for=parent_window,
             modal=True
         )
+
         dlg.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
                         Gtk.STOCK_OK,     Gtk.ResponseType.OK)
         dlg.set_default_response(Gtk.ResponseType.OK)
@@ -2885,12 +2896,13 @@ class SnapConnectionManager(Gtk.Application):
                     open(result["log_path"], "w").close()
     
             if is_edit:
-                self.servers[idx] = result
+                self.servers[idx].clear()
+                self.servers[idx].update(result)
                 self.log(f"Edited '{result['name']}'")
             else:
                 self.servers.append(result)
                 self.log(f"Added '{result['name']}'")
-    
+   
             try:
                 save_servers(self.servers, self.master_passphrase)
             except Exception as e:
