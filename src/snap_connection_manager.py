@@ -1796,24 +1796,61 @@ class SnapConnectionManager(Gtk.Application):
         
         return text             
 
+    # ── Helper: Format Log Strings (Substitutions) ────────────────────────────
+    def _format_log_data(self, template, cfg):
+        if not template: return ""
+        try:
+            import datetime
+            now = datetime.datetime.now()
+            
+            # Perform Substitutions
+            out = template.replace("%H", str(cfg.get("host", "")))
+            out = out.replace("%S", str(cfg.get("name", "")))
+            out = out.replace("%M", now.strftime("%m"))
+            out = out.replace("%D", now.strftime("%d"))
+            out = out.replace("%h", now.strftime("%H"))
+            
+            # Interpret escape sequences (like \n)
+            # We wrap this in a try to prevent crash on invalid user input
+            try:
+                out = bytes(out, "utf-8").decode("unicode_escape")
+            except:
+                pass
+            return out
+        except Exception as e:
+            print(f"DEBUG: Error formatting custom log data: {e}", file=sys.stderr)
+            return template
+
     # ── Helper: Background Log Monitor ────────────────────────────────────────
-    def _log_monitor(self, raw_path, final_path, stop_event):
+    def _log_monitor(self, raw_path, final_path, stop_event, cfg):
         """
-        Reads raw log data (preserving exact line endings), buffers incomplete 
-        ANSI codes, and writes cleaned text immediately.
+        Reads raw log data, cleans ANSI codes, handles custom log injections.
+        Debug print statements added for console troubleshooting.
         """
         import time
         partial_buffer = ""
-        
-        # Regex to detect a trailing INCOMPLETE escape sequence.
         incomplete_esc_re = re.compile(r'\x1B(\[[\d;?]*|\][^\x07\x1B]*)?$')
+        
+        # Load strings safely
+        str_conn = cfg.get("log_custom_connect", "")
+        str_disc = cfg.get("log_custom_disconnect", "")
+        str_line = cfg.get("log_custom_line", "")
+        
+        is_start_of_line = True
+
+        print(f"DEBUG: Monitor thread starting for {final_path}")
 
         try:
-            # This prevents Python from auto-converting \r\n to \n during read.
-            # We must handle the raw formatting ourselves in _strip_ansi.
             with open(raw_path, 'r', encoding='utf-8', errors='ignore', newline='') as f_raw, \
                  open(final_path, 'a', encoding='utf-8', newline='') as f_final:
                 
+                # 1. Connect Header
+                if str_conn:
+                    msg = self._format_log_data(str_conn, cfg)
+                    f_final.write(msg)
+                    if not msg.endswith('\n'): f_final.write('\n')
+                    f_final.flush()
+
                 while not stop_event.is_set():
                     data = f_raw.read()
                     if not data:
@@ -1823,7 +1860,7 @@ class SnapConnectionManager(Gtk.Application):
                     text = partial_buffer + data
                     partial_buffer = ""
                     
-                    # Buffer trailing partial ANSI codes
+                    # Split buffering for incomplete ANSI codes
                     match = incomplete_esc_re.search(text)
                     if match:
                         span = match.span()
@@ -1832,22 +1869,59 @@ class SnapConnectionManager(Gtk.Application):
                     
                     if text:
                         clean = self._strip_ansi(text)
-                        f_final.write(clean)
+                        
+                        # Line Prefixing Logic
+                        if str_line and clean:
+                            prefix = self._format_log_data(str_line, cfg)
+                            processed = prefix + clean if is_start_of_line else clean
+                            processed = processed.replace('\n', '\n' + prefix)
+                            
+                            if clean.endswith('\n'):
+                                # Avoid adding prefix to a non-existent next line chunk
+                                if len(processed) >= len(prefix):
+                                    processed = processed[:-len(prefix)]
+                                is_start_of_line = True
+                            else:
+                                is_start_of_line = False
+                                
+                            f_final.write(processed)
+                        else:
+                            f_final.write(clean)
                         f_final.flush()
                 
                 # Final flush
                 rest = f_raw.read()
                 full = partial_buffer + rest
                 if full:
-                    f_final.write(self._strip_ansi(full))
+                    clean = self._strip_ansi(full)
+                    if str_line:
+                        if is_start_of_line: clean = self._format_log_data(str_line, cfg) + clean
+                        clean = clean.replace('\n', '\n' + self._format_log_data(str_line, cfg))
+                    f_final.write(clean)
                     f_final.flush()
+
+                # Disconnect Footer
+                if str_disc:
+                    if not is_start_of_line: f_final.write('\n')
+                    msg = self._format_log_data(str_disc, cfg)
+                    f_final.write(msg)
+                    if not msg.endswith('\n'): f_final.write('\n')
+                    f_final.flush()
+            
+            print(f"DEBUG: Monitor thread closing normally for {final_path}")
                     
         except Exception as e:
-            print(f"Log monitor thread failed: {e}", file=sys.stderr)
+            print(f"ERROR: Log monitor thread CRASHED: {e}", file=sys.stderr)
         finally:
             if os.path.exists(raw_path):
                 os.remove(raw_path)
-                
+
+
+
+
+
+
+                                
     # ── Helper: Open Settings from Terminal Window ────────────────────────────
     def _on_term_settings_clicked(self, button, data):
         # Unpack the tuple: (config, terminal_widget, window_object)
@@ -1873,27 +1947,41 @@ class SnapConnectionManager(Gtk.Application):
         if not expect:
             return self._error("'expect' not found. Please install the 'expect' package.")
 
-        # --- 2. Setup Real-time Logging (FIFO) ---
-        fifo_path = None
+        # --- 2. Setup Real-time Logging (Temp File Strategy) ---
+        raw_log_path = None
+        logging_stop_event = None
+        
         if getattr(self, "current_logging_enabled", False) and self.current_log_path:
             try:
-                import uuid
-                fifo_path = os.path.join(tempfile.gettempdir(), f"snapcm_{uuid.uuid4().hex[:8]}.fifo")
-                if not os.path.exists(fifo_path):
-                    os.mkfifo(fifo_path)
-                
+                # A. Handle Overwrite Mode Manually
                 log_mode = getattr(self, "current_log_mode", "append")
+                if log_mode == "overwrite":
+                    # Truncate the final log file now so we start fresh
+                    with open(self.current_log_path, 'w') as f:
+                        f.write("")
+                
+                # B. Create a unique TEMP file for raw output
+                import uuid
+                raw_log_path = os.path.join(tempfile.gettempdir(), f"snapcm_raw_{uuid.uuid4().hex[:8]}.log")
+                # Create it empty
+                open(raw_log_path, 'w').close()
+                
+                # C. Start the Monitor Thread
+                logging_stop_event = threading.Event()
                 t = threading.Thread(
                     target=self._log_monitor,
-                    args=(fifo_path, self.current_log_path, log_mode)
+                    # Pass 'cfg' as the last argument so we can read custom strings
+                    args=(raw_log_path, self.current_log_path, logging_stop_event, cfg)
                 )
                 t.daemon = True 
                 t.start()
+                
             except Exception as e:
-                self.log(f"Failed to setup logging: {e}")
-                if fifo_path and os.path.exists(fifo_path):
-                    os.remove(fifo_path)
-                fifo_path = None
+                print(f"Failed to setup logging: {e}", file=sys.stderr)
+                # Cleanup if setup failed
+                if raw_log_path and os.path.exists(raw_log_path):
+                    os.remove(raw_log_path)
+                raw_log_path = None
 
         # --- 3. Create the expect script ---
         header = [
@@ -1903,10 +1991,13 @@ class SnapConnectionManager(Gtk.Application):
             "log_user 1\n",
         ]
         
-        if fifo_path:
-            header.append(f'set log_fifo [open "{fifo_path}" w]\n')
-            header.append('fconfigure $log_fifo -buffering none\n')
-            header.append('log_file -open $log_fifo\n')
+        if raw_log_path:
+            # Tcl: Open the file
+            header.append(f'set log_handle [open "{raw_log_path}" w]\n')
+            # Tcl: CRITICAL - Disable buffering so data is written instantly
+            header.append('fconfigure $log_handle -buffering none\n')
+            # Tcl: Tell Expect to use this unbuffered handle
+            header.append('log_file -open $log_handle\n')
         
         header.append("set timeout -1\n")
         
@@ -1948,8 +2039,7 @@ class SnapConnectionManager(Gtk.Application):
         else:
             header.extend(resize_trap)
             
-        # ▼▼▼▼ STARTUP COMMAND FILE LOGIC ▼▼▼▼
-        # We inject this logic right BEFORE the 'interact' command
+        # --- Startup Command File Logic ---
         if cfg.get("cmd_file_enabled", False):
             cpath = cfg.get("cmd_file_path", "")
             if cpath and os.path.exists(cpath):
@@ -1958,24 +2048,14 @@ class SnapConnectionManager(Gtk.Application):
                         file_lines = f.readlines()
                     
                     cmd_block = []
-                    cmd_block.append("after 500\n") # Brief pause to let shell init
+                    cmd_block.append("after 500\n") 
                     
                     for line in file_lines:
-                        # 1. Clean raw newlines
                         l = line.rstrip('\r\n')
-                        # 2. Escape special Tcl characters (\, ", [, ], $)
-                        # Order is important: backslash first!
-                        l_esc = l.replace('\\', '\\\\') \
-                                 .replace('"', '\\"')   \
-                                 .replace('[', '\\[')   \
-                                 .replace(']', '\\]')   \
-                                 .replace('$', '\\$')
-                        
-                        # 3. Create send command
+                        l_esc = l.replace('\\', '\\\\').replace('"', '\\"').replace('[', '\\[').replace(']', '\\]').replace('$', '\\$')
                         cmd_block.append(f'send -- "{l_esc}\\r"\n')
-                        cmd_block.append("after 100\n") # Typing delay
+                        cmd_block.append("after 100\n")
                     
-                    # Insert before 'interact'
                     idx_interact = -1
                     for i, ln in enumerate(final_lines):
                         if ln.strip().startswith("interact"):
@@ -1988,11 +2068,10 @@ class SnapConnectionManager(Gtk.Application):
                         final_lines.extend(cmd_block)
                         
                 except Exception as e:
-                    self.log(f"Error reading command file: {e}")
-        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+                    print(f"Error reading command file: {e}", file=sys.stderr)
 
-        if fifo_path:
-            final_lines.append('\ncatch {close $log_fifo}\n')
+        if raw_log_path:
+            final_lines.append('\ncatch {close $log_handle}\n')
             
         script_content = "".join(header + final_lines)
 
@@ -2031,6 +2110,11 @@ class SnapConnectionManager(Gtk.Application):
             term_window._wg = wg
 
             def on_child_exited(_terminal, _status):
+                # 1. Stop logging
+                if logging_stop_event:
+                    logging_stop_event.set()
+                
+                # 2. Cleanup window and temp file
                 term_window.close()
                 if os.path.exists(tf.name):
                     os.remove(tf.name)
@@ -2063,13 +2147,10 @@ class SnapConnectionManager(Gtk.Application):
             self._error(f"Failed to launch terminal: {e}")
             if tf and os.path.exists(tf.name):
                 os.remove(tf.name)
-            if fifo_path and os.path.exists(fifo_path):
-                os.remove(fifo_path)
-
-
-
-
-
+            if logging_stop_event:
+                logging_stop_event.set()
+            if raw_log_path and os.path.exists(raw_log_path):
+                os.remove(raw_log_path)
 
     # ── Logging to GUI Only ──────────────────────────────────────────────
     def log(self, msg):
@@ -2477,7 +2558,7 @@ class SnapConnectionManager(Gtk.Application):
         pw_entry.set_sensitive(auth_pw.get_active())
 
     
-        # ── Terminal Tab (Combines Logging, Anti-Idle, Buffer, Startup Script) ──────
+    # ── Terminal Tab ──────────────────────────────────────────────────────────
         term_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, margin=12)
         nb.append_page(term_page, Gtk.Label(label="Terminal"))
     
@@ -2489,18 +2570,16 @@ class SnapConnectionManager(Gtk.Application):
         log_grid.set_margin_start(12) 
         term_page.pack_start(log_grid, False, False, 0)
     
-        # Row 0: Enable Checkbox
+        # Logging Controls
         log_enable = Gtk.CheckButton(label="Enable Logging")
         log_grid.attach(log_enable, 0, 0, 2, 1)
     
-        # Row 1: Path Entry + Browse
         log_entry = Gtk.Entry(); log_entry.set_size_request(280, -1)
         log_btn   = Gtk.Button(label="Browse")
         log_btn.connect("clicked", lambda w: browse_log(dlg, log_entry))
         log_grid.attach(log_entry, 0, 1, 1, 1)
         log_grid.attach(log_btn,   1, 1, 1, 1)
     
-        # Row 2: Mode
         hbox_mode = Gtk.Box(spacing=12)
         hbox_mode.pack_start(Gtk.Label(label="Mode:"), False, False, 0)
         rb_append = Gtk.RadioButton.new_with_label(None, "Append to file")
@@ -2509,105 +2588,114 @@ class SnapConnectionManager(Gtk.Application):
         hbox_mode.pack_start(rb_overwr, False, False, 0)
         log_grid.attach(hbox_mode, 0, 2, 2, 1)
     
-        # --- Section 2: Anti-Idle ---
+        # --- Section 2: Custom Log Data (NEW) ---
+        term_page.pack_start(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), False, False, 0)
+        lbl_cust_head = Gtk.Label(label="<b>Custom Log Data</b>", use_markup=True, xalign=0)
+        term_page.pack_start(lbl_cust_head, False, False, 0)
+    
+        cust_grid = Gtk.Grid(column_spacing=12, row_spacing=6)
+        cust_grid.set_margin_start(12)
+        term_page.pack_start(cust_grid, False, False, 0)
+    
+        # Custom Fields
+        ent_log_conn = Gtk.Entry()
+        ent_log_disc = Gtk.Entry()
+        ent_log_line = Gtk.Entry()
+        
+        cust_grid.attach(Gtk.Label(label="Upon connect:", xalign=0), 0, 0, 1, 1)
+        cust_grid.attach(ent_log_conn, 1, 0, 1, 1)
+        
+        cust_grid.attach(Gtk.Label(label="Upon disconnect:", xalign=0), 0, 1, 1, 1)
+        cust_grid.attach(ent_log_disc, 1, 1, 1, 1)
+        
+        cust_grid.attach(Gtk.Label(label="On each line:", xalign=0), 0, 2, 1, 1)
+        cust_grid.attach(ent_log_line, 1, 2, 1, 1)
+    
+        # Help Label
+        help_txt = ("<small><b>Substitutions:</b> %H=Hostname, %S=Session Name, "
+                    "%M=Month, %D=Day, %h=Hour.\nUse \\n for newline.</small>")
+        lbl_help = Gtk.Label(label=help_txt, use_markup=True, xalign=0)
+        cust_grid.attach(lbl_help, 0, 3, 2, 1)
+    
+        # --- Section 3: Anti-Idle ---
         term_page.pack_start(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), False, False, 0)
         lbl_idle_head = Gtk.Label(label="<b>Anti-idle</b>", use_markup=True, xalign=0)
         term_page.pack_start(lbl_idle_head, False, False, 0)
-    
-        box_idle = Gtk.Box(spacing=6)
-        box_idle.set_margin_start(12)
         
+        # ... [Keep existing Anti-Idle UI code] ...
+        # (Just copy your existing box_idle setup here)
+        box_idle = Gtk.Box(spacing=6); box_idle.set_margin_start(12)
         chk_idle = Gtk.CheckButton(label="Send string:")
         ent_idle_str = Gtk.Entry(); ent_idle_str.set_width_chars(6)
         lbl_every = Gtk.Label(label="every")
         spin_idle = Gtk.SpinButton.new_with_range(1, 9999, 1)
         lbl_sec = Gtk.Label(label="seconds")
-    
-        box_idle.pack_start(chk_idle, False, False, 0)
-        box_idle.pack_start(ent_idle_str, False, False, 0)
-        box_idle.pack_start(lbl_every, False, False, 0)
-        box_idle.pack_start(spin_idle, False, False, 0)
+        box_idle.pack_start(chk_idle, False, False, 0); box_idle.pack_start(ent_idle_str, False, False, 0)
+        box_idle.pack_start(lbl_every, False, False, 0); box_idle.pack_start(spin_idle, False, False, 0)
         box_idle.pack_start(lbl_sec, False, False, 0)
         term_page.pack_start(box_idle, False, False, 0)
-    
+        
         def _toggle_idle(chk):
             sen = chk.get_active()
-            ent_idle_str.set_sensitive(sen)
-            spin_idle.set_sensitive(sen)
-            lbl_every.set_sensitive(sen)
-            lbl_sec.set_sensitive(sen)
+            ent_idle_str.set_sensitive(sen); spin_idle.set_sensitive(sen)
+            lbl_every.set_sensitive(sen); lbl_sec.set_sensitive(sen)
         chk_idle.connect("toggled", _toggle_idle)
     
-        # --- Section 3: Buffer ---
+        # --- Section 4: Buffer ---
         term_page.pack_start(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), False, False, 0)
         lbl_buf_head = Gtk.Label(label="<b>Scrollback Buffer</b>", use_markup=True, xalign=0)
         term_page.pack_start(lbl_buf_head, False, False, 0)
-    
-        box_buf = Gtk.Box(spacing=6)
-        box_buf.set_margin_start(12)
+        
+        box_buf = Gtk.Box(spacing=6); box_buf.set_margin_start(12)
         spin_buf = Gtk.SpinButton.new_with_range(100, 100000, 100)
         box_buf.pack_start(Gtk.Label(label="Lines:"), False, False, 0)
         box_buf.pack_start(spin_buf, False, False, 0)
         term_page.pack_start(box_buf, False, False, 0)
     
-        # --- Section 4: Startup Command File (NEW) ---
+        # --- Section 5: Startup Command File ---
         term_page.pack_start(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), False, False, 0)
         lbl_cmd_head = Gtk.Label(label="<b>Startup Command File</b>", use_markup=True, xalign=0)
         term_page.pack_start(lbl_cmd_head, False, False, 0)
-    
-        cmd_grid = Gtk.Grid(column_spacing=12, row_spacing=6)
-        cmd_grid.set_margin_start(12)
-        term_page.pack_start(cmd_grid, False, False, 0)
-    
-        chk_cmd = Gtk.CheckButton(label="Send file content at login")
         
+        # ... [Keep existing Startup Command UI code] ...
+        cmd_grid = Gtk.Grid(column_spacing=12, row_spacing=6); cmd_grid.set_margin_start(12)
+        term_page.pack_start(cmd_grid, False, False, 0)
+        chk_cmd = Gtk.CheckButton(label="Send file content at login")
         ent_cmd = Gtk.Entry(); ent_cmd.set_size_request(280, -1)
         btn_cmd = Gtk.Button(label="Browse")
-    
         def _browse_cmd(w):
             d = Gtk.FileChooserDialog("Select Command File", dlg, Gtk.FileChooserAction.OPEN)
             d.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL, Gtk.STOCK_OPEN, Gtk.ResponseType.OK)
-            if d.run() == Gtk.ResponseType.OK:
-                ent_cmd.set_text(d.get_filename())
+            if d.run() == Gtk.ResponseType.OK: ent_cmd.set_text(d.get_filename())
             d.destroy()
         btn_cmd.connect("clicked", _browse_cmd)
-    
-        cmd_grid.attach(chk_cmd, 0, 0, 2, 1)
-        cmd_grid.attach(ent_cmd, 0, 1, 1, 1)
-        cmd_grid.attach(btn_cmd, 1, 1, 1, 1)
-    
+        cmd_grid.attach(chk_cmd, 0, 0, 2, 1); cmd_grid.attach(ent_cmd, 0, 1, 1, 1); cmd_grid.attach(btn_cmd, 1, 1, 1, 1)
         def _toggle_cmd(chk):
             sen = chk.get_active()
-            ent_cmd.set_sensitive(sen)
-            btn_cmd.set_sensitive(sen)
+            ent_cmd.set_sensitive(sen); btn_cmd.set_sensitive(sen)
         chk_cmd.connect("toggled", _toggle_cmd)
     
         # --- Load Values ---
         if cfg:
-            # Logging
             log_enable.set_active(cfg.get("logging_enabled", False))
             log_entry.set_text(cfg.get("log_path", "/tmp/snapcm_log.txt"))
-            if cfg.get("log_mode", "append") == "overwrite":
-                rb_overwr.set_active(True)
-            else:
-                rb_append.set_active(True)
+            if cfg.get("log_mode", "append") == "overwrite": rb_overwr.set_active(True)
+            else: rb_append.set_active(True)
             
-            # Anti-Idle
+            # Load Custom Log Data
+            ent_log_conn.set_text(cfg.get("log_custom_connect", ""))
+            ent_log_disc.set_text(cfg.get("log_custom_disconnect", ""))
+            ent_log_line.set_text(cfg.get("log_custom_line", ""))
+    
             chk_idle.set_active(cfg.get("anti_idle_enabled", False))
             ent_idle_str.set_text(cfg.get("anti_idle_str", "\\r"))
             spin_idle.set_value(cfg.get("anti_idle_int", 300))
-            
-            # Buffer
             spin_buf.set_value(int(cfg.get("term_scrollback", getattr(self, "DEFAULT_TERM_SCROLLBACK", 10000))))
-    
-            # Startup Command
             chk_cmd.set_active(cfg.get("cmd_file_enabled", False))
             ent_cmd.set_text(cfg.get("cmd_file_path", ""))
             
-            # Apply States
             _toggle_idle(chk_idle)
             _toggle_cmd(chk_cmd)
-            
         else:
             # Defaults
             def_log_dir = self.settings.get("global_log_dir", "/tmp")
@@ -2616,11 +2704,10 @@ class SnapConnectionManager(Gtk.Application):
             ent_idle_str.set_text("\\r")
             spin_idle.set_value(300)
             spin_buf.set_value(int(self.settings.get("global_scrollback", getattr(self, "DEFAULT_TERM_SCROLLBACK", 10000))))
-            
             _toggle_idle(chk_idle)
             _toggle_cmd(chk_cmd)
 
-    
+
         # ──  Login Actions Tab ──────────────────────
         seq_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin=10)
         nb.append_page(seq_page, Gtk.Label(label="Login Actions"))
@@ -2672,6 +2759,10 @@ class SnapConnectionManager(Gtk.Application):
             for step in cfg.get("auto_sequence", []):
                 seq_store.append([step["expect"], step["send"], step.get("hide", True)])
  
+
+
+
+
     
         # ── Port Forwarding Tab ──────────────────────
         fwd_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin=10)
@@ -2714,6 +2805,7 @@ class SnapConnectionManager(Gtk.Application):
                     int(rule.get("dest_port", 0)),
                     rule
                 ])
+
 
 
         # ── Appearance Tab (Grid layout for alignment) ───────────────────────────────
@@ -2926,6 +3018,9 @@ class SnapConnectionManager(Gtk.Application):
                 "logging_enabled": log_enable.get_active(),
                 "log_path":        log_entry.get_text().strip(),
                 "log_mode": "overwrite" if rb_overwr.get_active() else "append",
+                "log_custom_connect": ent_log_conn.get_text(),
+                "log_custom_disconnect": ent_log_disc.get_text(),
+                "log_custom_line": ent_log_line.get_text(),
                 "cmd_file_enabled": chk_cmd.get_active(),
                 "cmd_file_path":    ent_cmd.get_text().strip(),
                 "anti_idle_enabled": chk_idle.get_active(),
