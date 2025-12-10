@@ -1804,12 +1804,15 @@ class SnapConnectionManager(Gtk.Application):
             now = datetime.datetime.now()
             
             # Perform Substitutions
-            out = template.replace("%H", str(cfg.get("host", "")))
-            out = out.replace("%S", str(cfg.get("name", "")))
-            out = out.replace("%M", now.strftime("%m"))
-            out = out.replace("%D", now.strftime("%d"))
-            out = out.replace("%h", now.strftime("%H"))
-            
+            out = template.replace("%H", str(cfg.get("host", ""))) # Host name
+            out = out.replace("%S", str(cfg.get("name", ""))) # Session Name
+            out = out.replace("%Y", now.strftime("%Y")) # Year        
+            out = out.replace("%M", now.strftime("%m")) # Month
+            out = out.replace("%D", now.strftime("%d")) # Day
+            out = out.replace("%h", now.strftime("%H")) # Hours
+            out = out.replace("%m", now.strftime("%M")) # Minute
+            out = out.replace("%s", now.strftime("%S")) # Second    
+           
             # Interpret escape sequences (like \n)
             # We wrap this in a try to prevent crash on invalid user input
             try:
@@ -1825,16 +1828,20 @@ class SnapConnectionManager(Gtk.Application):
     def _log_monitor(self, raw_path, final_path, stop_event, cfg):
         """
         Reads raw log data, cleans ANSI codes, handles custom log injections.
-        Debug print statements added for console troubleshooting.
         """
         import time
         partial_buffer = ""
         incomplete_esc_re = re.compile(r'\x1B(\[[\d;?]*|\][^\x07\x1B]*)?$')
         
-        # Load strings safely
-        str_conn = cfg.get("log_custom_connect", "")
-        str_disc = cfg.get("log_custom_disconnect", "")
-        str_line = cfg.get("log_custom_line", "")
+        # Only load custom strings if the feature is enabled
+        if cfg.get("log_custom_enabled", False):
+            str_conn = cfg.get("log_custom_connect", "")
+            str_disc = cfg.get("log_custom_disconnect", "")
+            str_line = cfg.get("log_custom_line", "")
+        else:
+            str_conn = ""
+            str_disc = ""
+            str_line = ""
         
         is_start_of_line = True
 
@@ -1860,7 +1867,6 @@ class SnapConnectionManager(Gtk.Application):
                     text = partial_buffer + data
                     partial_buffer = ""
                     
-                    # Split buffering for incomplete ANSI codes
                     match = incomplete_esc_re.search(text)
                     if match:
                         span = match.span()
@@ -1870,14 +1876,12 @@ class SnapConnectionManager(Gtk.Application):
                     if text:
                         clean = self._strip_ansi(text)
                         
-                        # Line Prefixing Logic
                         if str_line and clean:
                             prefix = self._format_log_data(str_line, cfg)
                             processed = prefix + clean if is_start_of_line else clean
                             processed = processed.replace('\n', '\n' + prefix)
                             
                             if clean.endswith('\n'):
-                                # Avoid adding prefix to a non-existent next line chunk
                                 if len(processed) >= len(prefix):
                                     processed = processed[:-len(prefix)]
                                 is_start_of_line = True
@@ -1915,12 +1919,6 @@ class SnapConnectionManager(Gtk.Application):
         finally:
             if os.path.exists(raw_path):
                 os.remove(raw_path)
-
-
-
-
-
-
                                 
     # ── Helper: Open Settings from Terminal Window ────────────────────────────
     def _on_term_settings_clicked(self, button, data):
@@ -2219,7 +2217,7 @@ class SnapConnectionManager(Gtk.Application):
             transient_for=parent_window, # Can be None
             modal=True,
             program_name=APP_TITLE,
-            version="1.2.9",
+            version="1.2.10",
             authors=["Copilot, Gemini, Tomas Larsson"],
             artists=["Tomas Larsson"],
             comments="A GTK-based SSH/SFTP session manager"
@@ -2558,7 +2556,7 @@ class SnapConnectionManager(Gtk.Application):
         pw_entry.set_sensitive(auth_pw.get_active())
 
     
-    # ── Terminal Tab ──────────────────────────────────────────────────────────
+        # ── Terminal Tab ──────────────────────────────────────────────────────────
         term_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, margin=12)
         nb.append_page(term_page, Gtk.Label(label="Terminal"))
     
@@ -2566,11 +2564,12 @@ class SnapConnectionManager(Gtk.Application):
         lbl_log_head = Gtk.Label(label="<b>Session Logging</b>", use_markup=True, xalign=0)
         term_page.pack_start(lbl_log_head, False, False, 0)
     
+        # Use a single grid for both main and custom logging to keep alignment nice
         log_grid = Gtk.Grid(column_spacing=12, row_spacing=6)
         log_grid.set_margin_start(12) 
         term_page.pack_start(log_grid, False, False, 0)
     
-        # Logging Controls
+        # 1. Main Logging Controls
         log_enable = Gtk.CheckButton(label="Enable Logging")
         log_grid.attach(log_enable, 0, 0, 2, 1)
     
@@ -2588,42 +2587,62 @@ class SnapConnectionManager(Gtk.Application):
         hbox_mode.pack_start(rb_overwr, False, False, 0)
         log_grid.attach(hbox_mode, 0, 2, 2, 1)
     
-        # --- Section 2: Custom Log Data (NEW) ---
-        term_page.pack_start(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), False, False, 0)
-        lbl_cust_head = Gtk.Label(label="<b>Custom Log Data</b>", use_markup=True, xalign=0)
-        term_page.pack_start(lbl_cust_head, False, False, 0)
+        # 2. Custom Log Data Subsection (No separator, normal text checkbox)
+        # We add a little vertical spacing (top_margin) to separate it visually but keep it grouped
+        chk_log_custom = Gtk.CheckButton(label="Custom Log Data")
+        chk_log_custom.set_margin_top(8) 
+        log_grid.attach(chk_log_custom, 0, 3, 2, 1)
     
-        cust_grid = Gtk.Grid(column_spacing=12, row_spacing=6)
-        cust_grid.set_margin_start(12)
-        term_page.pack_start(cust_grid, False, False, 0)
-    
-        # Custom Fields
+        # Custom Fields (Indented slightly via alignment or separate grid, here we just use the grid)
         ent_log_conn = Gtk.Entry()
         ent_log_disc = Gtk.Entry()
         ent_log_line = Gtk.Entry()
         
-        cust_grid.attach(Gtk.Label(label="Upon connect:", xalign=0), 0, 0, 1, 1)
-        cust_grid.attach(ent_log_conn, 1, 0, 1, 1)
+        # We add these to the same grid, rows 4, 5, 6
+        log_grid.attach(Gtk.Label(label="Upon connect:", xalign=0), 0, 4, 1, 1)
+        log_grid.attach(ent_log_conn, 1, 4, 1, 1)
         
-        cust_grid.attach(Gtk.Label(label="Upon disconnect:", xalign=0), 0, 1, 1, 1)
-        cust_grid.attach(ent_log_disc, 1, 1, 1, 1)
+        log_grid.attach(Gtk.Label(label="Upon disconnect:", xalign=0), 0, 5, 1, 1)
+        log_grid.attach(ent_log_disc, 1, 5, 1, 1)
         
-        cust_grid.attach(Gtk.Label(label="On each line:", xalign=0), 0, 2, 1, 1)
-        cust_grid.attach(ent_log_line, 1, 2, 1, 1)
+        log_grid.attach(Gtk.Label(label="On each line:", xalign=0), 0, 6, 1, 1)
+        log_grid.attach(ent_log_line, 1, 6, 1, 1)
     
         # Help Label
         help_txt = ("<small><b>Substitutions:</b> %H=Hostname, %S=Session Name, "
-                    "%M=Month, %D=Day, %h=Hour.\nUse \\n for newline.</small>")
+                    "%Y=Year, %M=Month, %D=Day, %h=Hour, %m=Min, %s=Sec.\nUse \\n for newline.</small>")
+
         lbl_help = Gtk.Label(label=help_txt, use_markup=True, xalign=0)
-        cust_grid.attach(lbl_help, 0, 3, 2, 1)
+        log_grid.attach(lbl_help, 0, 7, 2, 1)
     
-        # --- Section 3: Anti-Idle ---
+        # --- Logic: Handle Enable/Disable Dependencies ---
+        def _update_log_states(widget=None):
+            main_active = log_enable.get_active()
+            custom_active = chk_log_custom.get_active()
+    
+            # 1. Main controls depend on Main Checkbox
+            log_entry.set_sensitive(main_active)
+            log_btn.set_sensitive(main_active)
+            hbox_mode.set_sensitive(main_active)
+            
+            # 2. Custom Checkbox depends on Main Checkbox
+            chk_log_custom.set_sensitive(main_active)
+            
+            # 3. Custom Fields depend on BOTH
+            fields_active = main_active and custom_active
+            ent_log_conn.set_sensitive(fields_active)
+            ent_log_disc.set_sensitive(fields_active)
+            ent_log_line.set_sensitive(fields_active)
+            lbl_help.set_sensitive(fields_active)
+    
+        log_enable.connect("toggled", _update_log_states)
+        chk_log_custom.connect("toggled", _update_log_states)
+    
+        # --- Section 2: Anti-Idle ---
         term_page.pack_start(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), False, False, 0)
         lbl_idle_head = Gtk.Label(label="<b>Anti-idle</b>", use_markup=True, xalign=0)
         term_page.pack_start(lbl_idle_head, False, False, 0)
         
-        # ... [Keep existing Anti-Idle UI code] ...
-        # (Just copy your existing box_idle setup here)
         box_idle = Gtk.Box(spacing=6); box_idle.set_margin_start(12)
         chk_idle = Gtk.CheckButton(label="Send string:")
         ent_idle_str = Gtk.Entry(); ent_idle_str.set_width_chars(6)
@@ -2641,7 +2660,7 @@ class SnapConnectionManager(Gtk.Application):
             lbl_every.set_sensitive(sen); lbl_sec.set_sensitive(sen)
         chk_idle.connect("toggled", _toggle_idle)
     
-        # --- Section 4: Buffer ---
+        # --- Section 3: Buffer ---
         term_page.pack_start(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), False, False, 0)
         lbl_buf_head = Gtk.Label(label="<b>Scrollback Buffer</b>", use_markup=True, xalign=0)
         term_page.pack_start(lbl_buf_head, False, False, 0)
@@ -2652,12 +2671,11 @@ class SnapConnectionManager(Gtk.Application):
         box_buf.pack_start(spin_buf, False, False, 0)
         term_page.pack_start(box_buf, False, False, 0)
     
-        # --- Section 5: Startup Command File ---
+        # --- Section 4: Startup Command File ---
         term_page.pack_start(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), False, False, 0)
         lbl_cmd_head = Gtk.Label(label="<b>Startup Command File</b>", use_markup=True, xalign=0)
         term_page.pack_start(lbl_cmd_head, False, False, 0)
         
-        # ... [Keep existing Startup Command UI code] ...
         cmd_grid = Gtk.Grid(column_spacing=12, row_spacing=6); cmd_grid.set_margin_start(12)
         term_page.pack_start(cmd_grid, False, False, 0)
         chk_cmd = Gtk.CheckButton(label="Send file content at login")
@@ -2683,6 +2701,7 @@ class SnapConnectionManager(Gtk.Application):
             else: rb_append.set_active(True)
             
             # Load Custom Log Data
+            chk_log_custom.set_active(cfg.get("log_custom_enabled", False))
             ent_log_conn.set_text(cfg.get("log_custom_connect", ""))
             ent_log_disc.set_text(cfg.get("log_custom_disconnect", ""))
             ent_log_line.set_text(cfg.get("log_custom_line", ""))
@@ -2694,6 +2713,7 @@ class SnapConnectionManager(Gtk.Application):
             chk_cmd.set_active(cfg.get("cmd_file_enabled", False))
             ent_cmd.set_text(cfg.get("cmd_file_path", ""))
             
+            _update_log_states()
             _toggle_idle(chk_idle)
             _toggle_cmd(chk_cmd)
         else:
@@ -2704,9 +2724,10 @@ class SnapConnectionManager(Gtk.Application):
             ent_idle_str.set_text("\\r")
             spin_idle.set_value(300)
             spin_buf.set_value(int(self.settings.get("global_scrollback", getattr(self, "DEFAULT_TERM_SCROLLBACK", 10000))))
+            _update_log_states()
             _toggle_idle(chk_idle)
-            _toggle_cmd(chk_cmd)
-
+            _toggle_cmd(chk_cmd)    
+    		
 
         # ──  Login Actions Tab ──────────────────────
         seq_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin=10)
@@ -2760,10 +2781,6 @@ class SnapConnectionManager(Gtk.Application):
                 seq_store.append([step["expect"], step["send"], step.get("hide", True)])
  
 
-
-
-
-    
         # ── Port Forwarding Tab ──────────────────────
         fwd_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin=10)
         nb.append_page(fwd_page, Gtk.Label(label="Port Forwarding"))
@@ -3018,6 +3035,7 @@ class SnapConnectionManager(Gtk.Application):
                 "logging_enabled": log_enable.get_active(),
                 "log_path":        log_entry.get_text().strip(),
                 "log_mode": "overwrite" if rb_overwr.get_active() else "append",
+                "log_custom_enabled": chk_log_custom.get_active(),
                 "log_custom_connect": ent_log_conn.get_text(),
                 "log_custom_disconnect": ent_log_disc.get_text(),
                 "log_custom_line": ent_log_line.get_text(),
