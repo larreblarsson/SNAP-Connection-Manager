@@ -2665,10 +2665,8 @@ class SnapConnectionManager(Gtk.Application):
         box_idle = Gtk.Box(spacing=12); box_idle.set_margin_start(12)
         chk_idle = Gtk.CheckButton(label="Send string:")
         
-        # ▼▼▼▼ ALIGNMENT FIX: Add to same SizeGroup ▼▼▼▼
         # This aligns the "At connect" inputs with the "\r" input below
         sg_labels.add_widget(chk_idle)
-        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
     
         ent_idle_str = Gtk.Entry(); ent_idle_str.set_width_chars(6)
         lbl_every = Gtk.Label(label="every")
