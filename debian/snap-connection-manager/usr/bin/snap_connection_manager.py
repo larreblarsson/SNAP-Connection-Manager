@@ -2564,12 +2564,11 @@ class SnapConnectionManager(Gtk.Application):
         lbl_log_head = Gtk.Label(label="<b>Session Logging</b>", use_markup=True, xalign=0)
         term_page.pack_start(lbl_log_head, False, False, 0)
     
-        # Use a single grid for both main and custom logging to keep alignment nice
         log_grid = Gtk.Grid(column_spacing=12, row_spacing=6)
         log_grid.set_margin_start(12) 
         term_page.pack_start(log_grid, False, False, 0)
     
-        # 1. Main Logging Controls
+        # Main Logging Controls
         log_enable = Gtk.CheckButton(label="Enable Logging")
         log_grid.attach(log_enable, 0, 0, 2, 1)
     
@@ -2587,53 +2586,73 @@ class SnapConnectionManager(Gtk.Application):
         hbox_mode.pack_start(rb_overwr, False, False, 0)
         log_grid.attach(hbox_mode, 0, 2, 2, 1)
     
-        # 2. Custom Log Data Subsection (No separator, normal text checkbox)
-        # We add a little vertical spacing (top_margin) to separate it visually but keep it grouped
-        chk_log_custom = Gtk.CheckButton(label="Custom Log Data")
-        chk_log_custom.set_margin_top(8) 
-        log_grid.attach(chk_log_custom, 0, 3, 2, 1)
+        # --- Subsection: Append Data to Log ---
+        vbox_append = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        vbox_append.set_margin_top(8)
+        vbox_append.set_margin_start(12)
+        term_page.pack_start(vbox_append, False, False, 0)
     
-        # Custom Fields (Indented slightly via alignment or separate grid, here we just use the grid)
+        chk_log_custom = Gtk.CheckButton(label="Append Data to Log")
+        vbox_append.pack_start(chk_log_custom, False, False, 0)
+    
+        # We create a specific group for the labels + the anti-idle checkbox below.
+        # This aligns the start of the input boxes perfectly.
+        sg_labels = Gtk.SizeGroup(mode=Gtk.SizeGroupMode.HORIZONTAL)
+    
+        # Row: At connect
+        hbox_conn = Gtk.Box(spacing=12)
+        lbl_conn = Gtk.Label(label="At connect:", xalign=0)
         ent_log_conn = Gtk.Entry()
+        ent_log_conn.set_width_chars(30)  # <--- FORCE WIDTH HERE
+        sg_labels.add_widget(lbl_conn)
+        hbox_conn.pack_start(lbl_conn, False, False, 0)
+        hbox_conn.pack_start(ent_log_conn, False, False, 0)
+        vbox_append.pack_start(hbox_conn, False, False, 0)
+    
+        # Row: At disconnect
+        hbox_disc = Gtk.Box(spacing=12)
+        lbl_disc = Gtk.Label(label="At disconnect:", xalign=0)
         ent_log_disc = Gtk.Entry()
+        ent_log_disc.set_width_chars(30)  # <--- FORCE WIDTH HERE
+        sg_labels.add_widget(lbl_disc)
+        hbox_disc.pack_start(lbl_disc, False, False, 0)
+        hbox_disc.pack_start(ent_log_disc, False, False, 0)
+        vbox_append.pack_start(hbox_disc, False, False, 0)
+    
+        # Row: On each line
+        hbox_line = Gtk.Box(spacing=12)
+        lbl_line = Gtk.Label(label="On each line:", xalign=0)
         ent_log_line = Gtk.Entry()
-        
-        # We add these to the same grid, rows 4, 5, 6
-        log_grid.attach(Gtk.Label(label="Upon connect:", xalign=0), 0, 4, 1, 1)
-        log_grid.attach(ent_log_conn, 1, 4, 1, 1)
-        
-        log_grid.attach(Gtk.Label(label="Upon disconnect:", xalign=0), 0, 5, 1, 1)
-        log_grid.attach(ent_log_disc, 1, 5, 1, 1)
-        
-        log_grid.attach(Gtk.Label(label="On each line:", xalign=0), 0, 6, 1, 1)
-        log_grid.attach(ent_log_line, 1, 6, 1, 1)
+        ent_log_line.set_width_chars(30)  # <--- FORCE WIDTH HERE
+        sg_labels.add_widget(lbl_line)
+        hbox_line.pack_start(lbl_line, False, False, 0)
+        hbox_line.pack_start(ent_log_line, False, False, 0)
+        vbox_append.pack_start(hbox_line, False, False, 0)
     
         # Help Label
         help_txt = ("<small><b>Substitutions:</b> %H=Hostname, %S=Session Name, "
                     "%Y=Year, %M=Month, %D=Day, %h=Hour, %m=Min, %s=Sec.\nUse \\n for newline.</small>")
-
         lbl_help = Gtk.Label(label=help_txt, use_markup=True, xalign=0)
-        log_grid.attach(lbl_help, 0, 7, 2, 1)
+        vbox_append.pack_start(lbl_help, False, False, 0)
     
         # --- Logic: Handle Enable/Disable Dependencies ---
         def _update_log_states(widget=None):
             main_active = log_enable.get_active()
             custom_active = chk_log_custom.get_active()
     
-            # 1. Main controls depend on Main Checkbox
             log_entry.set_sensitive(main_active)
             log_btn.set_sensitive(main_active)
             hbox_mode.set_sensitive(main_active)
-            
-            # 2. Custom Checkbox depends on Main Checkbox
             chk_log_custom.set_sensitive(main_active)
             
-            # 3. Custom Fields depend on BOTH
             fields_active = main_active and custom_active
             ent_log_conn.set_sensitive(fields_active)
             ent_log_disc.set_sensitive(fields_active)
             ent_log_line.set_sensitive(fields_active)
             lbl_help.set_sensitive(fields_active)
+            lbl_conn.set_sensitive(fields_active)
+            lbl_disc.set_sensitive(fields_active)
+            lbl_line.set_sensitive(fields_active)
     
         log_enable.connect("toggled", _update_log_states)
         chk_log_custom.connect("toggled", _update_log_states)
@@ -2643,8 +2662,12 @@ class SnapConnectionManager(Gtk.Application):
         lbl_idle_head = Gtk.Label(label="<b>Anti-idle</b>", use_markup=True, xalign=0)
         term_page.pack_start(lbl_idle_head, False, False, 0)
         
-        box_idle = Gtk.Box(spacing=6); box_idle.set_margin_start(12)
+        box_idle = Gtk.Box(spacing=12); box_idle.set_margin_start(12)
         chk_idle = Gtk.CheckButton(label="Send string:")
+        
+        # This aligns the "At connect" inputs with the "\r" input below
+        sg_labels.add_widget(chk_idle)
+    
         ent_idle_str = Gtk.Entry(); ent_idle_str.set_width_chars(6)
         lbl_every = Gtk.Label(label="every")
         spin_idle = Gtk.SpinButton.new_with_range(1, 9999, 1)
@@ -2665,7 +2688,7 @@ class SnapConnectionManager(Gtk.Application):
         lbl_buf_head = Gtk.Label(label="<b>Scrollback Buffer</b>", use_markup=True, xalign=0)
         term_page.pack_start(lbl_buf_head, False, False, 0)
         
-        box_buf = Gtk.Box(spacing=6); box_buf.set_margin_start(12)
+        box_buf = Gtk.Box(spacing=12); box_buf.set_margin_start(12)
         spin_buf = Gtk.SpinButton.new_with_range(100, 100000, 100)
         box_buf.pack_start(Gtk.Label(label="Lines:"), False, False, 0)
         box_buf.pack_start(spin_buf, False, False, 0)
@@ -2726,8 +2749,25 @@ class SnapConnectionManager(Gtk.Application):
             spin_buf.set_value(int(self.settings.get("global_scrollback", getattr(self, "DEFAULT_TERM_SCROLLBACK", 10000))))
             _update_log_states()
             _toggle_idle(chk_idle)
-            _toggle_cmd(chk_cmd)    
-    		
+            _toggle_cmd(chk_cmd)
+    
+
+
+
+
+
+		
+		
+
+
+
+
+
+
+
+
+
+
 
         # ──  Login Actions Tab ──────────────────────
         seq_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin=10)

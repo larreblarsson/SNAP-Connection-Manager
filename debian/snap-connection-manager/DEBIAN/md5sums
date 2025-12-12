@@ -1,9 +1,9 @@
-f6376d91a1269002ff1f23e394d7ddff  usr/bin/snap_connection_manager.py
+2145482708b3fbf12ec590c0a32399f2  usr/bin/snap_connection_manager.py
 1ddc8f94b010736e4e1699ef9006ccaf  usr/share/applications/snap_connection_manager.desktop
-df8cc27b071a753e3de6a93aa28c8e68  usr/share/doc/snap-connection-manager/changelog.Debian.gz
+fa8fe03a1968f2aaef6011ae86ab9677  usr/share/doc/snap-connection-manager/changelog.Debian.gz
 6212f0a41cac4c24aec794a4c04003d7  usr/share/icons/hicolor/512x512/apps/snap_icon.png
 8648beaed4412e62dbb719c4d5d30ffe  usr/share/snap_connection_manager/Disclaimer.txt
-cf200fd35652ac95057502fa07551660  usr/share/snap_connection_manager/folder.png
+31ae92044efe02ff190b642b74354b9b  usr/share/snap_connection_manager/folder.png
 aa94ce1492102a37b43d30c91c869833  usr/share/snap_connection_manager/readme.md
 26ce783a9483c4691263ba46adb5a652  usr/share/snap_connection_manager/server.png
 b16a0563a960d472f09b3ebfb9bbb45c  usr/share/snap_connection_manager/user_guide.html
