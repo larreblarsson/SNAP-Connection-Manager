@@ -2564,12 +2564,11 @@ class SnapConnectionManager(Gtk.Application):
         lbl_log_head = Gtk.Label(label="<b>Session Logging</b>", use_markup=True, xalign=0)
         term_page.pack_start(lbl_log_head, False, False, 0)
     
-        # Grid 1: Main Logging (File path needs width, so we keep this as a grid)
         log_grid = Gtk.Grid(column_spacing=12, row_spacing=6)
         log_grid.set_margin_start(12) 
         term_page.pack_start(log_grid, False, False, 0)
     
-        # 1. Main Logging Controls
+        # Main Logging Controls
         log_enable = Gtk.CheckButton(label="Enable Logging")
         log_grid.attach(log_enable, 0, 0, 2, 1)
     
@@ -2588,38 +2587,34 @@ class SnapConnectionManager(Gtk.Application):
         log_grid.attach(hbox_mode, 0, 2, 2, 1)
     
         # --- Subsection: Append Data to Log ---
-        # We use a VBox to hold the checkbox and the rows beneath it
         vbox_append = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         vbox_append.set_margin_top(8)
-        vbox_append.set_margin_start(12) # Align with other controls
+        vbox_append.set_margin_start(12)
         term_page.pack_start(vbox_append, False, False, 0)
     
-        # 1. The Checkbox (Renamed as requested)
         chk_log_custom = Gtk.CheckButton(label="Append Data to Log")
         vbox_append.pack_start(chk_log_custom, False, False, 0)
     
-        # 2. The Input Rows (Using HBoxes for tight left alignment)
-        # We use a SizeGroup to ensure the labels have uniform width for vertical alignment
-        sg_append_labels = Gtk.SizeGroup(mode=Gtk.SizeGroupMode.HORIZONTAL)
+        # We create a specific group for the labels + the anti-idle checkbox below.
+        # This aligns the start of the input boxes perfectly.
+        sg_labels = Gtk.SizeGroup(mode=Gtk.SizeGroupMode.HORIZONTAL)
     
         # Row: At connect
         hbox_conn = Gtk.Box(spacing=12)
         lbl_conn = Gtk.Label(label="At connect:", xalign=0)
         ent_log_conn = Gtk.Entry()
-        ent_log_conn.set_size_request(400, -1)        
-        ent_log_conn = Gtk.Entry()
-        sg_append_labels.add_widget(lbl_conn)
+        ent_log_conn.set_width_chars(30)  # <--- FORCE WIDTH HERE
+        sg_labels.add_widget(lbl_conn)
         hbox_conn.pack_start(lbl_conn, False, False, 0)
-        hbox_conn.pack_start(ent_log_conn, False, False, 0) # False/False packs tightly left
+        hbox_conn.pack_start(ent_log_conn, False, False, 0)
         vbox_append.pack_start(hbox_conn, False, False, 0)
     
         # Row: At disconnect
         hbox_disc = Gtk.Box(spacing=12)
         lbl_disc = Gtk.Label(label="At disconnect:", xalign=0)
-        ent_log_conn = Gtk.Entry()
-        ent_log_conn.set_size_request(400, -1)        
         ent_log_disc = Gtk.Entry()
-        sg_append_labels.add_widget(lbl_disc)
+        ent_log_disc.set_width_chars(30)  # <--- FORCE WIDTH HERE
+        sg_labels.add_widget(lbl_disc)
         hbox_disc.pack_start(lbl_disc, False, False, 0)
         hbox_disc.pack_start(ent_log_disc, False, False, 0)
         vbox_append.pack_start(hbox_disc, False, False, 0)
@@ -2627,10 +2622,9 @@ class SnapConnectionManager(Gtk.Application):
         # Row: On each line
         hbox_line = Gtk.Box(spacing=12)
         lbl_line = Gtk.Label(label="On each line:", xalign=0)
-        ent_log_conn = Gtk.Entry()
-        ent_log_conn.set_size_request(400, -1)        
         ent_log_line = Gtk.Entry()
-        sg_append_labels.add_widget(lbl_line)
+        ent_log_line.set_width_chars(30)  # <--- FORCE WIDTH HERE
+        sg_labels.add_widget(lbl_line)
         hbox_line.pack_start(lbl_line, False, False, 0)
         hbox_line.pack_start(ent_log_line, False, False, 0)
         vbox_append.pack_start(hbox_line, False, False, 0)
@@ -2641,27 +2635,21 @@ class SnapConnectionManager(Gtk.Application):
         lbl_help = Gtk.Label(label=help_txt, use_markup=True, xalign=0)
         vbox_append.pack_start(lbl_help, False, False, 0)
     
-    
         # --- Logic: Handle Enable/Disable Dependencies ---
         def _update_log_states(widget=None):
             main_active = log_enable.get_active()
             custom_active = chk_log_custom.get_active()
     
-            # 1. Main controls
             log_entry.set_sensitive(main_active)
             log_btn.set_sensitive(main_active)
             hbox_mode.set_sensitive(main_active)
-            
-            # 2. Custom Checkbox
             chk_log_custom.set_sensitive(main_active)
             
-            # 3. Custom Fields
             fields_active = main_active and custom_active
             ent_log_conn.set_sensitive(fields_active)
             ent_log_disc.set_sensitive(fields_active)
             ent_log_line.set_sensitive(fields_active)
             lbl_help.set_sensitive(fields_active)
-            # Also dim labels
             lbl_conn.set_sensitive(fields_active)
             lbl_disc.set_sensitive(fields_active)
             lbl_line.set_sensitive(fields_active)
@@ -2674,8 +2662,14 @@ class SnapConnectionManager(Gtk.Application):
         lbl_idle_head = Gtk.Label(label="<b>Anti-idle</b>", use_markup=True, xalign=0)
         term_page.pack_start(lbl_idle_head, False, False, 0)
         
-        box_idle = Gtk.Box(spacing=6); box_idle.set_margin_start(12)
+        box_idle = Gtk.Box(spacing=12); box_idle.set_margin_start(12)
         chk_idle = Gtk.CheckButton(label="Send string:")
+        
+        # ▼▼▼▼ ALIGNMENT FIX: Add to same SizeGroup ▼▼▼▼
+        # This aligns the "At connect" inputs with the "\r" input below
+        sg_labels.add_widget(chk_idle)
+        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+    
         ent_idle_str = Gtk.Entry(); ent_idle_str.set_width_chars(6)
         lbl_every = Gtk.Label(label="every")
         spin_idle = Gtk.SpinButton.new_with_range(1, 9999, 1)
@@ -2696,7 +2690,7 @@ class SnapConnectionManager(Gtk.Application):
         lbl_buf_head = Gtk.Label(label="<b>Scrollback Buffer</b>", use_markup=True, xalign=0)
         term_page.pack_start(lbl_buf_head, False, False, 0)
         
-        box_buf = Gtk.Box(spacing=6); box_buf.set_margin_start(12)
+        box_buf = Gtk.Box(spacing=12); box_buf.set_margin_start(12)
         spin_buf = Gtk.SpinButton.new_with_range(100, 100000, 100)
         box_buf.pack_start(Gtk.Label(label="Lines:"), False, False, 0)
         box_buf.pack_start(spin_buf, False, False, 0)
@@ -2758,8 +2752,16 @@ class SnapConnectionManager(Gtk.Application):
             _update_log_states()
             _toggle_idle(chk_idle)
             _toggle_cmd(chk_cmd)
+    
+
+
+
+
+
 		
 		
+
+
 
 
 
