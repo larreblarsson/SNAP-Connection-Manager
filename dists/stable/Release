@@ -1,0 +1,29 @@
+Codename: stable
+Date: Fri, 12 Dec 2025 08:11:00 +0000
+Label: SNAP Connection Manager
+Origin: SNAP-Connection-Manager
+Suite: stable
+MD5Sum:
+ a422231847a87321c089b5d5b8ee9f70              132 Release
+ 67536422c1644729a07dfe6c0d71c45b              894 main/binary-all/Packages
+ ce5f0d7db426575b88b2bca91d6579be              602 main/binary-all/Packages.gz
+ 67536422c1644729a07dfe6c0d71c45b              894 main/binary-amd64/Packages
+ ce5f0d7db426575b88b2bca91d6579be              602 main/binary-amd64/Packages.gz
+SHA1:
+ 95153ab1f28e482cf3ff09f33e6a55043cb54efe              132 Release
+ 7885c9838e6ba76a2cf08db3cc46238673497b2a              894 main/binary-all/Packages
+ 5b6c21c95f4e7540b55fdcf86eca6f4c009bc358              602 main/binary-all/Packages.gz
+ 7885c9838e6ba76a2cf08db3cc46238673497b2a              894 main/binary-amd64/Packages
+ 5b6c21c95f4e7540b55fdcf86eca6f4c009bc358              602 main/binary-amd64/Packages.gz
+SHA256:
+ 2a5c71e05780269637952aee8020ba533d75456801295897611e04c425532b78              132 Release
+ 1dac00e95598f41e6f7a09c0422cd898c6a9f32122be00b584dd52cb4ec44192              894 main/binary-all/Packages
+ a7fa72a4765d2ae143605ef84de3e4fd99b9f72d9160c9db7dcadd07702a7d95              602 main/binary-all/Packages.gz
+ 1dac00e95598f41e6f7a09c0422cd898c6a9f32122be00b584dd52cb4ec44192              894 main/binary-amd64/Packages
+ a7fa72a4765d2ae143605ef84de3e4fd99b9f72d9160c9db7dcadd07702a7d95              602 main/binary-amd64/Packages.gz
+SHA512:
+ 5fc5c6a3d1c2b6aa4b390692e413688b063f1cb9b6d6397895908945dfb25bdb983eacc012006d7408979fc2c8ffa2bb8db8371ea6a3949030f91e92cdd1c4ea              132 Release
+ c506cb47b7ccdaeee34316c5dc0a19af898d0754e3dbb32d1ca76d17749290371af17fcaee0c725d3e84ddc6e866e8579383b91656fc64271cf0f7a34bc8d633              894 main/binary-all/Packages
+ 886f8d93cd3cd27abcdfbee94fda9699f6a54543fa18b906b859be0e04ac528393633955d158937d480d3f223342ff24611b0b9d6232cd52031b0cb81b3e7dc6              602 main/binary-all/Packages.gz
+ c506cb47b7ccdaeee34316c5dc0a19af898d0754e3dbb32d1ca76d17749290371af17fcaee0c725d3e84ddc6e866e8579383b91656fc64271cf0f7a34bc8d633              894 main/binary-amd64/Packages
+ 886f8d93cd3cd27abcdfbee94fda9699f6a54543fa18b906b859be0e04ac528393633955d158937d480d3f223342ff24611b0b9d6232cd52031b0cb81b3e7dc6              602 main/binary-amd64/Packages.gz
