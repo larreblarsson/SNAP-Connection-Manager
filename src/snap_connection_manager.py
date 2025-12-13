@@ -73,7 +73,7 @@ BUILTIN_SCHEMES = {
     "Custom": None,
 }
 
-#
+
 # --- Passphrase Hashing Globals ---
 PBKDF2_ITERATIONS = 600000  # Number of iterations for PBKDF2. Higher = more secure but slower.
 SALT_SIZE = 16              # Salt size in bytes (16 bytes = 128 bits)
