@@ -9,11 +9,14 @@ import re
 import gi
 import hashlib
 import secrets
-import sys # Added for fallback console logging
+import sys
 import webbrowser
 import http.server 
 import socketserver
 import threading 
+import paramiko
+import stat
+import gi
 
 gi.require_version('Gtk', '3.0')
 try:
@@ -272,6 +275,227 @@ def center(window):
         window.show_all()
         window.set_position(Gtk.WindowPosition.CENTER)
 
+class SFTPWindow(Gtk.Window):
+    def __init__(self, parent_win, host, port, username, password=None, private_key=None):
+        super().__init__(title=f"SFTP: {username}@{host}")
+        self.set_default_size(800, 600)
+        self.set_transient_for(parent_win)
+        self.set_position(Gtk.WindowPosition.CENTER_ON_PARENT)
+
+        self.host = host
+        self.port = port
+        self.username = username
+        self.password = password
+        self.private_key = private_key
+        
+        self.sftp = None
+        self.transport = None
+        self.current_remote_dir = "/"
+
+        # Clipboard state for Ctrl+C / Ctrl+X / Ctrl+V
+        self.clipboard_action = None # 'copy' or 'cut'
+        self.clipboard_file = None   # remote path of the file
+
+        self.setup_ui()
+        self.connect("destroy", self.on_close)
+        
+        # Connect to the server in the background
+        GLib.idle_add(self.connect_to_server)
+
+    def setup_ui(self):
+        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.add(vbox)
+
+        # Toolbar / Path Entry
+        hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        vbox.pack_start(hbox, False, False, 5)
+
+        self.path_entry = Gtk.Entry()
+        self.path_entry.set_text(self.current_remote_dir)
+        self.path_entry.connect("activate", self.on_path_entered)
+        hbox.pack_start(self.path_entry, True, True, 5)
+
+        refresh_btn = Gtk.Button(label="Refresh")
+        refresh_btn.connect("clicked", lambda x: self.load_directory(self.current_remote_dir))
+        hbox.pack_start(refresh_btn, False, False, 5)
+
+        # Remote File List (TreeView)
+        # Store: Icon(str), Filename(str), Size(str), Permissions(str), IsDir(bool)
+        self.liststore = Gtk.ListStore(str, str, str, str, bool)
+        self.treeview = Gtk.TreeView(model=self.liststore)
+        
+        # Keyboard shortcuts connection
+        self.treeview.connect("key-press-event", self.on_key_press)
+        self.treeview.connect("row-activated", self.on_row_double_clicked)
+
+        # Columns
+        renderer_text = Gtk.CellRendererText()
+        
+        column_name = Gtk.TreeViewColumn("Filename", renderer_text, text=1)
+        self.treeview.append_column(column_name)
+        
+        column_size = Gtk.TreeViewColumn("Size", renderer_text, text=2)
+        self.treeview.append_column(column_size)
+
+        column_perms = Gtk.TreeViewColumn("Permissions", renderer_text, text=3)
+        self.treeview.append_column(column_perms)
+
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_vexpand(True)
+        scroll.add(self.treeview)
+        vbox.pack_start(scroll, True, True, 5)
+
+        # Status Bar
+        self.statusbar = Gtk.Statusbar()
+        self.context_id = self.statusbar.get_context_id("sftp_status")
+        vbox.pack_start(self.statusbar, False, False, 0)
+
+    def connect_to_server(self):
+        self.set_status("Connecting...")
+        try:
+            self.transport = paramiko.Transport((self.host, self.port))
+            
+            if self.private_key and os.path.exists(self.private_key):
+                key = paramiko.RSAKey.from_private_key_file(self.private_key)
+                self.transport.connect(username=self.username, pkey=key)
+            else:
+                self.transport.connect(username=self.username, password=self.password)
+            
+            self.sftp = paramiko.SFTPClient.from_transport(self.transport)
+            
+            # Get starting directory
+            self.current_remote_dir = self.sftp.normalize('.')
+            self.path_entry.set_text(self.current_remote_dir)
+            self.load_directory(self.current_remote_dir)
+            
+        except Exception as e:
+            self.set_status(f"Connection failed: {str(e)}")
+
+    def load_directory(self, path):
+        if not self.sftp: return
+        self.set_status(f"Loading {path}...")
+        self.liststore.clear()
+        
+        try:
+            # Add '..' to go up a directory
+            if path != "/":
+                self.liststore.append(["", "..", "", "", True])
+
+            for entry in self.sftp.listdir_attr(path):
+                is_dir = stat.S_ISDIR(entry.st_mode)
+                perms = stat.filemode(entry.st_mode)
+                size = f"{entry.st_size} B" if not is_dir else ""
+                self.liststore.append(["", entry.filename, size, perms, is_dir])
+                
+            self.current_remote_dir = path
+            self.path_entry.set_text(path)
+            self.set_status("Directory loaded.")
+        except Exception as e:
+            self.set_status(f"Error loading directory: {str(e)}")
+
+    def on_row_double_clicked(self, treeview, path, column):
+        model = treeview.get_model()
+        iter_ = model.get_iter(path)
+        filename = model.get_value(iter_, 1)
+        is_dir = model.get_value(iter_, 4)
+
+        if is_dir:
+            if filename == "..":
+                new_path = os.path.dirname(self.current_remote_dir)
+            else:
+                new_path = os.path.join(self.current_remote_dir, filename).replace('\\', '/')
+            self.load_directory(new_path)
+
+    def on_path_entered(self, entry):
+        self.load_directory(entry.get_text())
+
+    def on_key_press(self, widget, event):
+        """Handle Ctrl+C, Ctrl+X, Ctrl+V"""
+        state = event.state & Gdk.ModifierType.MODIFIER_MASK
+        ctrl_pressed = state & Gdk.ModifierType.CONTROL_MASK
+        
+        if not ctrl_pressed:
+            return False
+
+        keyval = event.keyval
+        
+        # Get selected file
+        selection = self.treeview.get_selection()
+        model, treeiter = selection.get_selected()
+        
+        selected_file = None
+        if treeiter:
+            filename = model.get_value(treeiter, 1)
+            if filename != "..":
+                selected_file = os.path.join(self.current_remote_dir, filename).replace('\\', '/')
+
+        if keyval == Gdk.KEY_c:  # Ctrl+C
+            if selected_file:
+                self.clipboard_action = 'copy'
+                self.clipboard_file = selected_file
+                self.set_status(f"Copied: {selected_file}")
+            return True
+            
+        elif keyval == Gdk.KEY_x:  # Ctrl+X
+            if selected_file:
+                self.clipboard_action = 'cut'
+                self.clipboard_file = selected_file
+                self.set_status(f"Cut: {selected_file}")
+            return True
+            
+        elif keyval == Gdk.KEY_v:  # Ctrl+V
+            if self.clipboard_file and self.clipboard_action:
+                self.perform_paste()
+            return True
+
+        return False
+
+    def perform_paste(self):
+        if not self.sftp or not self.clipboard_file:
+            return
+            
+        filename = os.path.basename(self.clipboard_file)
+        target_path = os.path.join(self.current_remote_dir, filename).replace('\\', '/')
+        
+        if target_path == self.clipboard_file:
+            self.set_status("Cannot paste file into the same directory.")
+            return
+
+        self.set_status(f"Pasting {filename}...")
+        try:
+            # Note: Paramiko doesn't have a direct server-to-server copy command.
+            # A true remote copy requires either executing 'cp' via SSH, 
+            # or downloading to a temp file and re-uploading. 
+            # For this demo, we will use the SSH execute method (requires shell access).
+            
+            chan = self.transport.open_session()
+            if self.clipboard_action == 'copy':
+                chan.exec_command(f'cp -r "{self.clipboard_file}" "{target_path}"')
+            elif self.clipboard_action == 'cut':
+                chan.exec_command(f'mv "{self.clipboard_file}" "{target_path}"')
+                self.clipboard_file = None # Clear clipboard after cut
+                self.clipboard_action = None
+            
+            # Wait for command to finish
+            status = chan.recv_exit_status()
+            if status == 0:
+                self.set_status(f"Successfully pasted {filename}.")
+                self.load_directory(self.current_remote_dir)
+            else:
+                self.set_status(f"Error pasting file (Exit status: {status})")
+                
+        except Exception as e:
+            self.set_status(f"Paste failed: {str(e)}")
+
+    def set_status(self, message):
+        self.statusbar.push(self.context_id, message)
+
+    def on_close(self, widget):
+        if self.sftp:
+            self.sftp.close()
+        if self.transport:
+            self.transport.close()
+
 class PassphraseInputDialog(Gtk.Dialog):
     def __init__(self, parent, title, prompt_text, confirm_text=None, show_retry_message=False):
         super().__init__(
@@ -373,6 +597,7 @@ class SnapConnectionManager(Gtk.Application):
             ("del_fld",  self.on_delete_folder),
             ("ssh",      self.on_ssh),
             ("sftp",     self.on_sftp),
+            ("sftpgui",  self.on_sftpgui),
             ("about",    self.on_about),
             ("user_guide", self.on_user_guide),
             ("change_pass", self.on_change_passphrase),
@@ -558,6 +783,7 @@ class SnapConnectionManager(Gtk.Application):
             "Connect": [
                 ("SSH",  self.on_ssh),
                 ("SFTP", self.on_sftp),
+                ("SFTP (GUI)", self.on_sftpgui),
             ],
             "Help": [
                 ("About", self.on_about),
@@ -1771,8 +1997,43 @@ class SnapConnectionManager(Gtk.Application):
         lines.append("interact\n")
         self._launch_expect(lines, f"{cfg['name']} SFTP", cfg)
 
+    def on_sftpgui(self, action, param):
+        # Handle if called from context menu (param has the index) or top menu (param is None)
+        if param is not None and isinstance(param, int):
+            idx = param
+        else:
+            model, it = self.tree.get_selection().get_selected()
+            if not it:
+                return self._info("Select a server first.")
+            node, idx = model.get_value(it, 2)
+            if node != "server":
+                return self._info("Select a server first.")
+    
+        cfg = self.servers[idx]
+        self.log(f"Launching Visual SFTP for: {cfg['name']}")
+    
+        # --- NEW ACTUAL LAUNCH LOGIC ---
+        host = cfg.get("host")
+        port = cfg.get("port", 22)
+        user = cfg.get("user")
+        auth_method = cfg.get("auth_method", "password")
+        password = cfg.get("password", "") if auth_method == "password" else None
+        key_file = cfg.get("key_file", "") if auth_method == "key_file" else None
 
-    # ── Helper: Strip ANSI Codes & Normalize Newlines ──────────────────────────
+        try:
+            # Launch the new GUI window we added
+            sftp_window = SFTPWindow(
+                parent_win=self.win, 
+                host=host, 
+                port=port, 
+                username=user, 
+                password=password, 
+                private_key=key_file
+            )
+            sftp_window.show_all()
+        except Exception as e:
+            self._info(f"Failed to launch SFTP GUI: {e}")
+
     def _strip_ansi(self, text):
         """
         Removes ANSI escape codes and strictly normalizes line endings.
@@ -2293,6 +2554,11 @@ class SnapConnectionManager(Gtk.Application):
                 # We pass 'val' (the folder name) as the param to ensure we add to this specific folder
                 mi.connect("activate", lambda w: self.on_add_server(None, None)) 
                 menu.append(mi)
+                
+                # 1b. Connect SFTP GUI
+                mi_sftpgui = Gtk.MenuItem(label="Connect SFTP (GUI)")
+                mi_sftpgui.connect("activate", self.on_sftpgui, val) 
+                menu.append(mi_sftpgui)                
     
                 # 2. New Folder (Available on all folders)
                 mi = Gtk.MenuItem(label="New Folder")
