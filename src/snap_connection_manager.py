@@ -17,6 +17,7 @@ import threading
 import paramiko
 import stat
 import gi
+import shutil
 
 gi.require_version('Gtk', '3.0')
 try:
@@ -275,10 +276,18 @@ def center(window):
         window.show_all()
         window.set_position(Gtk.WindowPosition.CENTER)
 
+import os
+import paramiko
+import stat
+import gi
+
+gi.require_version('Gtk', '3.0')
+from gi.repository import Gtk, Gdk, GLib
+
 class SFTPWindow(Gtk.Window):
     def __init__(self, parent_win, host, port, username, password=None, private_key=None):
         super().__init__(title=f"SFTP: {username}@{host}")
-        self.set_default_size(800, 600)
+        self.set_default_size(1000, 600)
         self.set_transient_for(parent_win)
         self.set_position(Gtk.WindowPosition.CENTER_ON_PARENT)
 
@@ -290,66 +299,147 @@ class SFTPWindow(Gtk.Window):
         
         self.sftp = None
         self.transport = None
+        
         self.current_remote_dir = "/"
+        self.current_local_dir = os.path.expanduser("~")
 
-        # Clipboard state for Ctrl+C / Ctrl+X / Ctrl+V
+        # Unified Clipboard State
         self.clipboard_action = None # 'copy' or 'cut'
-        self.clipboard_file = None   # remote path of the file
+        self.clipboard_file = None   # full path of the file
+        self.clipboard_source = None # 'local' or 'remote'
 
         self.setup_ui()
         self.connect("destroy", self.on_close)
         
-        # Connect to the server in the background
+        self.load_local_directory(self.current_local_dir)
         GLib.idle_add(self.connect_to_server)
 
     def setup_ui(self):
-        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        self.add(vbox)
+        main_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.add(main_vbox)
 
-        # Toolbar / Path Entry
-        hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        vbox.pack_start(hbox, False, False, 5)
+        self.paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
+        main_vbox.pack_start(self.paned, True, True, 5)
 
-        self.path_entry = Gtk.Entry()
-        self.path_entry.set_text(self.current_remote_dir)
-        self.path_entry.connect("activate", self.on_path_entered)
-        hbox.pack_start(self.path_entry, True, True, 5)
+        # --- LEFT PANE (LOCAL) ---
+        local_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.paned.pack1(local_vbox, True, False)
 
-        refresh_btn = Gtk.Button(label="Refresh")
-        refresh_btn.connect("clicked", lambda x: self.load_directory(self.current_remote_dir))
-        hbox.pack_start(refresh_btn, False, False, 5)
+        local_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        local_vbox.pack_start(local_hbox, False, False, 0)
 
-        # Remote File List (TreeView)
-        # Store: Icon(str), Filename(str), Size(str), Permissions(str), IsDir(bool)
-        self.liststore = Gtk.ListStore(str, str, str, str, bool)
-        self.treeview = Gtk.TreeView(model=self.liststore)
-        
-        # Keyboard shortcuts connection
-        self.treeview.connect("key-press-event", self.on_key_press)
-        self.treeview.connect("row-activated", self.on_row_double_clicked)
+        self.local_path_entry = Gtk.Entry()
+        self.local_path_entry.connect("activate", self.on_local_path_entered)
+        local_hbox.pack_start(self.local_path_entry, True, True, 0)
 
-        # Columns
-        renderer_text = Gtk.CellRendererText()
-        
-        column_name = Gtk.TreeViewColumn("Filename", renderer_text, text=1)
-        self.treeview.append_column(column_name)
-        
-        column_size = Gtk.TreeViewColumn("Size", renderer_text, text=2)
-        self.treeview.append_column(column_size)
+        local_refresh_btn = Gtk.Button(label="Refresh Local")
+        local_refresh_btn.connect("clicked", lambda x: self.load_local_directory(self.current_local_dir))
+        local_hbox.pack_start(local_refresh_btn, False, False, 0)
 
-        column_perms = Gtk.TreeViewColumn("Permissions", renderer_text, text=3)
-        self.treeview.append_column(column_perms)
+        self.local_liststore = Gtk.ListStore(str, str, str, str, bool)
+        self.local_treeview = Gtk.TreeView(model=self.local_liststore)
+        self.local_treeview.connect("row-activated", self.on_local_row_double_clicked)
+        self.local_treeview.connect("key-press-event", self.on_key_press, "local")
 
-        scroll = Gtk.ScrolledWindow()
-        scroll.set_vexpand(True)
-        scroll.add(self.treeview)
-        vbox.pack_start(scroll, True, True, 5)
+        self._add_columns(self.local_treeview)
 
-        # Status Bar
+        local_scroll = Gtk.ScrolledWindow()
+        local_scroll.set_vexpand(True)
+        local_scroll.add(self.local_treeview)
+        local_vbox.pack_start(local_scroll, True, True, 0)
+
+        # --- RIGHT PANE (REMOTE) ---
+        remote_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.paned.pack2(remote_vbox, True, False)
+
+        remote_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        remote_vbox.pack_start(remote_hbox, False, False, 0)
+
+        self.remote_path_entry = Gtk.Entry()
+        self.remote_path_entry.connect("activate", self.on_remote_path_entered)
+        remote_hbox.pack_start(self.remote_path_entry, True, True, 0)
+
+        remote_refresh_btn = Gtk.Button(label="Refresh Remote")
+        remote_refresh_btn.connect("clicked", lambda x: self.load_remote_directory(self.current_remote_dir))
+        remote_hbox.pack_start(remote_refresh_btn, False, False, 0)
+
+        self.remote_liststore = Gtk.ListStore(str, str, str, str, bool)
+        self.remote_treeview = Gtk.TreeView(model=self.remote_liststore)
+        self.remote_treeview.connect("row-activated", self.on_remote_row_double_clicked)
+        self.remote_treeview.connect("key-press-event", self.on_key_press, "remote") 
+
+        self._add_columns(self.remote_treeview)
+
+        remote_scroll = Gtk.ScrolledWindow()
+        remote_scroll.set_vexpand(True)
+        remote_scroll.add(self.remote_treeview)
+        remote_vbox.pack_start(remote_scroll, True, True, 0)
+
+        self.paned.set_position(500)
+
+        # --- STATUS BAR ---
         self.statusbar = Gtk.Statusbar()
         self.context_id = self.statusbar.get_context_id("sftp_status")
-        vbox.pack_start(self.statusbar, False, False, 0)
+        main_vbox.pack_start(self.statusbar, False, False, 0)
 
+        # --- DRAG AND DROP SETUP ---
+        target_entry = Gtk.TargetEntry.new("text/plain", Gtk.TargetFlags.SAME_APP, 0)
+        
+        # Local DND
+        self.local_treeview.enable_model_drag_source(Gdk.ModifierType.BUTTON1_MASK, [target_entry], Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
+        self.local_treeview.enable_model_drag_dest([target_entry], Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
+        self.local_treeview.connect("drag-data-get", self.on_drag_data_get, "local")
+        self.local_treeview.connect("drag-data-received", self.on_drag_data_received, "local")
+
+        # Remote DND
+        self.remote_treeview.enable_model_drag_source(Gdk.ModifierType.BUTTON1_MASK, [target_entry], Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
+        self.remote_treeview.enable_model_drag_dest([target_entry], Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
+        self.remote_treeview.connect("drag-data-get", self.on_drag_data_get, "remote")
+        self.remote_treeview.connect("drag-data-received", self.on_drag_data_received, "remote")
+
+    def _add_columns(self, treeview):
+        renderer_text = Gtk.CellRendererText()
+        treeview.append_column(Gtk.TreeViewColumn("Filename", renderer_text, text=1))
+        treeview.append_column(Gtk.TreeViewColumn("Size", renderer_text, text=2))
+        treeview.append_column(Gtk.TreeViewColumn("Permissions", renderer_text, text=3))
+
+    # --- LOCAL LOGIC ---
+    def load_local_directory(self, path):
+        self.local_liststore.clear()
+        try:
+            if os.path.dirname(path) != path: 
+                self.local_liststore.append(["", "..", "", "", True])
+
+            for filename in sorted(os.listdir(path)):
+                full_path = os.path.join(path, filename)
+                st = os.stat(full_path)
+                is_dir = stat.S_ISDIR(st.st_mode)
+                size = f"{st.st_size} B" if not is_dir else ""
+                perms = stat.filemode(st.st_mode)
+                self.local_liststore.append(["", filename, size, perms, is_dir])
+                
+            self.current_local_dir = path
+            self.local_path_entry.set_text(path)
+        except Exception as e:
+            self.set_status(f"Error loading local directory: {str(e)}")
+
+    def on_local_row_double_clicked(self, treeview, path, column):
+        model = treeview.get_model()
+        iter_ = model.get_iter(path)
+        filename = model.get_value(iter_, 1)
+        is_dir = model.get_value(iter_, 4)
+
+        if is_dir:
+            if filename == "..":
+                new_path = os.path.dirname(self.current_local_dir)
+            else:
+                new_path = os.path.join(self.current_local_dir, filename)
+            self.load_local_directory(new_path)
+
+    def on_local_path_entered(self, entry):
+        self.load_local_directory(entry.get_text())
+
+    # --- REMOTE LOGIC ---
     def connect_to_server(self):
         self.set_status("Connecting...")
         try:
@@ -363,37 +453,34 @@ class SFTPWindow(Gtk.Window):
             
             self.sftp = paramiko.SFTPClient.from_transport(self.transport)
             
-            # Get starting directory
             self.current_remote_dir = self.sftp.normalize('.')
-            self.path_entry.set_text(self.current_remote_dir)
-            self.load_directory(self.current_remote_dir)
+            self.load_remote_directory(self.current_remote_dir)
             
         except Exception as e:
             self.set_status(f"Connection failed: {str(e)}")
 
-    def load_directory(self, path):
+    def load_remote_directory(self, path):
         if not self.sftp: return
-        self.set_status(f"Loading {path}...")
-        self.liststore.clear()
+        self.set_status(f"Loading remote {path}...")
+        self.remote_liststore.clear()
         
         try:
-            # Add '..' to go up a directory
             if path != "/":
-                self.liststore.append(["", "..", "", "", True])
+                self.remote_liststore.append(["", "..", "", "", True])
 
             for entry in self.sftp.listdir_attr(path):
                 is_dir = stat.S_ISDIR(entry.st_mode)
                 perms = stat.filemode(entry.st_mode)
                 size = f"{entry.st_size} B" if not is_dir else ""
-                self.liststore.append(["", entry.filename, size, perms, is_dir])
+                self.remote_liststore.append(["", entry.filename, size, perms, is_dir])
                 
             self.current_remote_dir = path
-            self.path_entry.set_text(path)
-            self.set_status("Directory loaded.")
+            self.remote_path_entry.set_text(path)
+            self.set_status("Connected.")
         except Exception as e:
-            self.set_status(f"Error loading directory: {str(e)}")
+            self.set_status(f"Error loading remote directory: {str(e)}")
 
-    def on_row_double_clicked(self, treeview, path, column):
+    def on_remote_row_double_clicked(self, treeview, path, column):
         model = treeview.get_model()
         iter_ = model.get_iter(path)
         filename = model.get_value(iter_, 1)
@@ -404,97 +491,168 @@ class SFTPWindow(Gtk.Window):
                 new_path = os.path.dirname(self.current_remote_dir)
             else:
                 new_path = os.path.join(self.current_remote_dir, filename).replace('\\', '/')
-            self.load_directory(new_path)
+            self.load_remote_directory(new_path)
 
-    def on_path_entered(self, entry):
-        self.load_directory(entry.get_text())
+    def on_remote_path_entered(self, entry):
+        self.load_remote_directory(entry.get_text())
 
-    def on_key_press(self, widget, event):
-        """Handle Ctrl+C, Ctrl+X, Ctrl+V"""
-        state = event.state & Gdk.ModifierType.MODIFIER_MASK
-        ctrl_pressed = state & Gdk.ModifierType.CONTROL_MASK
+    # --- DRAG AND DROP ---
+    def on_drag_data_get(self, treeview, context, selection, info, time, source_pane):
+        model, treeiter = treeview.get_selection().get_selected()
+        if treeiter:
+            filename = model.get_value(treeiter, 1)
+            if filename == "..": return
+            
+            if source_pane == "local":
+                filepath = os.path.join(self.current_local_dir, filename)
+            else:
+                filepath = os.path.join(self.current_remote_dir, filename).replace('\\', '/')
+            
+            # Format: "local:/path/to/file" or "remote:/path/to/file"
+            drag_data = f"{source_pane}:{filepath}"
+            selection.set_text(drag_data, -1)
+
+    def on_drag_data_received(self, treeview, context, x, y, selection, info, time, dest_pane):
+        data = selection.get_text()
+        if not data or ":" not in data:
+            context.finish(False, False, time)
+            return
+
+        source_pane, source_path = data.split(":", 1)
         
-        if not ctrl_pressed:
+        # Determine the target directory based on where it was dropped
+        target_dir = self.current_local_dir if dest_pane == "local" else self.current_remote_dir
+        
+        action = 'move' if context.get_selected_action() == Gdk.DragAction.MOVE else 'copy'
+
+        self.start_transfer_thread(source_pane, source_path, dest_pane, target_dir, action)
+        context.finish(True, False, time)
+
+    # --- KEYBOARD SHORTCUTS ---
+    def on_key_press(self, widget, event, source_pane):
+        state = event.state & Gdk.ModifierType.MODIFIER_MASK
+        if not (state & Gdk.ModifierType.CONTROL_MASK):
             return False
 
         keyval = event.keyval
-        
-        # Get selected file
-        selection = self.treeview.get_selection()
+        selection = widget.get_selection()
         model, treeiter = selection.get_selected()
         
         selected_file = None
         if treeiter:
             filename = model.get_value(treeiter, 1)
             if filename != "..":
-                selected_file = os.path.join(self.current_remote_dir, filename).replace('\\', '/')
+                if source_pane == "local":
+                    selected_file = os.path.join(self.current_local_dir, filename)
+                else:
+                    selected_file = os.path.join(self.current_remote_dir, filename).replace('\\', '/')
 
-        if keyval == Gdk.KEY_c:  # Ctrl+C
+        if keyval == Gdk.KEY_c:  
             if selected_file:
                 self.clipboard_action = 'copy'
                 self.clipboard_file = selected_file
-                self.set_status(f"Copied: {selected_file}")
+                self.clipboard_source = source_pane
+                self.set_status(f"Copied {source_pane}: {selected_file}")
             return True
             
-        elif keyval == Gdk.KEY_x:  # Ctrl+X
+        elif keyval == Gdk.KEY_x:  
             if selected_file:
                 self.clipboard_action = 'cut'
                 self.clipboard_file = selected_file
-                self.set_status(f"Cut: {selected_file}")
+                self.clipboard_source = source_pane
+                self.set_status(f"Cut {source_pane}: {selected_file}")
             return True
             
-        elif keyval == Gdk.KEY_v:  # Ctrl+V
+        elif keyval == Gdk.KEY_v:  
             if self.clipboard_file and self.clipboard_action:
-                self.perform_paste()
+                target_dir = self.current_local_dir if source_pane == "local" else self.current_remote_dir
+                self.start_transfer_thread(self.clipboard_source, self.clipboard_file, source_pane, target_dir, self.clipboard_action)
             return True
-
+            
         return False
 
-    def perform_paste(self):
-        if not self.sftp or not self.clipboard_file:
-            return
-            
-        filename = os.path.basename(self.clipboard_file)
-        target_path = os.path.join(self.current_remote_dir, filename).replace('\\', '/')
+    # --- TRANSFER ENGINE (THREADED) ---
+    def start_transfer_thread(self, src_pane, src_path, dst_pane, dst_dir, action):
+        filename = os.path.basename(src_path)
         
-        if target_path == self.clipboard_file:
-            self.set_status("Cannot paste file into the same directory.")
-            return
+        # Prevent pasting in the exact same directory
+        if src_pane == dst_pane:
+            check_dir = os.path.dirname(src_path) if src_pane == "local" else os.path.dirname(src_path).replace('\\', '/')
+            if check_dir == dst_dir:
+                self.set_status("Cannot paste file into its own directory.")
+                return
 
-        self.set_status(f"Pasting {filename}...")
+        self.set_status(f"Transferring {filename}...")
+        
+        # Run the heavy lifting in a background thread so the GUI doesn't freeze
+        thread = threading.Thread(target=self._transfer_worker, args=(src_pane, src_path, dst_pane, dst_dir, action, filename))
+        thread.daemon = True
+        thread.start()
+
+    def _transfer_worker(self, src_pane, src_path, dst_pane, dst_dir, action, filename):
         try:
-            # Note: Paramiko doesn't have a direct server-to-server copy command.
-            # A true remote copy requires either executing 'cp' via SSH, 
-            # or downloading to a temp file and re-uploading. 
-            # For this demo, we will use the SSH execute method (requires shell access).
-            
-            chan = self.transport.open_session()
-            if self.clipboard_action == 'copy':
-                chan.exec_command(f'cp -r "{self.clipboard_file}" "{target_path}"')
-            elif self.clipboard_action == 'cut':
-                chan.exec_command(f'mv "{self.clipboard_file}" "{target_path}"')
-                self.clipboard_file = None # Clear clipboard after cut
-                self.clipboard_action = None
-            
-            # Wait for command to finish
-            status = chan.recv_exit_status()
-            if status == 0:
-                self.set_status(f"Successfully pasted {filename}.")
-                self.load_directory(self.current_remote_dir)
+            if dst_pane == "local":
+                dst_path = os.path.join(dst_dir, filename)
             else:
-                self.set_status(f"Error pasting file (Exit status: {status})")
+                dst_path = os.path.join(dst_dir, filename).replace('\\', '/')
+
+            # 1. Local to Remote (Upload)
+            if src_pane == "local" and dst_pane == "remote":
+                if os.path.isdir(src_path):
+                    GLib.idle_add(self.set_status, "Folder uploads require recursive logic (files only for now).")
+                    return
+                self.sftp.put(src_path, dst_path)
+                if action == 'cut': os.remove(src_path)
+
+            # 2. Remote to Local (Download)
+            elif src_pane == "remote" and dst_pane == "local":
+                # Check if it's a directory (Paramiko get() fails on dirs)
+                try:
+                    self.sftp.chdir(src_path)
+                    GLib.idle_add(self.set_status, "Folder downloads require recursive logic (files only for now).")
+                    return
+                except IOError:
+                    pass # It's a file, proceed.
                 
+                self.sftp.get(src_path, dst_path)
+                if action == 'cut': self.sftp.remove(src_path)
+
+            # 3. Local to Local
+            elif src_pane == "local" and dst_pane == "local":
+                if action == 'copy':
+                    if os.path.isdir(src_path): shutil.copytree(src_path, dst_path)
+                    else: shutil.copy2(src_path, dst_path)
+                elif action == 'cut':
+                    shutil.move(src_path, dst_path)
+
+            # 4. Remote to Remote
+            elif src_pane == "remote" and dst_pane == "remote":
+                chan = self.transport.open_session()
+                if action == 'copy':
+                    chan.exec_command(f'cp -r "{src_path}" "{dst_path}"')
+                elif action == 'cut':
+                    chan.exec_command(f'mv "{src_path}" "{dst_path}"')
+                chan.recv_exit_status() # Wait to finish
+
+            # Clear clipboard if we executed a cut
+            if action == 'cut':
+                self.clipboard_file = None
+                self.clipboard_action = None
+
+            # Refresh UIs on the main thread safely
+            GLib.idle_add(self.load_local_directory, self.current_local_dir)
+            GLib.idle_add(self.load_remote_directory, self.current_remote_dir)
+            GLib.idle_add(self.set_status, f"Successfully transferred {filename}.")
+
         except Exception as e:
-            self.set_status(f"Paste failed: {str(e)}")
+            GLib.idle_add(self.set_status, f"Transfer failed: {str(e)}")
 
     def set_status(self, message):
         self.statusbar.push(self.context_id, message)
 
     def on_close(self, widget):
-        if self.sftp:
-            self.sftp.close()
-        if self.transport:
-            self.transport.close()
+        if self.sftp: self.sftp.close()
+        if self.transport: self.transport.close()
 
 class PassphraseInputDialog(Gtk.Dialog):
     def __init__(self, parent, title, prompt_text, confirm_text=None, show_retry_message=False):
