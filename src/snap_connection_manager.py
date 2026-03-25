@@ -16,8 +16,7 @@ import socketserver
 import threading 
 import paramiko
 import stat
-import gi
-import shutil
+from datetime import datetime
 
 gi.require_version('Gtk', '3.0')
 try:
@@ -284,10 +283,21 @@ import gi
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, Gdk, GLib
 
+import os
+import stat
+import shutil
+import threading
+import paramiko
+import gi
+from datetime import datetime
+
+gi.require_version('Gtk', '3.0')
+from gi.repository import Gtk, Gdk, GLib, Gio
+
 class SFTPWindow(Gtk.Window):
     def __init__(self, parent_win, host, port, username, password=None, private_key=None):
         super().__init__(title=f"SFTP: {username}@{host}")
-        self.set_default_size(1000, 600)
+        self.set_default_size(1100, 600) 
         self.set_transient_for(parent_win)
         self.set_position(Gtk.WindowPosition.CENTER_ON_PARENT)
 
@@ -303,10 +313,23 @@ class SFTPWindow(Gtk.Window):
         self.current_remote_dir = "/"
         self.current_local_dir = os.path.expanduser("~")
 
-        # Unified Clipboard State
-        self.clipboard_action = None # 'copy' or 'cut'
-        self.clipboard_file = None   # full path of the file
-        self.clipboard_source = None # 'local' or 'remote'
+        self.clipboard_action = None 
+        self.clipboard_files = []   
+        self.clipboard_source = None 
+
+        # --- Interactivity Trackers ---
+        self.drag_cached_paths = None
+        self._clearing_selection = False
+        self.active_pane = "local" 
+        
+        # --- Transfer Trackers ---
+        self.transfer_active = False
+        self._cancel_transfer = False
+
+        # --- Slow Double-Click Trackers ---
+        self._last_click_time = 0
+        self._rename_candidate_path = None
+        self._rename_candidate_treeview = None
 
         self.setup_ui()
         self.connect("destroy", self.on_close)
@@ -315,33 +338,103 @@ class SFTPWindow(Gtk.Window):
         GLib.idle_add(self.connect_to_server)
 
     def setup_ui(self):
-        main_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        # --- Inject CSS for Colored Buttons ---
+        css_provider = Gtk.CssProvider()
+        css = b"""
+        #transfer_btn_upload image { color: #2ea043; } /* Vibrant Green */
+        #transfer_btn_download image { color: #3794ff; } /* Vibrant Blue */
+        #stop_btn_active image { color: #e5534b; } /* Vibrant Red */
+        #resume_btn_active image { color: #f39c12; } /* Vibrant Orange */
+        """
+        css_provider.load_from_data(css)
+        Gtk.StyleContext.add_provider_for_screen(
+            Gdk.Screen.get_default(),
+            css_provider,
+            Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        )
+
+        main_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         self.add(main_vbox)
 
+        # --- GLOBAL UNIFIED TOOLBAR ---
+        self.global_toolbar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        self.global_toolbar.set_border_width(4)
+        main_vbox.pack_start(self.global_toolbar, False, False, 0)
+
+        # 1. Global Refresh Button
+        self.global_refresh_btn = Gtk.Button()
+        self.global_refresh_btn.set_relief(Gtk.ReliefStyle.NONE)
+        self.global_refresh_btn.set_image(Gtk.Image.new_from_icon_name("view-refresh", Gtk.IconSize.BUTTON))
+        self.global_refresh_btn.set_tooltip_text("Refresh Both (Local & Remote)")
+        self.global_refresh_btn.connect("clicked", self.on_global_refresh_clicked)
+        self.global_toolbar.pack_start(self.global_refresh_btn, False, False, 0)
+
+        # 2. Create Directory Button
+        self.mkdir_btn = Gtk.Button()
+        self.mkdir_btn.set_relief(Gtk.ReliefStyle.NONE)
+        self.mkdir_btn.set_image(Gtk.Image.new_from_icon_name("folder-new", Gtk.IconSize.BUTTON))
+        self.mkdir_btn.set_tooltip_text("Create New Directory in Active Pane")
+        self.mkdir_btn.connect("clicked", self.on_mkdir_button_clicked)
+        self.global_toolbar.pack_start(self.mkdir_btn, False, False, 0)
+
+        # 3. Transfer Button (Upload / Download)
+        self.transfer_btn = Gtk.Button()
+        self.transfer_btn.set_relief(Gtk.ReliefStyle.NONE) 
+        self.transfer_icon = Gtk.Image.new_from_icon_name("network-transmit-receive", Gtk.IconSize.BUTTON)
+        self.transfer_btn.set_image(self.transfer_icon)
+        self.transfer_btn.set_sensitive(False)
+        self.transfer_btn.set_tooltip_text("Select items to transfer")
+        self.transfer_btn.connect("clicked", self.on_transfer_button_clicked)
+        self.global_toolbar.pack_start(self.transfer_btn, False, False, 0)
+
+        # 4. Resume Transfer Button (NEW)
+        self.resume_btn = Gtk.Button()
+        self.resume_btn.set_relief(Gtk.ReliefStyle.NONE)
+        self.resume_btn.set_image(Gtk.Image.new_from_icon_name("media-seek-forward", Gtk.IconSize.BUTTON))
+        self.resume_btn.set_tooltip_text("Resume Partial Transfer (Skips existing bytes)")
+        self.resume_btn.set_sensitive(False)
+        self.resume_btn.connect("clicked", self.on_resume_button_clicked)
+        self.global_toolbar.pack_start(self.resume_btn, False, False, 0)
+
+        # 5. Stop Transfer Button
+        self.stop_btn = Gtk.Button()
+        self.stop_btn.set_relief(Gtk.ReliefStyle.NONE)
+        self.stop_btn.set_image(Gtk.Image.new_from_icon_name("process-stop", Gtk.IconSize.BUTTON))
+        self.stop_btn.set_tooltip_text("Cancel Ongoing Transfer")
+        self.stop_btn.set_sensitive(False)
+        self.stop_btn.connect("clicked", self.on_stop_button_clicked)
+        self.global_toolbar.pack_start(self.stop_btn, False, False, 0)
+
+        main_vbox.pack_start(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), False, False, 0)
+
+        # --- MAIN SPLIT PANES ---
         self.paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
-        main_vbox.pack_start(self.paned, True, True, 5)
+        main_vbox.pack_start(self.paned, True, True, 2)
 
         # --- LEFT PANE (LOCAL) ---
-        local_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        local_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         self.paned.pack1(local_vbox, True, False)
 
         local_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        local_vbox.pack_start(local_hbox, False, False, 0)
+        local_vbox.pack_start(local_hbox, False, False, 2)
 
-        self.local_path_entry = Gtk.Entry()
-        self.local_path_entry.connect("activate", self.on_local_path_entered)
-        local_hbox.pack_start(self.local_path_entry, True, True, 0)
+        local_scroll_bc = Gtk.ScrolledWindow()
+        local_scroll_bc.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
+        self.local_breadcrumb_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        local_scroll_bc.add_with_viewport(self.local_breadcrumb_box)
+        local_scroll_bc.get_child().set_shadow_type(Gtk.ShadowType.NONE) 
+        local_hbox.pack_start(local_scroll_bc, True, True, 0)
 
-        local_refresh_btn = Gtk.Button(label="Refresh Local")
-        local_refresh_btn.connect("clicked", lambda x: self.load_local_directory(self.current_local_dir))
-        local_hbox.pack_start(local_refresh_btn, False, False, 0)
-
-        self.local_liststore = Gtk.ListStore(str, str, str, str, bool)
+        self.local_liststore = Gtk.ListStore(str, str, str, bool, str, float, float, str)
         self.local_treeview = Gtk.TreeView(model=self.local_liststore)
+        self.local_treeview.get_selection().set_mode(Gtk.SelectionMode.MULTIPLE) 
         self.local_treeview.connect("row-activated", self.on_local_row_double_clicked)
         self.local_treeview.connect("key-press-event", self.on_key_press, "local")
+        self.local_treeview.connect("button-press-event", self.on_button_press, "local")
+        self.local_treeview.connect("button-release-event", self.on_button_release, "local")
+        self.local_treeview.get_selection().connect("changed", self.on_selection_changed, "local")
 
-        self._add_columns(self.local_treeview)
+        self._add_columns(self.local_treeview, is_local=True)
 
         local_scroll = Gtk.ScrolledWindow()
         local_scroll.set_vexpand(True)
@@ -349,33 +442,36 @@ class SFTPWindow(Gtk.Window):
         local_vbox.pack_start(local_scroll, True, True, 0)
 
         # --- RIGHT PANE (REMOTE) ---
-        remote_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        remote_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         self.paned.pack2(remote_vbox, True, False)
 
         remote_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        remote_vbox.pack_start(remote_hbox, False, False, 0)
+        remote_vbox.pack_start(remote_hbox, False, False, 2)
 
-        self.remote_path_entry = Gtk.Entry()
-        self.remote_path_entry.connect("activate", self.on_remote_path_entered)
-        remote_hbox.pack_start(self.remote_path_entry, True, True, 0)
+        remote_scroll_bc = Gtk.ScrolledWindow()
+        remote_scroll_bc.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
+        self.remote_breadcrumb_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        remote_scroll_bc.add_with_viewport(self.remote_breadcrumb_box)
+        remote_scroll_bc.get_child().set_shadow_type(Gtk.ShadowType.NONE)
+        remote_hbox.pack_start(remote_scroll_bc, True, True, 0)
 
-        remote_refresh_btn = Gtk.Button(label="Refresh Remote")
-        remote_refresh_btn.connect("clicked", lambda x: self.load_remote_directory(self.current_remote_dir))
-        remote_hbox.pack_start(remote_refresh_btn, False, False, 0)
-
-        self.remote_liststore = Gtk.ListStore(str, str, str, str, bool)
+        self.remote_liststore = Gtk.ListStore(str, str, str, bool, str, float, float, str)
         self.remote_treeview = Gtk.TreeView(model=self.remote_liststore)
+        self.remote_treeview.get_selection().set_mode(Gtk.SelectionMode.MULTIPLE) 
         self.remote_treeview.connect("row-activated", self.on_remote_row_double_clicked)
         self.remote_treeview.connect("key-press-event", self.on_key_press, "remote") 
+        self.remote_treeview.connect("button-press-event", self.on_button_press, "remote")
+        self.remote_treeview.connect("button-release-event", self.on_button_release, "remote")
+        self.remote_treeview.get_selection().connect("changed", self.on_selection_changed, "remote")
 
-        self._add_columns(self.remote_treeview)
+        self._add_columns(self.remote_treeview, is_local=False)
 
         remote_scroll = Gtk.ScrolledWindow()
         remote_scroll.set_vexpand(True)
         remote_scroll.add(self.remote_treeview)
         remote_vbox.pack_start(remote_scroll, True, True, 0)
 
-        self.paned.set_position(500)
+        self.paned.set_position(550)
 
         # --- STATUS BAR ---
         self.statusbar = Gtk.Statusbar()
@@ -384,78 +480,370 @@ class SFTPWindow(Gtk.Window):
 
         # --- DRAG AND DROP SETUP ---
         target_entry = Gtk.TargetEntry.new("text/plain", Gtk.TargetFlags.SAME_APP, 0)
+        for tv in (self.local_treeview, self.remote_treeview):
+            tv.enable_model_drag_source(Gdk.ModifierType.BUTTON1_MASK, [target_entry], Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
+            tv.enable_model_drag_dest([target_entry], Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
         
-        # Local DND
-        self.local_treeview.enable_model_drag_source(Gdk.ModifierType.BUTTON1_MASK, [target_entry], Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
-        self.local_treeview.enable_model_drag_dest([target_entry], Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
         self.local_treeview.connect("drag-data-get", self.on_drag_data_get, "local")
         self.local_treeview.connect("drag-data-received", self.on_drag_data_received, "local")
-
-        # Remote DND
-        self.remote_treeview.enable_model_drag_source(Gdk.ModifierType.BUTTON1_MASK, [target_entry], Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
-        self.remote_treeview.enable_model_drag_dest([target_entry], Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
+        self.local_treeview.connect_after("drag-begin", self.on_drag_begin) 
+        
         self.remote_treeview.connect("drag-data-get", self.on_drag_data_get, "remote")
         self.remote_treeview.connect("drag-data-received", self.on_drag_data_received, "remote")
+        self.remote_treeview.connect_after("drag-begin", self.on_drag_begin) 
 
-    def _add_columns(self, treeview):
+    # --- UI HELPERS ---
+    def update_breadcrumbs(self, box, path, callback):
+        for child in box.get_children(): box.remove(child)
+        normalized_path = path.replace('\\', '/')
+        parts = [p for p in normalized_path.split('/') if p]
+        
+        if normalized_path.startswith("/"):
+            btn = Gtk.Button(label="/")
+            btn.set_relief(Gtk.ReliefStyle.NONE)
+            btn.connect("clicked", lambda w: callback("/"))
+            box.pack_start(btn, False, False, 0)
+            
+        current_path = "/" if normalized_path.startswith("/") else ""
+        if not normalized_path.startswith("/") and parts:
+            current_path = parts[0] + "/"
+            btn = Gtk.Button(label=parts[0])
+            btn.set_relief(Gtk.ReliefStyle.NONE)
+            btn.connect("clicked", lambda w, p=current_path: callback(p))
+            box.pack_start(btn, False, False, 0)
+            if len(parts) > 1: box.pack_start(Gtk.Label(label=" / "), False, False, 2)
+            parts = parts[1:]
+
+        for i, part in enumerate(parts):
+            current_path = os.path.join(current_path, part).replace('\\', '/')
+            btn = Gtk.Button(label=part)
+            btn.set_relief(Gtk.ReliefStyle.NONE)
+            btn.connect("clicked", lambda w, p=current_path: callback(p))
+            box.pack_start(btn, False, False, 0)
+            if i < len(parts) - 1: box.pack_start(Gtk.Label(label=" / "), False, False, 2)
+        box.show_all()
+
+    def _add_columns(self, treeview, is_local):
+        col_name = Gtk.TreeViewColumn("Filename")
+        
+        renderer_pixbuf = Gtk.CellRendererPixbuf()
+        col_name.pack_start(renderer_pixbuf, False)
+        col_name.add_attribute(renderer_pixbuf, "icon-name", 0) 
+        
         renderer_text = Gtk.CellRendererText()
-        treeview.append_column(Gtk.TreeViewColumn("Filename", renderer_text, text=1))
-        treeview.append_column(Gtk.TreeViewColumn("Size", renderer_text, text=2))
-        treeview.append_column(Gtk.TreeViewColumn("Permissions", renderer_text, text=3))
+        renderer_text.set_property("editable", False)
+        renderer_text.connect("edited", self.on_filename_cell_edited, treeview, is_local)
+        renderer_text.connect("editing-canceled", self.on_filename_editing_canceled)
+        
+        if is_local: self.local_text_renderer = renderer_text
+        else: self.remote_text_renderer = renderer_text
+
+        col_name.pack_start(renderer_text, True)
+        col_name.add_attribute(renderer_text, "text", 1) 
+        col_name.set_sort_column_id(7) 
+        col_name.set_resizable(True)
+        treeview.append_column(col_name)
+
+        renderer_text_right = Gtk.CellRendererText(xalign=1.0) 
+        col_size = Gtk.TreeViewColumn("Size", renderer_text_right, text=2)
+        col_size.set_sort_column_id(5) 
+        col_size.set_resizable(True)
+        treeview.append_column(col_size)
+        
+        renderer_text_time = Gtk.CellRendererText()
+        col_mtime = Gtk.TreeViewColumn("Last Modified", renderer_text_time, text=4)
+        col_mtime.set_sort_column_id(6) 
+        col_mtime.set_resizable(True)
+        treeview.append_column(col_mtime)
+
+    def format_size(self, size_bytes):
+        if size_bytes <= 0: return ""
+        sizes = ["B", "KB", "MB", "GB", "TB"]
+        i = 0
+        while size_bytes >= 1024 and i < len(sizes) - 1:
+            size_bytes /= 1024.0
+            i += 1
+        return f"{size_bytes:.1f} {sizes[i]}"
+
+    def format_time(self, timestamp):
+        if timestamp <= 0: return ""
+        return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
+
+    def get_sort_category(self, filename, is_dir):
+        if filename == "..": return 0
+        is_hidden = filename.startswith('.')
+        if is_dir and not is_hidden: return 1
+        if is_dir and is_hidden: return 2
+        if not is_dir and not is_hidden: return 3
+        return 4
+
+    def get_icon_name(self, filename, is_dir):
+        if filename == "..": return "go-up"
+        if is_dir: return "folder"
+        content_type, _ = Gio.content_type_guess(filename, None)
+        icon = Gio.content_type_get_icon(content_type)
+        if icon:
+            for name in icon.get_names():
+                if Gtk.IconTheme.get_default().has_icon(name): return name
+        return "text-x-generic"
+
+    def get_selected_items(self, treeview, pane):
+        model, paths = treeview.get_selection().get_selected_rows()
+        items = []
+        for p in paths:
+            iter_ = model.get_iter(p)
+            filename = model.get_value(iter_, 1)
+            if filename != "..":
+                if pane == "local":
+                    items.append(os.path.join(self.current_local_dir, filename))
+                else:
+                    items.append(os.path.join(self.current_remote_dir, filename).replace('\\', '/'))
+        return items
+
+    # --- SELECTION EXCLUSIVITY & ACTION BUTTONS ---
+    def on_selection_changed(self, selection, pane):
+        if self._clearing_selection: return
+        
+        self.active_pane = pane
+        self._clearing_selection = True
+        
+        if pane == "local":
+            self.remote_treeview.get_selection().unselect_all()
+        else:
+            self.local_treeview.get_selection().unselect_all()
+            
+        self._clearing_selection = False
+        
+        model, paths = selection.get_selected_rows()
+        valid_count = sum(1 for p in paths if model.get_value(model.get_iter(p), 1) != "..")
+        
+        if valid_count > 0 and not self.transfer_active:
+            self.transfer_btn.set_sensitive(True)
+            self.resume_btn.set_sensitive(True)
+            self.resume_btn.set_name("resume_btn_active")
+            
+            if pane == "local":
+                self.transfer_btn.set_name("transfer_btn_upload") 
+                self.transfer_icon.set_from_icon_name("pan-end-symbolic", Gtk.IconSize.BUTTON)
+                self.transfer_btn.set_tooltip_text(f"Upload {valid_count} item(s) to Remote")
+            else:
+                self.transfer_btn.set_name("transfer_btn_download")
+                self.transfer_icon.set_from_icon_name("pan-start-symbolic", Gtk.IconSize.BUTTON)
+                self.transfer_btn.set_tooltip_text(f"Download {valid_count} item(s) to Local")
+        else:
+            self.transfer_btn.set_sensitive(False)
+            self.transfer_btn.set_name("") 
+            self.resume_btn.set_sensitive(False)
+            self.resume_btn.set_name("")
+            self.transfer_icon.set_from_icon_name("network-transmit-receive", Gtk.IconSize.BUTTON)
+            self.transfer_btn.set_tooltip_text("Select items to transfer")
+
+    def on_transfer_button_clicked(self, btn):
+        self._initiate_transfer(resume=False)
+
+    def on_resume_button_clicked(self, btn):
+        self._initiate_transfer(resume=True)
+
+    def _initiate_transfer(self, resume):
+        if not self.active_pane or self.transfer_active: return
+        treeview = self.local_treeview if self.active_pane == "local" else self.remote_treeview
+        dest_pane = "remote" if self.active_pane == "local" else "local"
+        dest_dir = self.current_remote_dir if dest_pane == "remote" else self.current_local_dir
+        
+        items = self.get_selected_items(treeview, self.active_pane)
+        if items:
+            self.start_transfer_thread(self.active_pane, items, dest_pane, dest_dir, "copy", resume=resume)
+
+    def on_stop_button_clicked(self, btn):
+        self._cancel_transfer = True
+        self.set_status("Stopping transfer...")
+        self.stop_btn.set_sensitive(False)
+
+    def on_global_refresh_clicked(self, btn):
+        self.load_local_directory(self.current_local_dir)
+        if self.sftp:
+            self.load_remote_directory(self.current_remote_dir)
+        self.set_status("Both directories refreshed.")
+
+    def on_mkdir_button_clicked(self, btn):
+        pane = self.active_pane if self.active_pane else "local"
+        self.create_new_directory(pane)
+
+    def create_new_directory(self, pane):
+        base_dir = self.current_local_dir if pane == "local" else self.current_remote_dir
+        treeview = self.local_treeview if pane == "local" else self.remote_treeview
+        
+        base_name = "New Folder"
+        new_name = base_name
+        counter = 1
+        
+        def exists(name):
+            if pane == "local":
+                return os.path.exists(os.path.join(base_dir, name))
+            else:
+                try:
+                    self.sftp.stat(f"{base_dir}/{name}".replace('//', '/'))
+                    return True
+                except Exception:
+                    return False
+        
+        while exists(new_name):
+            new_name = f"{base_name} ({counter})"
+            counter += 1
+            
+        try:
+            if pane == "local":
+                os.mkdir(os.path.join(base_dir, new_name))
+                self.load_local_directory(self.current_local_dir)
+            else:
+                self.sftp.mkdir(f"{base_dir}/{new_name}".replace('//', '/'))
+                self.load_remote_directory(self.current_remote_dir)
+        except Exception as e:
+            self.set_status(f"Failed to create directory: {e}")
+            return
+            
+        GLib.idle_add(self._select_and_edit_new_folder, treeview, new_name)
+
+    def _select_and_edit_new_folder(self, treeview, folder_name):
+        model = treeview.get_model()
+        for i, row in enumerate(model):
+            if row[1] == folder_name:
+                path = Gtk.TreePath.new_from_indices([i])
+                selection = treeview.get_selection()
+                selection.unselect_all()
+                selection.select_path(path)
+                treeview.scroll_to_cell(path, None, False, 0, 0)
+                self.trigger_inline_rename(treeview, path)
+                break
+
+    # --- SHOW ERROR DIALOG ---
+    def show_error_dialog(self, title, message):
+        dialog = Gtk.MessageDialog(
+            transient_for=self,
+            flags=0,
+            message_type=Gtk.MessageType.ERROR,
+            buttons=Gtk.ButtonsType.OK,
+            text=title
+        )
+        dialog.format_secondary_text(message)
+        dialog.run()
+        dialog.destroy()
+
+    # --- INLINE RENAMING LOGIC ---
+    def on_filename_editing_canceled(self, renderer):
+        renderer.set_property("editable", False)
+
+    def on_filename_cell_edited(self, renderer, path_str, new_text, treeview, is_local):
+        renderer.set_property("editable", False) 
+        if not new_text or new_text.strip() == "": return
+
+        model = treeview.get_model()
+        path = Gtk.TreePath.new_from_string(path_str)
+        iter_ = model.get_iter(path)
+        old_name = model.get_value(iter_, 1)
+
+        if old_name == ".." or new_text == old_name: return
+
+        base_dir = self.current_local_dir if is_local else self.current_remote_dir
+        old_path = os.path.join(base_dir, old_name)
+        new_path = os.path.join(base_dir, new_text)
+
+        if not is_local:
+            old_path = old_path.replace('\\', '/')
+            new_path = new_path.replace('\\', '/')
+
+        pane = "local" if is_local else "remote"
+        self._execute_rename(pane, old_path, new_text)
+
+    def trigger_inline_rename(self, treeview, path):
+        renderer = self.local_text_renderer if treeview == self.local_treeview else self.remote_text_renderer
+        renderer.set_property("editable", True)
+        treeview.set_cursor(path, treeview.get_column(0), True)
+
+    def _execute_rename(self, pane, old_path, new_name):
+        try:
+            if pane == "local":
+                new_path = os.path.join(os.path.dirname(old_path), new_name)
+                if os.path.exists(new_path):
+                    self.show_error_dialog("Name Conflict", f"A file or folder named '{new_name}' already exists.")
+                    return
+            elif pane == "remote":
+                old_dir = os.path.dirname(old_path).replace('\\', '/')
+                new_path = f"{old_dir}/{new_name}"
+                
+                exists_on_remote = False
+                try:
+                    self.sftp.stat(new_path)
+                    exists_on_remote = True
+                except IOError:
+                    pass
+                
+                if exists_on_remote:
+                    self.show_error_dialog("Name Conflict", f"A file or folder named '{new_name}' already exists.")
+                    return
+
+            if pane == "local":
+                os.rename(old_path, new_path)
+                self.load_local_directory(self.current_local_dir)
+            elif pane == "remote":
+                self.sftp.rename(old_path, new_path)
+                self.load_remote_directory(self.current_remote_dir)
+                
+            self.set_status(f"Renamed to '{new_name}'")
+        except Exception as e:
+            self.set_status(f"Rename failed: {e}")
 
     # --- LOCAL LOGIC ---
     def load_local_directory(self, path):
         self.local_liststore.clear()
         try:
+            entries = []
             if os.path.dirname(path) != path: 
-                self.local_liststore.append(["", "..", "", "", True])
+                entries.append({'icon': 'go-up', 'name': '..', 'size': '', 'is_dir': True, 'mtime': '', 'raw_size': -1.0, 'raw_time': 0.0, 'sort_key': '0_..'})
 
-            for filename in sorted(os.listdir(path)):
+            for filename in os.listdir(path):
                 full_path = os.path.join(path, filename)
                 st = os.stat(full_path)
                 is_dir = stat.S_ISDIR(st.st_mode)
-                size = f"{st.st_size} B" if not is_dir else ""
-                perms = stat.filemode(st.st_mode)
-                self.local_liststore.append(["", filename, size, perms, is_dir])
+                raw_size, raw_time = float(st.st_size or 0), float(st.st_mtime or 0)
+                category = self.get_sort_category(filename, is_dir)
+                entries.append({
+                    'icon': self.get_icon_name(filename, is_dir), 'name': filename, 
+                    'size': self.format_size(raw_size) if not is_dir else "", 'is_dir': is_dir, 
+                    'mtime': self.format_time(raw_time), 'raw_size': raw_size, 'raw_time': raw_time,
+                    'sort_key': f"{category}_{filename.lower()}"
+                })
+                
+            entries.sort(key=lambda x: x['sort_key'])
+            for e in entries:
+                self.local_liststore.append([e['icon'], e['name'], e['size'], e['is_dir'], e['mtime'], e['raw_size'], e['raw_time'], e['sort_key']])
                 
             self.current_local_dir = path
-            self.local_path_entry.set_text(path)
+            self.update_breadcrumbs(self.local_breadcrumb_box, path, self.load_local_directory)
         except Exception as e:
-            self.set_status(f"Error loading local directory: {str(e)}")
+            self.set_status(f"Error loading local: {str(e)}")
 
     def on_local_row_double_clicked(self, treeview, path, column):
         model = treeview.get_model()
         iter_ = model.get_iter(path)
         filename = model.get_value(iter_, 1)
-        is_dir = model.get_value(iter_, 4)
-
-        if is_dir:
-            if filename == "..":
-                new_path = os.path.dirname(self.current_local_dir)
-            else:
-                new_path = os.path.join(self.current_local_dir, filename)
+        if model.get_value(iter_, 3): 
+            new_path = os.path.dirname(self.current_local_dir) if filename == ".." else os.path.join(self.current_local_dir, filename)
             self.load_local_directory(new_path)
-
-    def on_local_path_entered(self, entry):
-        self.load_local_directory(entry.get_text())
 
     # --- REMOTE LOGIC ---
     def connect_to_server(self):
         self.set_status("Connecting...")
         try:
             self.transport = paramiko.Transport((self.host, self.port))
-            
             if self.private_key and os.path.exists(self.private_key):
                 key = paramiko.RSAKey.from_private_key_file(self.private_key)
                 self.transport.connect(username=self.username, pkey=key)
             else:
                 self.transport.connect(username=self.username, password=self.password)
-            
             self.sftp = paramiko.SFTPClient.from_transport(self.transport)
-            
             self.current_remote_dir = self.sftp.normalize('.')
             self.load_remote_directory(self.current_remote_dir)
-            
         except Exception as e:
             self.set_status(f"Connection failed: {str(e)}")
 
@@ -463,54 +851,164 @@ class SFTPWindow(Gtk.Window):
         if not self.sftp: return
         self.set_status(f"Loading remote {path}...")
         self.remote_liststore.clear()
-        
         try:
+            entries = []
             if path != "/":
-                self.remote_liststore.append(["", "..", "", "", True])
+                entries.append({'icon': 'go-up', 'name': '..', 'size': '', 'is_dir': True, 'mtime': '', 'raw_size': -1.0, 'raw_time': 0.0, 'sort_key': '0_..'})
 
             for entry in self.sftp.listdir_attr(path):
                 is_dir = stat.S_ISDIR(entry.st_mode)
-                perms = stat.filemode(entry.st_mode)
-                size = f"{entry.st_size} B" if not is_dir else ""
-                self.remote_liststore.append(["", entry.filename, size, perms, is_dir])
+                raw_size, raw_time = float(entry.st_size or 0), float(entry.st_mtime or 0)
+                category = self.get_sort_category(entry.filename, is_dir)
+                entries.append({
+                    'icon': self.get_icon_name(entry.filename, is_dir), 'name': entry.filename, 
+                    'size': self.format_size(raw_size) if not is_dir else "", 'is_dir': is_dir, 
+                    'mtime': self.format_time(raw_time), 'raw_size': raw_size, 'raw_time': raw_time,
+                    'sort_key': f"{category}_{entry.filename.lower()}"
+                })
+                
+            entries.sort(key=lambda x: x['sort_key'])
+            for e in entries:
+                self.remote_liststore.append([e['icon'], e['name'], e['size'], e['is_dir'], e['mtime'], e['raw_size'], e['raw_time'], e['sort_key']])
                 
             self.current_remote_dir = path
-            self.remote_path_entry.set_text(path)
+            self.update_breadcrumbs(self.remote_breadcrumb_box, path, self.load_remote_directory)
             self.set_status("Connected.")
         except Exception as e:
-            self.set_status(f"Error loading remote directory: {str(e)}")
+            self.set_status(f"Error loading remote: {str(e)}")
 
     def on_remote_row_double_clicked(self, treeview, path, column):
         model = treeview.get_model()
         iter_ = model.get_iter(path)
         filename = model.get_value(iter_, 1)
-        is_dir = model.get_value(iter_, 4)
-
-        if is_dir:
-            if filename == "..":
-                new_path = os.path.dirname(self.current_remote_dir)
-            else:
-                new_path = os.path.join(self.current_remote_dir, filename).replace('\\', '/')
+        if model.get_value(iter_, 3): 
+            new_path = os.path.dirname(self.current_remote_dir) if filename == ".." else os.path.join(self.current_remote_dir, filename).replace('\\', '/')
             self.load_remote_directory(new_path)
 
-    def on_remote_path_entered(self, entry):
-        self.load_remote_directory(entry.get_text())
+    # --- MOUSE CLICK & CONTEXT MENU ---
+    def on_button_press(self, treeview, event, pane):
+        if event.type == Gdk.EventType.BUTTON_PRESS:
+            if event.button == 1:
+                path_info = treeview.get_path_at_pos(int(event.x), int(event.y))
+                if path_info:
+                    path = path_info[0]
+                    selection = treeview.get_selection()
+                    model, paths = selection.get_selected_rows()
+                    
+                    if len(paths) > 1 and selection.path_is_selected(path):
+                        self.drag_cached_paths = paths
+                    else:
+                        self.drag_cached_paths = None
+
+                    if selection.path_is_selected(path) and len(paths) == 1:
+                        if event.time - self._last_click_time > 400: 
+                            self._rename_candidate_path = path
+                            self._rename_candidate_treeview = treeview
+                    
+                    self._last_click_time = event.time
+                return False
+
+            elif event.button == 3:
+                path_info = treeview.get_path_at_pos(int(event.x), int(event.y))
+                if path_info:
+                    path = path_info[0]
+                    selection = treeview.get_selection()
+                    if not selection.path_is_selected(path):
+                        selection.unselect_all()
+                        selection.select_path(path)
+                    
+                    model = treeview.get_model()
+                    if model.get_value(model.get_iter(path), 1) != "..":
+                        self.show_context_menu(event, pane)
+                else:
+                    self.show_context_menu(event, pane, empty_space=True)
+                return True 
+                
+        elif event.type == Gdk.EventType._2BUTTON_PRESS: 
+            self._rename_candidate_path = None
+            return False
+            
+        return False
+
+    def on_button_release(self, treeview, event, pane):
+        if event.button == 1: 
+            self.drag_cached_paths = None
+            if self._rename_candidate_path and self._rename_candidate_treeview == treeview:
+                path_info = treeview.get_path_at_pos(int(event.x), int(event.y))
+                if path_info and path_info[0] == self._rename_candidate_path:
+                    self.trigger_inline_rename(treeview, self._rename_candidate_path)
+            self._rename_candidate_path = None 
+        return False
+
+    def show_context_menu(self, event, pane, empty_space=False):
+        treeview = self.local_treeview if pane == "local" else self.remote_treeview
+        selection = treeview.get_selection()
+        model, paths = selection.get_selected_rows()
+        selected_items = self.get_selected_items(treeview, pane)
+
+        menu = Gtk.Menu()
+
+        if not empty_space and paths:
+            rename_item = Gtk.MenuItem(label="Rename")
+            if len(paths) > 1: rename_item.set_sensitive(False) 
+            else: rename_item.connect("activate", lambda w, p=paths[0]: self.trigger_inline_rename(treeview, p))
+            menu.append(rename_item)
+
+            delete_item = Gtk.MenuItem(label="Delete")
+            delete_item.connect("activate", lambda w: self.start_delete_thread(pane, selected_items))
+            menu.append(delete_item)
+            menu.append(Gtk.SeparatorMenuItem()) 
+
+        mkdir_item = Gtk.MenuItem(label="Create Directory")
+        mkdir_item.connect("activate", lambda w: self.create_new_directory(pane))
+        menu.append(mkdir_item)
+        menu.append(Gtk.SeparatorMenuItem()) 
+
+        if not empty_space and paths:
+            if pane == "local":
+                transfer_item = Gtk.MenuItem(label="Upload to Remote")
+                transfer_item.connect("activate", lambda w: self.start_transfer_thread("local", selected_items, "remote", self.current_remote_dir, "copy", resume=False))
+            else:
+                transfer_item = Gtk.MenuItem(label="Download to Local")
+                transfer_item.connect("activate", lambda w: self.start_transfer_thread("remote", selected_items, "local", self.current_local_dir, "copy", resume=False))
+            menu.append(transfer_item)
+
+        menu.show_all()
+        menu.popup_at_pointer(event)
 
     # --- DRAG AND DROP ---
+    def on_drag_begin(self, widget, context):
+        self._rename_candidate_path = None 
+        
+        if self.drag_cached_paths:
+            selection = widget.get_selection()
+            for path in self.drag_cached_paths: selection.select_path(path)
+            self.drag_cached_paths = None
+
+        model, paths = widget.get_selection().get_selected_rows()
+        if not paths: return
+        
+        num_files, num_folders = 0, 0
+        for path in paths:
+            if model.get_value(model.get_iter(path), 3): num_folders += 1
+            else: num_files += 1
+
+        theme = Gtk.IconTheme.get_default()
+        icon_name = "text-x-generic" 
+        
+        if num_files == 1 and num_folders == 0: icon_name = "text-x-generic"
+        elif num_folders == 1 and num_files == 0: icon_name = "folder"
+        elif num_files > 1 and num_folders == 0: icon_name = "document-multiple" if theme.has_icon("document-multiple") else "edit-copy"
+        elif num_folders > 1 and num_files == 0: icon_name = "folder-saved-search" if theme.has_icon("folder-saved-search") else "folder"
+        else: icon_name = "folder-documents" if theme.has_icon("folder-documents") else "folder"
+
+        Gtk.drag_set_icon_name(context, icon_name, 0, 0)
+
     def on_drag_data_get(self, treeview, context, selection, info, time, source_pane):
-        model, treeiter = treeview.get_selection().get_selected()
-        if treeiter:
-            filename = model.get_value(treeiter, 1)
-            if filename == "..": return
-            
-            if source_pane == "local":
-                filepath = os.path.join(self.current_local_dir, filename)
-            else:
-                filepath = os.path.join(self.current_remote_dir, filename).replace('\\', '/')
-            
-            # Format: "local:/path/to/file" or "remote:/path/to/file"
-            drag_data = f"{source_pane}:{filepath}"
-            selection.set_text(drag_data, -1)
+        selected_items = self.get_selected_items(treeview, source_pane)
+        if not selected_items: return
+        data = f"{source_pane}:" + "|".join(selected_items)
+        selection.set_text(data, -1)
 
     def on_drag_data_received(self, treeview, context, x, y, selection, info, time, dest_pane):
         data = selection.get_text()
@@ -518,134 +1016,238 @@ class SFTPWindow(Gtk.Window):
             context.finish(False, False, time)
             return
 
-        source_pane, source_path = data.split(":", 1)
-        
-        # Determine the target directory based on where it was dropped
+        source_pane, paths_str = data.split(":", 1)
+        source_paths = paths_str.split("|") 
         target_dir = self.current_local_dir if dest_pane == "local" else self.current_remote_dir
         
-        action = 'move' if context.get_selected_action() == Gdk.DragAction.MOVE else 'copy'
+        window = treeview.get_window()
+        display = Gdk.Display.get_default()
+        seat = display.get_default_seat()
+        pointer = seat.get_pointer()
+        
+        if window:
+            _, _, _, state = window.get_device_position(pointer)
+            action = 'move' if state & Gdk.ModifierType.SHIFT_MASK else 'copy'
+        else:
+            action = 'copy'
 
-        self.start_transfer_thread(source_pane, source_path, dest_pane, target_dir, action)
+        self.start_transfer_thread(source_pane, source_paths, dest_pane, target_dir, action, resume=False)
         context.finish(True, False, time)
 
     # --- KEYBOARD SHORTCUTS ---
     def on_key_press(self, widget, event, source_pane):
         state = event.state & Gdk.ModifierType.MODIFIER_MASK
-        if not (state & Gdk.ModifierType.CONTROL_MASK):
-            return False
-
+        ctrl_pressed = (state & Gdk.ModifierType.CONTROL_MASK)
         keyval = event.keyval
-        selection = widget.get_selection()
-        model, treeiter = selection.get_selected()
         
-        selected_file = None
-        if treeiter:
-            filename = model.get_value(treeiter, 1)
-            if filename != "..":
-                if source_pane == "local":
-                    selected_file = os.path.join(self.current_local_dir, filename)
-                else:
-                    selected_file = os.path.join(self.current_remote_dir, filename).replace('\\', '/')
+        selected_items = self.get_selected_items(widget, source_pane)
 
-        if keyval == Gdk.KEY_c:  
-            if selected_file:
-                self.clipboard_action = 'copy'
-                self.clipboard_file = selected_file
-                self.clipboard_source = source_pane
-                self.set_status(f"Copied {source_pane}: {selected_file}")
-            return True
-            
-        elif keyval == Gdk.KEY_x:  
-            if selected_file:
-                self.clipboard_action = 'cut'
-                self.clipboard_file = selected_file
-                self.clipboard_source = source_pane
-                self.set_status(f"Cut {source_pane}: {selected_file}")
-            return True
-            
-        elif keyval == Gdk.KEY_v:  
-            if self.clipboard_file and self.clipboard_action:
+        if ctrl_pressed:
+            if keyval == Gdk.KEY_c and selected_items:  
+                self.clipboard_action, self.clipboard_files, self.clipboard_source = 'copy', selected_items, source_pane
+                self.set_status(f"Copied {len(selected_items)} item(s) from {source_pane}")
+                return True
+            elif keyval == Gdk.KEY_x and selected_items:  
+                self.clipboard_action, self.clipboard_files, self.clipboard_source = 'cut', selected_items, source_pane
+                self.set_status(f"Cut {len(selected_items)} item(s) from {source_pane}")
+                return True
+            elif keyval == Gdk.KEY_v and self.clipboard_files and self.clipboard_action:  
                 target_dir = self.current_local_dir if source_pane == "local" else self.current_remote_dir
-                self.start_transfer_thread(self.clipboard_source, self.clipboard_file, source_pane, target_dir, self.clipboard_action)
+                self.start_transfer_thread(self.clipboard_source, self.clipboard_files, source_pane, target_dir, self.clipboard_action, resume=False)
+                return True
+                
+        if keyval == Gdk.KEY_F2:
+            model, paths = widget.get_selection().get_selected_rows()
+            if paths and len(paths) == 1:
+                self.trigger_inline_rename(widget, paths[0])
+            return True
+
+        if keyval == Gdk.KEY_Delete and selected_items:
+            self.start_delete_thread(source_pane, selected_items)
             return True
             
         return False
 
-    # --- TRANSFER ENGINE (THREADED) ---
-    def start_transfer_thread(self, src_pane, src_path, dst_pane, dst_dir, action):
-        filename = os.path.basename(src_path)
-        
-        # Prevent pasting in the exact same directory
-        if src_pane == dst_pane:
-            check_dir = os.path.dirname(src_path) if src_pane == "local" else os.path.dirname(src_path).replace('\\', '/')
-            if check_dir == dst_dir:
-                self.set_status("Cannot paste file into its own directory.")
-                return
+    # --- TRANSFER ENGINE (WITH RESUME LOGIC) ---
+    def _sftp_progress_callback(self, transferred, total):
+        if self._cancel_transfer:
+            raise Exception("TRANSFER_CANCELLED_BY_USER")
 
-        self.set_status(f"Transferring {filename}...")
+    def start_transfer_thread(self, src_pane, src_paths, dst_pane, dst_dir, action, resume=False):
+        if self.transfer_active:
+            self.set_status("A transfer is already active!")
+            return
+            
+        self.transfer_active = True
+        self._cancel_transfer = False
         
-        # Run the heavy lifting in a background thread so the GUI doesn't freeze
-        thread = threading.Thread(target=self._transfer_worker, args=(src_pane, src_path, dst_pane, dst_dir, action, filename))
+        self.stop_btn.set_sensitive(True)
+        self.stop_btn.set_name("stop_btn_active")
+        self.transfer_btn.set_sensitive(False)
+        self.resume_btn.set_sensitive(False)
+
+        mode_text = "Resuming" if resume else ("Moving" if action in ['move', 'cut'] else "Copying")
+        self.set_status(f"{mode_text} {len(src_paths)} item(s)...")
+        
+        thread = threading.Thread(target=self._transfer_worker, args=(src_pane, src_paths, dst_pane, dst_dir, action, resume))
         thread.daemon = True
         thread.start()
 
-    def _transfer_worker(self, src_pane, src_path, dst_pane, dst_dir, action, filename):
-        try:
-            if dst_pane == "local":
-                dst_path = os.path.join(dst_dir, filename)
-            else:
-                dst_path = os.path.join(dst_dir, filename).replace('\\', '/')
-
-            # 1. Local to Remote (Upload)
-            if src_pane == "local" and dst_pane == "remote":
-                if os.path.isdir(src_path):
-                    GLib.idle_add(self.set_status, "Folder uploads require recursive logic (files only for now).")
-                    return
-                self.sftp.put(src_path, dst_path)
-                if action == 'cut': os.remove(src_path)
-
-            # 2. Remote to Local (Download)
-            elif src_pane == "remote" and dst_pane == "local":
-                # Check if it's a directory (Paramiko get() fails on dirs)
-                try:
-                    self.sftp.chdir(src_path)
-                    GLib.idle_add(self.set_status, "Folder downloads require recursive logic (files only for now).")
-                    return
-                except IOError:
-                    pass # It's a file, proceed.
+    def _put_file(self, src_path, dst_path, resume):
+        if resume:
+            try:
+                remote_size = self.sftp.stat(dst_path).st_size
+                local_size = os.path.getsize(src_path)
                 
-                self.sftp.get(src_path, dst_path)
-                if action == 'cut': self.sftp.remove(src_path)
+                if 0 < remote_size < local_size:
+                    with open(src_path, 'rb') as lf, self.sftp.file(dst_path, 'ab') as rf:
+                        lf.seek(remote_size)
+                        rf.set_pipelined(True)
+                        while True:
+                            if self._cancel_transfer: raise Exception("TRANSFER_CANCELLED_BY_USER")
+                            chunk = lf.read(32768)
+                            if not chunk: break
+                            rf.write(chunk)
+                    return
+            except Exception:
+                pass 
+                
+        self.sftp.put(src_path, dst_path, callback=self._sftp_progress_callback)
 
-            # 3. Local to Local
-            elif src_pane == "local" and dst_pane == "local":
-                if action == 'copy':
-                    if os.path.isdir(src_path): shutil.copytree(src_path, dst_path)
-                    else: shutil.copy2(src_path, dst_path)
-                elif action == 'cut':
-                    shutil.move(src_path, dst_path)
+    def _get_file(self, src_path, dst_path, resume):
+        if resume:
+            try:
+                local_size = os.path.getsize(dst_path) if os.path.exists(dst_path) else 0
+                remote_size = self.sftp.stat(src_path).st_size
+                
+                if 0 < local_size < remote_size:
+                    with self.sftp.file(src_path, 'rb') as rf, open(dst_path, 'ab') as lf:
+                        rf.seek(local_size)
+                        rf.prefetch(remote_size)
+                        while True:
+                            if self._cancel_transfer: raise Exception("TRANSFER_CANCELLED_BY_USER")
+                            chunk = rf.read(32768)
+                            if not chunk: break
+                            lf.write(chunk)
+                    return
+            except Exception:
+                pass 
+        
+        self.sftp.get(src_path, dst_path, callback=self._sftp_progress_callback)
 
-            # 4. Remote to Remote
-            elif src_pane == "remote" and dst_pane == "remote":
-                chan = self.transport.open_session()
-                if action == 'copy':
-                    chan.exec_command(f'cp -r "{src_path}" "{dst_path}"')
-                elif action == 'cut':
-                    chan.exec_command(f'mv "{src_path}" "{dst_path}"')
-                chan.recv_exit_status() # Wait to finish
+    def _upload_dir(self, local_dir, remote_dir, resume):
+        if self._cancel_transfer: raise Exception("TRANSFER_CANCELLED_BY_USER")
+        try: self.sftp.mkdir(remote_dir)
+        except IOError: pass 
+        for item in os.listdir(local_dir):
+            if self._cancel_transfer: raise Exception("TRANSFER_CANCELLED_BY_USER")
+            l_path = os.path.join(local_dir, item)
+            r_path = f"{remote_dir}/{item}"
+            if os.path.isdir(l_path): self._upload_dir(l_path, r_path, resume)
+            else: self._put_file(l_path, r_path, resume)
 
-            # Clear clipboard if we executed a cut
-            if action == 'cut':
-                self.clipboard_file = None
-                self.clipboard_action = None
+    def _download_dir(self, remote_dir, local_dir, resume):
+        if self._cancel_transfer: raise Exception("TRANSFER_CANCELLED_BY_USER")
+        os.makedirs(local_dir, exist_ok=True)
+        for item in self.sftp.listdir_attr(remote_dir):
+            if self._cancel_transfer: raise Exception("TRANSFER_CANCELLED_BY_USER")
+            r_path = f"{remote_dir}/{item.filename}"
+            l_path = os.path.join(local_dir, item.filename)
+            if stat.S_ISDIR(item.st_mode): self._download_dir(r_path, l_path, resume)
+            else: self._get_file(r_path, l_path, resume)
 
-            # Refresh UIs on the main thread safely
-            GLib.idle_add(self.load_local_directory, self.current_local_dir)
-            GLib.idle_add(self.load_remote_directory, self.current_remote_dir)
-            GLib.idle_add(self.set_status, f"Successfully transferred {filename}.")
+    def _transfer_worker(self, src_pane, src_paths, dst_pane, dst_dir, action, resume):
+        try:
+            total = len(src_paths)
+            for idx, src_path in enumerate(src_paths):
+                if self._cancel_transfer: raise Exception("TRANSFER_CANCELLED_BY_USER")
+                
+                filename = os.path.basename(src_path)
+                dst_path = os.path.join(dst_dir, filename) if dst_pane == "local" else f"{dst_dir}/{filename}"
+
+                GLib.idle_add(self.set_status, f"Processing {idx+1}/{total}: {filename}...")
+
+                if src_pane == "local" and dst_pane == "remote":
+                    if os.path.isdir(src_path):
+                        self._upload_dir(src_path, dst_path, resume)
+                        if action in ['move', 'cut']: shutil.rmtree(src_path)
+                    else:
+                        self._put_file(src_path, dst_path, resume)
+                        if action in ['move', 'cut']: os.remove(src_path)
+
+                elif src_pane == "remote" and dst_pane == "local":
+                    remote_stat = self.sftp.stat(src_path)
+                    if stat.S_ISDIR(remote_stat.st_mode):
+                        self._download_dir(src_path, dst_path, resume)
+                        if action in ['move', 'cut']:
+                            chan = self.transport.open_session()
+                            chan.exec_command(f'rm -rf "{src_path}"')
+                            chan.recv_exit_status()
+                    else:
+                        self._get_file(src_path, dst_path, resume)
+                        if action in ['move', 'cut']: self.sftp.remove(src_path)
+
+                elif src_pane == "local" and dst_pane == "local":
+                    if action == 'copy':
+                        shutil.copytree(src_path, dst_path) if os.path.isdir(src_path) else shutil.copy2(src_path, dst_path)
+                    elif action in ['move', 'cut']: shutil.move(src_path, dst_path)
+
+                elif src_pane == "remote" and dst_pane == "remote":
+                    chan = self.transport.open_session()
+                    cmd = f'cp -r "{src_path}" "{dst_path}"' if action == 'copy' else f'mv "{src_path}" "{dst_path}"'
+                    chan.exec_command(cmd)
+                    chan.recv_exit_status()
+
+            if action in ['cut', 'move']:
+                self.clipboard_files, self.clipboard_action = [], None
+
+            GLib.idle_add(self.set_status, f"Successfully transferred {total} item(s).")
 
         except Exception as e:
-            GLib.idle_add(self.set_status, f"Transfer failed: {str(e)}")
+            if str(e) == "TRANSFER_CANCELLED_BY_USER":
+                GLib.idle_add(self.set_status, "Transfer was cancelled by the user.")
+            else:
+                GLib.idle_add(self.set_status, f"Transfer failed: {str(e)}")
+        finally:
+            self.transfer_active = False
+            
+            def _reset_ui_after_transfer():
+                self.stop_btn.set_sensitive(False)
+                self.stop_btn.set_name("")
+                self.load_local_directory(self.current_local_dir)
+                self.load_remote_directory(self.current_remote_dir)
+                
+                active_tv = self.local_treeview if self.active_pane == "local" else self.remote_treeview
+                self.on_selection_changed(active_tv.get_selection(), self.active_pane)
+                
+            GLib.idle_add(_reset_ui_after_transfer)
+
+    def start_delete_thread(self, pane, paths):
+        self.set_status(f"Deleting {len(paths)} item(s)...")
+        thread = threading.Thread(target=self._delete_worker, args=(pane, paths))
+        thread.daemon = True
+        thread.start()
+
+    def _delete_worker(self, pane, paths):
+        try:
+            for path in paths:
+                if pane == "local":
+                    if os.path.isdir(path): shutil.rmtree(path)
+                    else: os.remove(path)
+                elif pane == "remote":
+                    remote_stat = self.sftp.stat(path)
+                    if stat.S_ISDIR(remote_stat.st_mode):
+                        chan = self.transport.open_session()
+                        chan.exec_command(f'rm -rf "{path}"')
+                        chan.recv_exit_status()
+                    else:
+                        self.sftp.remove(path)
+                        
+            GLib.idle_add(self.load_local_directory, self.current_local_dir)
+            GLib.idle_add(self.load_remote_directory, self.current_remote_dir)
+            GLib.idle_add(self.set_status, f"Successfully deleted {len(paths)} item(s).")
+        except Exception as e:
+            GLib.idle_add(self.set_status, f"Delete failed: {str(e)}")
 
     def set_status(self, message):
         self.statusbar.push(self.context_id, message)
@@ -653,6 +1255,15 @@ class SFTPWindow(Gtk.Window):
     def on_close(self, widget):
         if self.sftp: self.sftp.close()
         if self.transport: self.transport.close()
+
+
+
+
+
+
+
+
+
 
 class PassphraseInputDialog(Gtk.Dialog):
     def __init__(self, parent, title, prompt_text, confirm_text=None, show_retry_message=False):
