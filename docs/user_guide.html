@@ -98,6 +98,7 @@
                     <li><a href="#conn-forwarding">Port Forwarding</a></li>
                 </ul>
             </li>
+            <li><a href="#sftp">SFTP File Manager</a></li>
             <li><a href="#logging">Logging & Data Management</a>
                 <ul>
                     <li><a href="#log-session">Clean Session Logging</a></li>
@@ -188,9 +189,24 @@
         <li><strong>Dynamic (-D):</strong> Creates a SOCKS proxy that allows you to route browser traffic through the remote server.</li>
     </ul>
 
-    <h2 id="logging">4. Logging & Data Management</h2>
+    <h2 id="sftp">4. SFTP File Manager</h2>
+    <p>SNAP includes a fully integrated, graphical SFTP client for managing files on remote servers without relying on command-line tools.</p>
+    
+    <div class="feature-box">
+        <h3>File Management Features</h3>
+        <ul>
+            <li><strong>Dual-Pane Interface:</strong> Visually manage files between your Local machine (left) and Remote server (right) side-by-side.</li>
+            <li><strong>Intuitive Navigation:</strong> Navigate directories using standard clickable breadcrumb paths instead of manually typing locations. Use the dedicated refresh buttons to keep both panes up to date.</li>
+            <li><strong>Drag & Drop:</strong> Seamlessly upload, download, or move files by dragging them between the local and remote panes.</li>
+            <li><strong>Smart Transfers:</strong> Support for pausing and resuming partial file transfers to save bandwidth and time.</li>
+            <li><strong>Context Menus & Shortcuts:</strong> Right-click or use standard keyboard shortcuts (<code>Ctrl+C</code>, <code>Ctrl+X</code>, <code>Ctrl+V</code>, <code>Delete</code>, <code>F2</code>) to easily copy, cut, paste, delete, and inline-rename files and folders.</li>
+            <li><strong>Real-Time Status:</strong> A bottom status bar provides live feedback on transfer progress, successful actions, and errors.</li>
+        </ul>
+    </div>
 
-    <h3 id="log-session">4.1 Clean Session Logging</h3>
+    <h2 id="logging">5. Logging & Data Management</h2>
+
+    <h3 id="log-session">5.1 Clean Session Logging</h3>
     <p>SNAP features a sophisticated logging engine designed for troubleshooting and auditing.</p>
     <ul>
         <li><strong>Enable Logging:</strong> In the <strong>Terminal</strong> tab, check "Enable Logging" and select a file path.</li>
@@ -203,14 +219,14 @@
         <li><strong>"Clean Text" Technology:</strong> The application automatically strips out terminal control codes (ANSI colors, progress bars, window title updates) in real-time. The resulting log file is clean, human-readable text, perfect for use with <code>grep</code> or sharing with colleagues.</li>
     </ul>
 
-    <h3 id="log-export">4.2 Import / Export</h3>
+    <h3 id="log-export">5.2 Import / Export</h3>
     <p>Backup or share your configuration via the <strong>File</strong> menu.</p>
     <ul>
         <li><strong>JSON Export:</strong> Saves a plaintext <code>.json</code> file. <em>Warning: This includes passwords in plain text.</em></li>
         <li><strong>GPG Export:</strong> Saves an encrypted <code>.json.gpg</code> file. You will be prompted for the Master Passphrase to encrypt it. This allows you to safely move your configuration between computers.</li>
     </ul>
 
-    <h2 id="encryption">5. Security & Encryption</h2>
+    <h2 id="encryption">6. Security & Encryption</h2>
     <p>Your credentials are protected by industry-standard cryptography.</p>
     <ul>
         <li><strong>Storage:</strong> Data is saved in <code>~/.local/share/snap_connection_manager/ssh_servers.json.gpg</code>.</li>
@@ -219,7 +235,7 @@
         <li><strong>Memory Safety:</strong> Passwords are decrypted only in RAM and are never written to disk in plain text during normal operation.</li>
     </ul>
 
-    <h2 id="appearance">6. Appearance & Customization</h2>
+    <h2 id="appearance">7. Appearance & Customization</h2>
     <p>Make the terminal your own via the <strong>Appearance</strong> tab.</p>
     <ul>
         <li><strong>Palettes:</strong> Choose from built-in schemes like <em>Solarized</em>, <em>Tango</em>, or <em>GNOME</em>, or define custom foreground/background colors.</li>
@@ -227,11 +243,24 @@
         <li><strong>Defaults:</strong> Set your preferred baseline settings in <code>File -> Default Settings...</code>. New servers will automatically inherit these choices.</li>
     </ul>
 
-    <h2 id="installation">7. Installation</h2>
-    <p>To install or update to the latest version:</p>
+    <h2 id="installation">8. Installation</h2>
+    
+    <h3>Quick Install Script</h3>
     <pre><code>curl -sL https://raw.githubusercontent.com/larreblarsson/SNAP-Connection-Manager/main/install.sh | bash</code></pre>
 
-    <p class="note">© 2025 SNAP Connection Manager. Built with Python & GTK3.</p>
+    <h3>Manual Installation</h3>
+    <p>Run the following commands to add the repository and install the application:</p>
+    <pre><code># Add the GPG key
+curl -sL https://larreblarsson.github.io/SNAP-Connection-Manager/public.key | sudo gpg --dearmor -o /usr/share/keyrings/SNAP-Connection-Manager-keyring.gpg
+
+# Add the repository (64-bit architecture only)
+echo "deb [arch=amd64 signed-by=/usr/share/keyrings/SNAP-Connection-Manager-keyring.gpg] https://larreblarsson.github.io/SNAP-Connection-Manager stable main" | sudo tee /etc/apt/sources.list.d/SNAP-Connection-Manager.list
+
+# Update and install
+sudo apt update
+sudo apt install snap-connection-manager</code></pre>
+
+    <p class="note">© 2026 SNAP Connection Manager. Built with Python & GTK3.</p>
 
 </body>
 </html>
