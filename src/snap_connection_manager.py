@@ -331,20 +331,85 @@ class SFTPWindow(Gtk.Window):
         self._rename_candidate_path = None
         self._rename_candidate_treeview = None
 
+        # --- Icon Engine Setup ---
+        self.icon_theme = Gtk.IconTheme.get_default()
+        self.yellow_folder_pixbuf = self._create_yellow_folder_pixbuf()
+        self.transparent_pixbuf = self._create_transparent_pixbuf()
+
         self.setup_ui()
         self.connect("destroy", self.on_close)
         
         self.load_local_directory(self.current_local_dir)
         GLib.idle_add(self.connect_to_server)
 
+    # --- CUSTOM ICON GENERATION ---
+    def _create_yellow_folder_pixbuf(self):
+        """Generates a perfect yellow folder icon in-memory to override the system theme"""
+        svg_data = b"""<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+            <path d="M2 2C1 2 0 3 0 4v9c0 1 1 2 2 2h12c1 0 2-1 2-2V5.5C16 4.5 15 3.5 14 3.5H7.5L5.5 2H2z" fill="#e5a50a"/>
+            <path d="M0 6v7c0 1 1 2 2 2h12c1 0 2-1 2-2V6H0z" fill="#f6d32d"/>
+        </svg>"""
+        stream = Gio.MemoryInputStream.new_from_data(svg_data, None)
+        return GdkPixbuf.Pixbuf.new_from_stream(stream, None)
+
+    def _create_transparent_pixbuf(self):
+        """Creates a nearly invisible 16x16 icon to force GTK to align text properly"""
+        svg_data = b"""<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+            <rect width="16" height="16" fill="#000000" fill-opacity="0.01"/>
+        </svg>"""
+        stream = Gio.MemoryInputStream.new_from_data(svg_data, None)
+        return GdkPixbuf.Pixbuf.new_from_stream(stream, None)
+
+    def get_icon_pixbuf(self, filename, is_dir):
+        if filename == "..": 
+            return self.transparent_pixbuf
+        if is_dir: 
+            return self.yellow_folder_pixbuf
+            
+        # For files, ask the system theme for the correct format icon
+        content_type, _ = Gio.content_type_guess(filename, None)
+        icon = Gio.content_type_get_icon(content_type)
+        if icon:
+            for name in icon.get_names():
+                if self.icon_theme.has_icon(name):
+                    try:
+                        return self.icon_theme.load_icon(name, 16, 0)
+                    except GLib.Error: pass
+        
+        try:
+            return self.icon_theme.load_icon("text-x-generic", 16, 0)
+        except GLib.Error:
+            return self.transparent_pixbuf
+
     def setup_ui(self):
-        # --- Inject CSS for Colored Buttons ---
+        # --- Inject CSS for Colored Buttons & Clickable Links ---
         css_provider = Gtk.CssProvider()
         css = b"""
-        #transfer_btn_upload image { color: #2ea043; } /* Vibrant Green */
-        #transfer_btn_download image { color: #3794ff; } /* Vibrant Blue */
-        #stop_btn_active image { color: #e5534b; } /* Vibrant Red */
-        #resume_btn_active image { color: #f39c12; } /* Vibrant Orange */
+        #transfer_btn_upload image { color: #2ea043; } 
+        #transfer_btn_download image { color: #3794ff; } 
+        #stop_btn_active image { color: #e5534b; } 
+        #resume_btn_active image { color: #f39c12; } 
+        
+        /* Standard native style for path breadcrumbs with tight spacing */
+        .breadcrumb-btn { 
+            background: transparent; 
+            color: @theme_fg_color; 
+            font-weight: normal;
+            padding: 0px 2px;
+            min-height: 0px;
+            border: none;
+            box-shadow: none;
+        }
+        .breadcrumb-btn:hover { 
+            text-decoration: underline;
+            background: transparent;
+        }
+        .breadcrumb-sep {
+            color: @theme_fg_color;
+            font-weight: normal;
+            padding: 0px;
+            margin: 0px;
+        }
         """
         css_provider.load_from_data(css)
         Gtk.StyleContext.add_provider_for_screen(
@@ -361,7 +426,6 @@ class SFTPWindow(Gtk.Window):
         self.global_toolbar.set_border_width(4)
         main_vbox.pack_start(self.global_toolbar, False, False, 0)
 
-        # 1. Global Refresh Button
         self.global_refresh_btn = Gtk.Button()
         self.global_refresh_btn.set_relief(Gtk.ReliefStyle.NONE)
         self.global_refresh_btn.set_image(Gtk.Image.new_from_icon_name("view-refresh", Gtk.IconSize.BUTTON))
@@ -369,7 +433,6 @@ class SFTPWindow(Gtk.Window):
         self.global_refresh_btn.connect("clicked", self.on_global_refresh_clicked)
         self.global_toolbar.pack_start(self.global_refresh_btn, False, False, 0)
 
-        # 2. Create Directory Button
         self.mkdir_btn = Gtk.Button()
         self.mkdir_btn.set_relief(Gtk.ReliefStyle.NONE)
         self.mkdir_btn.set_image(Gtk.Image.new_from_icon_name("folder-new", Gtk.IconSize.BUTTON))
@@ -377,7 +440,6 @@ class SFTPWindow(Gtk.Window):
         self.mkdir_btn.connect("clicked", self.on_mkdir_button_clicked)
         self.global_toolbar.pack_start(self.mkdir_btn, False, False, 0)
 
-        # 3. Transfer Button (Upload / Download)
         self.transfer_btn = Gtk.Button()
         self.transfer_btn.set_relief(Gtk.ReliefStyle.NONE) 
         self.transfer_icon = Gtk.Image.new_from_icon_name("network-transmit-receive", Gtk.IconSize.BUTTON)
@@ -387,7 +449,6 @@ class SFTPWindow(Gtk.Window):
         self.transfer_btn.connect("clicked", self.on_transfer_button_clicked)
         self.global_toolbar.pack_start(self.transfer_btn, False, False, 0)
 
-        # 4. Resume Transfer Button (NEW)
         self.resume_btn = Gtk.Button()
         self.resume_btn.set_relief(Gtk.ReliefStyle.NONE)
         self.resume_btn.set_image(Gtk.Image.new_from_icon_name("media-seek-forward", Gtk.IconSize.BUTTON))
@@ -396,7 +457,6 @@ class SFTPWindow(Gtk.Window):
         self.resume_btn.connect("clicked", self.on_resume_button_clicked)
         self.global_toolbar.pack_start(self.resume_btn, False, False, 0)
 
-        # 5. Stop Transfer Button
         self.stop_btn = Gtk.Button()
         self.stop_btn.set_relief(Gtk.ReliefStyle.NONE)
         self.stop_btn.set_image(Gtk.Image.new_from_icon_name("process-stop", Gtk.IconSize.BUTTON))
@@ -415,7 +475,7 @@ class SFTPWindow(Gtk.Window):
         local_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         self.paned.pack1(local_vbox, True, False)
 
-        local_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        local_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
         local_vbox.pack_start(local_hbox, False, False, 2)
 
         local_scroll_bc = Gtk.ScrolledWindow()
@@ -425,7 +485,7 @@ class SFTPWindow(Gtk.Window):
         local_scroll_bc.get_child().set_shadow_type(Gtk.ShadowType.NONE) 
         local_hbox.pack_start(local_scroll_bc, True, True, 0)
 
-        self.local_liststore = Gtk.ListStore(str, str, str, bool, str, float, float, str)
+        self.local_liststore = Gtk.ListStore(GdkPixbuf.Pixbuf, str, str, bool, str, float, float, str)
         self.local_treeview = Gtk.TreeView(model=self.local_liststore)
         self.local_treeview.get_selection().set_mode(Gtk.SelectionMode.MULTIPLE) 
         self.local_treeview.connect("row-activated", self.on_local_row_double_clicked)
@@ -445,7 +505,7 @@ class SFTPWindow(Gtk.Window):
         remote_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         self.paned.pack2(remote_vbox, True, False)
 
-        remote_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        remote_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
         remote_vbox.pack_start(remote_hbox, False, False, 2)
 
         remote_scroll_bc = Gtk.ScrolledWindow()
@@ -455,7 +515,7 @@ class SFTPWindow(Gtk.Window):
         remote_scroll_bc.get_child().set_shadow_type(Gtk.ShadowType.NONE)
         remote_hbox.pack_start(remote_scroll_bc, True, True, 0)
 
-        self.remote_liststore = Gtk.ListStore(str, str, str, bool, str, float, float, str)
+        self.remote_liststore = Gtk.ListStore(GdkPixbuf.Pixbuf, str, str, bool, str, float, float, str)
         self.remote_treeview = Gtk.TreeView(model=self.remote_liststore)
         self.remote_treeview.get_selection().set_mode(Gtk.SelectionMode.MULTIPLE) 
         self.remote_treeview.connect("row-activated", self.on_remote_row_double_clicked)
@@ -498,29 +558,33 @@ class SFTPWindow(Gtk.Window):
         normalized_path = path.replace('\\', '/')
         parts = [p for p in normalized_path.split('/') if p]
         
-        if normalized_path.startswith("/"):
-            btn = Gtk.Button(label="/")
+        def add_link(label, target_path):
+            btn = Gtk.Button(label=label)
             btn.set_relief(Gtk.ReliefStyle.NONE)
-            btn.connect("clicked", lambda w: callback("/"))
+            btn.get_style_context().add_class("breadcrumb-btn")
+            btn.connect("clicked", lambda w: callback(target_path))
             box.pack_start(btn, False, False, 0)
+
+        def add_separator():
+            lbl = Gtk.Label(label="/")
+            lbl.get_style_context().add_class("breadcrumb-sep")
+            box.pack_start(lbl, False, False, 0)
+            
+        if normalized_path.startswith("/"):
+            add_link("/", "/")
             
         current_path = "/" if normalized_path.startswith("/") else ""
         if not normalized_path.startswith("/") and parts:
             current_path = parts[0] + "/"
-            btn = Gtk.Button(label=parts[0])
-            btn.set_relief(Gtk.ReliefStyle.NONE)
-            btn.connect("clicked", lambda w, p=current_path: callback(p))
-            box.pack_start(btn, False, False, 0)
-            if len(parts) > 1: box.pack_start(Gtk.Label(label=" / "), False, False, 2)
+            add_link(parts[0], current_path)
+            if len(parts) > 1: add_separator()
             parts = parts[1:]
 
         for i, part in enumerate(parts):
             current_path = os.path.join(current_path, part).replace('\\', '/')
-            btn = Gtk.Button(label=part)
-            btn.set_relief(Gtk.ReliefStyle.NONE)
-            btn.connect("clicked", lambda w, p=current_path: callback(p))
-            box.pack_start(btn, False, False, 0)
-            if i < len(parts) - 1: box.pack_start(Gtk.Label(label=" / "), False, False, 2)
+            add_link(part, current_path)
+            if i < len(parts) - 1: add_separator()
+            
         box.show_all()
 
     def _add_columns(self, treeview, is_local):
@@ -528,7 +592,7 @@ class SFTPWindow(Gtk.Window):
         
         renderer_pixbuf = Gtk.CellRendererPixbuf()
         col_name.pack_start(renderer_pixbuf, False)
-        col_name.add_attribute(renderer_pixbuf, "icon-name", 0) 
+        col_name.add_attribute(renderer_pixbuf, "pixbuf", 0) 
         
         renderer_text = Gtk.CellRendererText()
         renderer_text.set_property("editable", False)
@@ -576,16 +640,6 @@ class SFTPWindow(Gtk.Window):
         if is_dir and is_hidden: return 2
         if not is_dir and not is_hidden: return 3
         return 4
-
-    def get_icon_name(self, filename, is_dir):
-        if filename == "..": return "go-up"
-        if is_dir: return "folder"
-        content_type, _ = Gio.content_type_guess(filename, None)
-        icon = Gio.content_type_get_icon(content_type)
-        if icon:
-            for name in icon.get_names():
-                if Gtk.IconTheme.get_default().has_icon(name): return name
-        return "text-x-generic"
 
     def get_selected_items(self, treeview, pane):
         model, paths = treeview.get_selection().get_selected_rows()
@@ -799,7 +853,7 @@ class SFTPWindow(Gtk.Window):
         try:
             entries = []
             if os.path.dirname(path) != path: 
-                entries.append({'icon': 'go-up', 'name': '..', 'size': '', 'is_dir': True, 'mtime': '', 'raw_size': -1.0, 'raw_time': 0.0, 'sort_key': '0_..'})
+                entries.append({'pixbuf': self.transparent_pixbuf, 'name': '..', 'size': '', 'is_dir': True, 'mtime': '', 'raw_size': -1.0, 'raw_time': 0.0, 'sort_key': '0_..'})
 
             for filename in os.listdir(path):
                 full_path = os.path.join(path, filename)
@@ -807,8 +861,10 @@ class SFTPWindow(Gtk.Window):
                 is_dir = stat.S_ISDIR(st.st_mode)
                 raw_size, raw_time = float(st.st_size or 0), float(st.st_mtime or 0)
                 category = self.get_sort_category(filename, is_dir)
+                pixbuf = self.get_icon_pixbuf(filename, is_dir)
+                
                 entries.append({
-                    'icon': self.get_icon_name(filename, is_dir), 'name': filename, 
+                    'pixbuf': pixbuf, 'name': filename, 
                     'size': self.format_size(raw_size) if not is_dir else "", 'is_dir': is_dir, 
                     'mtime': self.format_time(raw_time), 'raw_size': raw_size, 'raw_time': raw_time,
                     'sort_key': f"{category}_{filename.lower()}"
@@ -816,7 +872,7 @@ class SFTPWindow(Gtk.Window):
                 
             entries.sort(key=lambda x: x['sort_key'])
             for e in entries:
-                self.local_liststore.append([e['icon'], e['name'], e['size'], e['is_dir'], e['mtime'], e['raw_size'], e['raw_time'], e['sort_key']])
+                self.local_liststore.append([e['pixbuf'], e['name'], e['size'], e['is_dir'], e['mtime'], e['raw_size'], e['raw_time'], e['sort_key']])
                 
             self.current_local_dir = path
             self.update_breadcrumbs(self.local_breadcrumb_box, path, self.load_local_directory)
@@ -854,14 +910,16 @@ class SFTPWindow(Gtk.Window):
         try:
             entries = []
             if path != "/":
-                entries.append({'icon': 'go-up', 'name': '..', 'size': '', 'is_dir': True, 'mtime': '', 'raw_size': -1.0, 'raw_time': 0.0, 'sort_key': '0_..'})
+                entries.append({'pixbuf': self.transparent_pixbuf, 'name': '..', 'size': '', 'is_dir': True, 'mtime': '', 'raw_size': -1.0, 'raw_time': 0.0, 'sort_key': '0_..'})
 
             for entry in self.sftp.listdir_attr(path):
                 is_dir = stat.S_ISDIR(entry.st_mode)
                 raw_size, raw_time = float(entry.st_size or 0), float(entry.st_mtime or 0)
                 category = self.get_sort_category(entry.filename, is_dir)
+                pixbuf = self.get_icon_pixbuf(entry.filename, is_dir)
+                
                 entries.append({
-                    'icon': self.get_icon_name(entry.filename, is_dir), 'name': entry.filename, 
+                    'pixbuf': pixbuf, 'name': entry.filename, 
                     'size': self.format_size(raw_size) if not is_dir else "", 'is_dir': is_dir, 
                     'mtime': self.format_time(raw_time), 'raw_size': raw_size, 'raw_time': raw_time,
                     'sort_key': f"{category}_{entry.filename.lower()}"
@@ -869,7 +927,7 @@ class SFTPWindow(Gtk.Window):
                 
             entries.sort(key=lambda x: x['sort_key'])
             for e in entries:
-                self.remote_liststore.append([e['icon'], e['name'], e['size'], e['is_dir'], e['mtime'], e['raw_size'], e['raw_time'], e['sort_key']])
+                self.remote_liststore.append([e['pixbuf'], e['name'], e['size'], e['is_dir'], e['mtime'], e['raw_size'], e['raw_time'], e['sort_key']])
                 
             self.current_remote_dir = path
             self.update_breadcrumbs(self.remote_breadcrumb_box, path, self.load_remote_directory)
