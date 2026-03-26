@@ -6,6 +6,7 @@
    - [Server & Folder Management](#server--folder-management)  
    - [Connection & Automation](#connection--automation)  
    - [Data Management & Logging](#data-management--logging)  
+   - [SFTP File Manager](#sftp-file-manager)
 3. [The "Super Safe" Encryption System](#the-super-safe-encryption-system)  
    - [How It Works](#how-it-works)  
    - [Data Storage Location](#data-storage-location)  
@@ -49,6 +50,14 @@ Sensitive data is protected using a robust GnuPG-based encryption system.
 - Export/import data as JSON (plaintext) or GPG (encrypted)  
 - GUI log pane for real-time feedback  
 - Per-server session logging to local files  
+
+### 2.4 SFTP File Manager
+- **Dual-Pane Interface:** Visually manage files between your Local machine and Remote server side-by-side.
+- **Intuitive Navigation:** Navigate directories using standard clickable breadcrumb paths instead of manually typing locations. Dedicated refresh buttons keep both panes up to date.
+- **Drag & Drop:** Seamlessly upload, download, or move files by dragging them between panes.
+- **Smart Transfers:** Support for pausing and resuming partial transfers to save bandwidth and time.
+- **Context Menus & Shortcuts:** Right-click or use keyboard shortcuts (`Ctrl+C`, `Ctrl+X`, `Ctrl+V`, `Delete`, `F2`) to easily copy, cut, paste, delete, and inline-rename files and folders.
+- **Real-Time Status:** A bottom status bar provides live feedback on transfer progress, successful actions, and errors.
 
 ---
 
@@ -99,29 +108,4 @@ Accessed via `File -> Global Settings...`, this dialog defines **default configu
 
 ### 6.1 Quick Install Script
 ```bash
-curl -sL https://raw.githubusercontent.com/larreblarsson/SNAP-Connection-Manager/main/install.sh | bash
-```
-
-### 6.2 Manual Installation
-```bash
-# Add the GPG key
-curl -sL https://larreblarsson.github.io/SNAP-Connection-Manager/public.key | sudo gpg --dearmor -o /usr/share/keyrings/SNAP-Connection-Manager-keyring.gpg
-
-# Add the repository
-echo "deb [signed-by=/usr/share/keyrings/SNAP-Connection-Manager-keyring.gpg] https://larreblarsson.github.io/SNAP-Connection-Manager stable main" | sudo tee /etc/apt/sources.list.d/SNAP-Connection-Manager.list
-
-# Update and install
-sudo apt update
-sudo apt install snap-connection-manager
-```
-
----
-
-## 7. Troubleshooting & Dependencies
-- **Incorrect master passphrase** → unrecoverable, delete `~/.local/share/snap_connection_manager/` to reset  
-- **Dependencies required**:  
-  - `python3-gi`  
-  - `gir1.2-gtk-3.0`  
-  - `gir1.2-vte-2.91`  
-  - `expect`  
-  - `gnupg` 
+curl -sL [https://raw.githubusercontent.com/larreblarsson/SNAP-Connection-Manager/main/install.sh](https://raw.githubusercontent.com/larreblarsson/SNAP-Connection-Manager/main/install.sh) | bash
