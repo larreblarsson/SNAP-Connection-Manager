@@ -49,7 +49,7 @@ jobs:
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
 
-      - name: Prepare APT repo
+        - name: Prepare APT repo
         run: |
           REPO_DIR=repo
           CODENAME=stable
@@ -73,8 +73,19 @@ jobs:
           apt-ftparchive packages pool > dists/${CODENAME}/main/binary-all/Packages
           gzip -c dists/${CODENAME}/main/binary-all/Packages > dists/${CODENAME}/main/binary-all/Packages.gz
 
-          # Generate Release with config
-           apt-ftparchive -c ../.github/apt-release.conf release dists/${CODENAME} > dists/${CODENAME}/Release
+          # --- FIX: Generate Release config on the fly ---
+          cat << 'EOF' > apt-release.conf
+          APT::FTPArchive::Release::Origin "Larre Blarsson";
+          APT::FTPArchive::Release::Label "SNAP Connection Manager";
+          APT::FTPArchive::Release::Suite "stable";
+          APT::FTPArchive::Release::Codename "stable";
+          APT::FTPArchive::Release::Architectures "amd64 all";
+          APT::FTPArchive::Release::Components "main";
+          APT::FTPArchive::Release::Description "SNAP Connection Manager Repository";
+          EOF
+
+          # Generate Release with the new config
+          apt-ftparchive -c apt-release.conf release dists/${CODENAME} > dists/${CODENAME}/Release
  
           # Sign Release with loopback pinentry
           gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" \
