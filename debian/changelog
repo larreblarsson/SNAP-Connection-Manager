@@ -1,3 +1,10 @@
+snap-connection-manager (1.2.11-1) stable; urgency=medium
+
+  * Adding SFTP GUI functionallity
+  * Fixed Release Info for APT Repo 386 warning
+  
+ -- Tomas Larsson <larre.b.larsson@gmail.com>  Thu, 12 Dec 2026 12:00:00 +0100
+
 snap-connection-manager (1.2.10-2) stable; urgency=medium
 
   * Smaller changes to user interface

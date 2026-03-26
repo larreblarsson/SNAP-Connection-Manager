@@ -49,7 +49,7 @@ jobs:
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
 
-        - name: Prepare APT repo
+      - name: Prepare APT repo
         run: |
           REPO_DIR=repo
           CODENAME=stable
@@ -86,7 +86,7 @@ jobs:
 
           # Generate Release with the new config
           apt-ftparchive -c apt-release.conf release dists/${CODENAME} > dists/${CODENAME}/Release
- 
+
           # Sign Release with loopback pinentry
           gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" \
             --clearsign -o dists/${CODENAME}/InRelease dists/${CODENAME}/Release
@@ -117,7 +117,6 @@ jobs:
           echo 'RELEASE_BODY<<EOF' >> $GITHUB_ENV
           dpkg-parsechangelog --count 1 >> $GITHUB_ENV
           echo 'EOF' >> $GITHUB_ENV
-          
 
       - name: Create GitHub Release and upload .deb
         uses: softprops/action-gh-release@v1
@@ -128,4 +127,3 @@ jobs:
           files: ../snap-connection-manager*.deb
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
