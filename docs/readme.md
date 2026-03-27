@@ -98,13 +98,13 @@ Accessed via `File -> Global Settings...`, this dialog defines **default configu
 curl -sL [https://raw.githubusercontent.com/larreblarsson/SNAP-Connection-Manager/main/install.sh](https://raw.githubusercontent.com/larreblarsson/SNAP-Connection-Manager/main/install.sh) | bash
 
 ### 6.2 Manual Installation
-# Add the GPG key
+#### Add the GPG key
 curl -sL [https://larreblarsson.github.io/SNAP-Connection-Manager/public.key](https://larreblarsson.github.io/SNAP-Connection-Manager/public.key) | sudo gpg --dearmor -o /usr/share/keyrings/SNAP-Connection-Manager-keyring.gpg
 
-# Add the repository (64-bit architecture only)
+#### Add the repository (64-bit architecture only)
 echo "deb [arch=amd64 signed-by=/usr/share/keyrings/SNAP-Connection-Manager-keyring.gpg] [https://larreblarsson.github.io/SNAP-Connection-Manager](https://larreblarsson.github.io/SNAP-Connection-Manager) stable main" | sudo tee /etc/apt/sources.list.d/SNAP-Connection-Manager.list
 
-# Update and install
+#### Update and install
 sudo apt update
 sudo apt install snap-connection-manager
 
@@ -117,4 +117,5 @@ sudo apt install snap-connection-manager
   - `python3-paramiko`
   - `expect`  
   - `gnupg`  
+
 
