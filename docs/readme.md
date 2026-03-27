@@ -1,21 +1,21 @@
 # SNAP Connection Manager – User & Technical Guide
 
 ## Table of Contents
-1. [Introduction](#introduction)  
-2. [Core Features](#core-features)  
-   - [Server & Folder Management](#server--folder-management)  
-   - [Connection & Automation](#connection--automation)  
-   - [Data Management & Logging](#data-management--logging)  
-   - [SFTP File Manager](#sftp-file-manager)
-3. [The "Super Safe" Encryption System](#the-super-safe-encryption-system)  
-   - [How It Works](#how-it-works)  
-   - [Data Storage Location](#data-storage-location)  
-   - [Changing Your Passphrase](#changing-your-passphrase)  
-4. [Appearance & Customization](#appearance--customization)  
-   - [Global Settings](#global-settings)  
-5. [Getting Started](#getting-started)  
-6. [Installation Instructions](#installation-instructions)  
-7. [Troubleshooting & Dependencies](#troubleshooting--dependencies)  
+1. [Introduction](#1-introduction)  
+2. [Core Features](#2-core-features)  
+   - [Server & Folder Management](#21-server--folder-management)  
+   - [Connection & Automation](#22-connection--automation)  
+   - [Data Management & Logging](#23-data-management--logging)  
+   - [SFTP File Manager](#24-sftp-file-manager)
+3. [The "Super Safe" Encryption System](#3-the-super-safe-encryption-system)  
+   - [How It Works](#31-how-it-works)  
+   - [Data Storage Location](#32-data-storage-location)  
+   - [Changing Your Passphrase](#33-changing-your-passphrase)  
+4. [Appearance & Customization](#4-appearance--customization)  
+   - [Global Settings](#42-global-settings)  
+5. [Getting Started](#5-getting-started)  
+6. [Installation Instructions](#6-installation-instructions)  
+7. [Troubleshooting & Dependencies](#7-troubleshooting--dependencies)
 
 ## 1. Introduction
 SNAP Connection Manager is a secure GTK3-based desktop application for managing and launching SSH and SFTP connections. It organizes server configurations into folders, automates login sequences, and supports port forwarding.  
