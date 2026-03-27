@@ -1,3 +1,9 @@
+snap-connection-manager (1.2.17-2) stable; urgency=medium
+
+  * Changes in Depends
+  
+ -- Tomas Larsson <larre.b.larsson@gmail.com>  Fri, 27 Mars 2026 09:00:00 +0100
+
 snap-connection-manager (1.2.17-1) stable; urgency=medium
 
   * Updates on README.md
