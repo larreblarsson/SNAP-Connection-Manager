@@ -50,9 +50,10 @@ Sensitive data is protected using a robust GnuPG-based encryption system.
 ### 2.4 SFTP File Manager
 - **Dual-Pane Interface:** Visually manage files between your Local machine and Remote server side-by-side.
 - **Intuitive Navigation:** Navigate directories using standard clickable breadcrumb paths instead of manually typing locations. Dedicated refresh buttons keep both panes up to date.
+- **Recursive Search:** Quickly locate files deep within your file system using the binoculars button or by right-clicking any folder. Double-click a search result to instantly navigate to its location.
 - **Drag & Drop:** Seamlessly upload, download, or move files by dragging them between panes.
 - **Smart Transfers:** Support for pausing and resuming partial transfers to save bandwidth and time.
-- **Context Menus & Shortcuts:** Right-click or use keyboard shortcuts (`Ctrl+C`, `Ctrl+X`, `Ctrl+V`, `Delete`, `F2`) to easily copy, cut, paste, delete, and inline-rename files and folders.
+- **Context Menus & Shortcuts:** Right-click or use keyboard shortcuts (`Ctrl+C`, `Ctrl+X`, `Ctrl+V`, `Delete`, `Shift+Delete`, `F2`) to easily manage files. Local files deleted with `Delete` are safely moved to your system's Rubbish Bin, while `Shift+Delete` (or any deletion on the remote server) permanently destroys them.
 - **Real-Time Status:** A bottom status bar provides live feedback on transfer progress, successful actions, and errors.
 
 ## 3. The "Super Safe" Encryption System

@@ -294,6 +294,17 @@ from datetime import datetime
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, Gdk, GLib, Gio
 
+import os
+import stat
+import shutil
+import threading
+import paramiko
+import gi
+from datetime import datetime
+
+gi.require_version('Gtk', '3.0')
+from gi.repository import Gtk, Gdk, GLib, Gio, GdkPixbuf
+
 class SFTPWindow(Gtk.Window):
     def __init__(self, parent_win, host, port, username, password=None, private_key=None):
         super().__init__(title=f"SFTP: {username}@{host}")
@@ -322,9 +333,11 @@ class SFTPWindow(Gtk.Window):
         self._clearing_selection = False
         self.active_pane = "local" 
         
-        # --- Transfer Trackers ---
+        # --- Task Trackers ---
         self.transfer_active = False
         self._cancel_transfer = False
+        self.search_active = False
+        self._cancel_search = False
 
         # --- Slow Double-Click Trackers ---
         self._last_click_time = 0
@@ -335,6 +348,7 @@ class SFTPWindow(Gtk.Window):
         self.icon_theme = Gtk.IconTheme.get_default()
         self.yellow_folder_pixbuf = self._create_yellow_folder_pixbuf()
         self.transparent_pixbuf = self._create_transparent_pixbuf()
+        self.binoculars_pixbuf = self._create_binoculars_pixbuf()
 
         self.setup_ui()
         self.connect("destroy", self.on_close)
@@ -344,7 +358,6 @@ class SFTPWindow(Gtk.Window):
 
     # --- CUSTOM ICON GENERATION ---
     def _create_yellow_folder_pixbuf(self):
-        """Generates a perfect yellow folder icon in-memory to override the system theme"""
         svg_data = b"""<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
             <path d="M2 2C1 2 0 3 0 4v9c0 1 1 2 2 2h12c1 0 2-1 2-2V5.5C16 4.5 15 3.5 14 3.5H7.5L5.5 2H2z" fill="#e5a50a"/>
             <path d="M0 6v7c0 1 1 2 2 2h12c1 0 2-1 2-2V6H0z" fill="#f6d32d"/>
@@ -352,13 +365,23 @@ class SFTPWindow(Gtk.Window):
         stream = Gio.MemoryInputStream.new_from_data(svg_data, None)
         return GdkPixbuf.Pixbuf.new_from_stream(stream, None)
 
-    def _create_transparent_pixbuf(self):
-        """Creates a nearly invisible 16x16 icon to force GTK to align text properly"""
+    def _create_binoculars_pixbuf(self):
         svg_data = b"""<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
-            <rect width="16" height="16" fill="#000000" fill-opacity="0.01"/>
+            <rect x="2" y="2" width="3" height="2" fill="#7f8c8d"/>
+            <rect x="11" y="2" width="3" height="2" fill="#7f8c8d"/>
+            <path d="M 2 4 C 1 4 1 5 1 6 L 1 13 C 1 14 2 15 3 15 L 6 15 L 6 4 Z" fill="#2c3e50"/>
+            <path d="M 14 4 C 15 4 15 5 15 6 L 15 13 C 15 14 14 15 13 15 L 10 15 L 10 4 Z" fill="#2c3e50"/>
+            <rect x="6" y="6" width="4" height="3" fill="#34495e"/>
+            <ellipse cx="3.5" cy="13" rx="1.5" ry="1.5" fill="#3498db"/>
+            <ellipse cx="12.5" cy="13" rx="1.5" ry="1.5" fill="#3498db"/>
         </svg>"""
         stream = Gio.MemoryInputStream.new_from_data(svg_data, None)
         return GdkPixbuf.Pixbuf.new_from_stream(stream, None)
+
+    def _create_transparent_pixbuf(self):
+        pixbuf = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, True, 8, 16, 16)
+        pixbuf.fill(0x00000000)
+        return pixbuf
 
     def get_icon_pixbuf(self, filename, is_dir):
         if filename == "..": 
@@ -366,7 +389,6 @@ class SFTPWindow(Gtk.Window):
         if is_dir: 
             return self.yellow_folder_pixbuf
             
-        # For files, ask the system theme for the correct format icon
         content_type, _ = Gio.content_type_guess(filename, None)
         icon = Gio.content_type_get_icon(content_type)
         if icon:
@@ -382,7 +404,6 @@ class SFTPWindow(Gtk.Window):
             return self.transparent_pixbuf
 
     def setup_ui(self):
-        # --- Inject CSS for Colored Buttons & Clickable Links ---
         css_provider = Gtk.CssProvider()
         css = b"""
         #transfer_btn_upload image { color: #2ea043; } 
@@ -390,25 +411,23 @@ class SFTPWindow(Gtk.Window):
         #stop_btn_active image { color: #e5534b; } 
         #resume_btn_active image { color: #f39c12; } 
         
-        /* Standard native style for path breadcrumbs with tight spacing */
+        /* Hyperlink style for path breadcrumbs */
         .breadcrumb-btn { 
             background: transparent; 
-            color: @theme_fg_color; 
-            font-weight: normal;
-            padding: 0px 2px;
-            min-height: 0px;
+            color: #0056b3; 
+            font-weight: bold;
+            padding: 2px 4px;
             border: none;
             box-shadow: none;
         }
         .breadcrumb-btn:hover { 
             text-decoration: underline;
+            color: #003d82;
             background: transparent;
         }
         .breadcrumb-sep {
-            color: @theme_fg_color;
-            font-weight: normal;
-            padding: 0px;
-            margin: 0px;
+            color: #888888;
+            font-weight: bold;
         }
         """
         css_provider.load_from_data(css)
@@ -460,10 +479,18 @@ class SFTPWindow(Gtk.Window):
         self.stop_btn = Gtk.Button()
         self.stop_btn.set_relief(Gtk.ReliefStyle.NONE)
         self.stop_btn.set_image(Gtk.Image.new_from_icon_name("process-stop", Gtk.IconSize.BUTTON))
-        self.stop_btn.set_tooltip_text("Cancel Ongoing Transfer")
+        self.stop_btn.set_tooltip_text("Cancel Ongoing Task")
         self.stop_btn.set_sensitive(False)
         self.stop_btn.connect("clicked", self.on_stop_button_clicked)
         self.global_toolbar.pack_start(self.stop_btn, False, False, 0)
+
+        self.search_btn = Gtk.Button()
+        self.search_btn.set_relief(Gtk.ReliefStyle.NONE)
+        self.search_icon = Gtk.Image.new_from_pixbuf(self.binoculars_pixbuf)
+        self.search_btn.set_image(self.search_icon)
+        self.search_btn.set_tooltip_text("Search recursively in Active Pane")
+        self.search_btn.connect("clicked", self.on_search_button_clicked)
+        self.global_toolbar.pack_start(self.search_btn, False, False, 0)
 
         main_vbox.pack_start(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), False, False, 0)
 
@@ -475,7 +502,7 @@ class SFTPWindow(Gtk.Window):
         local_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         self.paned.pack1(local_vbox, True, False)
 
-        local_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        local_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         local_vbox.pack_start(local_hbox, False, False, 2)
 
         local_scroll_bc = Gtk.ScrolledWindow()
@@ -505,7 +532,7 @@ class SFTPWindow(Gtk.Window):
         remote_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         self.paned.pack2(remote_vbox, True, False)
 
-        remote_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        remote_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         remote_vbox.pack_start(remote_hbox, False, False, 2)
 
         remote_scroll_bc = Gtk.ScrolledWindow()
@@ -654,7 +681,7 @@ class SFTPWindow(Gtk.Window):
                     items.append(os.path.join(self.current_remote_dir, filename).replace('\\', '/'))
         return items
 
-    # --- SELECTION EXCLUSIVITY & ACTION BUTTONS ---
+    # --- ACTION BUTTONS ---
     def on_selection_changed(self, selection, pane):
         if self._clearing_selection: return
         
@@ -671,7 +698,7 @@ class SFTPWindow(Gtk.Window):
         model, paths = selection.get_selected_rows()
         valid_count = sum(1 for p in paths if model.get_value(model.get_iter(p), 1) != "..")
         
-        if valid_count > 0 and not self.transfer_active:
+        if valid_count > 0 and not self.transfer_active and not self.search_active:
             self.transfer_btn.set_sensitive(True)
             self.resume_btn.set_sensitive(True)
             self.resume_btn.set_name("resume_btn_active")
@@ -699,7 +726,7 @@ class SFTPWindow(Gtk.Window):
         self._initiate_transfer(resume=True)
 
     def _initiate_transfer(self, resume):
-        if not self.active_pane or self.transfer_active: return
+        if not self.active_pane or self.transfer_active or self.search_active: return
         treeview = self.local_treeview if self.active_pane == "local" else self.remote_treeview
         dest_pane = "remote" if self.active_pane == "local" else "local"
         dest_dir = self.current_remote_dir if dest_pane == "remote" else self.current_local_dir
@@ -710,7 +737,8 @@ class SFTPWindow(Gtk.Window):
 
     def on_stop_button_clicked(self, btn):
         self._cancel_transfer = True
-        self.set_status("Stopping transfer...")
+        self._cancel_search = True
+        self.set_status("Stopping active tasks...")
         self.stop_btn.set_sensitive(False)
 
     def on_global_refresh_clicked(self, btn):
@@ -768,6 +796,176 @@ class SFTPWindow(Gtk.Window):
                 selection.select_path(path)
                 treeview.scroll_to_cell(path, None, False, 0, 0)
                 self.trigger_inline_rename(treeview, path)
+                break
+
+    # --- RECURSIVE SEARCH ---
+    def on_search_button_clicked(self, btn):
+        pane = self.active_pane if self.active_pane else "local"
+        base_dir = self.current_local_dir if pane == "local" else self.current_remote_dir
+        self._open_search_dialog(pane, base_dir)
+
+    def _open_search_dialog(self, pane, base_dir):
+        if self.transfer_active or self.search_active:
+            self.set_status("Please wait for current task to finish.")
+            return
+
+        dialog = Gtk.Dialog(title=f"Search in {pane.capitalize()}", transient_for=self, flags=Gtk.DialogFlags.MODAL)
+        dialog.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL, "Search", Gtk.ResponseType.OK)
+        
+        box = dialog.get_content_area()
+        box.set_spacing(10)
+        box.set_border_width(15)
+        
+        label = Gtk.Label(label=f"Search recursively down from:\n<b>{base_dir}</b>")
+        label.set_use_markup(True)
+        label.set_halign(Gtk.Align.START)
+        box.pack_start(label, False, False, 0)
+        
+        entry = Gtk.Entry()
+        entry.set_placeholder_text("Enter filename or part of it...")
+        entry.connect("activate", lambda w: dialog.response(Gtk.ResponseType.OK))
+        box.pack_start(entry, True, True, 0)
+        
+        dialog.show_all()
+        response = dialog.run()
+        query = entry.get_text().strip()
+        dialog.destroy()
+        
+        if response == Gtk.ResponseType.OK and query:
+            self.start_search_thread(pane, base_dir, query)
+
+    def start_search_thread(self, pane, base_dir, query):
+        self.search_active = True
+        self._cancel_search = False
+        
+        self.stop_btn.set_sensitive(True)
+        self.stop_btn.set_name("stop_btn_active")
+        self.search_btn.set_sensitive(False)
+        self.transfer_btn.set_sensitive(False)
+        self.resume_btn.set_sensitive(False)
+        
+        self.set_status(f"Searching for '{query}' in {pane}...")
+        
+        thread = threading.Thread(target=self._search_worker, args=(pane, base_dir, query))
+        thread.daemon = True
+        thread.start()
+
+    def _search_worker(self, pane, base_dir, query):
+        results = []
+        query_lower = query.lower()
+        try:
+            if pane == "local":
+                for root, dirs, files in os.walk(base_dir):
+                    if self._cancel_search: break
+                    for name in files + dirs:
+                        if query_lower in name.lower():
+                            results.append(os.path.join(root, name))
+            elif pane == "remote":
+                def sftp_walk(remotedir):
+                    if self._cancel_search: return
+                    try:
+                        for entry in self.sftp.listdir_attr(remotedir):
+                            if self._cancel_search: break
+                            path = f"{remotedir}/{entry.filename}".replace('//', '/')
+                            if query_lower in entry.filename.lower():
+                                results.append(path)
+                            if stat.S_ISDIR(entry.st_mode) and entry.filename not in ('.', '..'):
+                                sftp_walk(path)
+                    except IOError:
+                        pass # Skip folders without permission
+                sftp_walk(base_dir)
+        except Exception as e:
+            GLib.idle_add(self.set_status, f"Search error: {e}")
+            
+        GLib.idle_add(self._on_search_finished, results, pane, query)
+
+    def _on_search_finished(self, results, pane, query):
+        self.search_active = False
+        self.stop_btn.set_sensitive(False)
+        self.stop_btn.set_name("")
+        self.search_btn.set_sensitive(True)
+        
+        # Trigger normal selection check to re-enable transfer buttons if needed
+        active_tv = self.local_treeview if self.active_pane == "local" else self.remote_treeview
+        self.on_selection_changed(active_tv.get_selection(), self.active_pane)
+        
+        if self._cancel_search:
+            self.set_status("Search cancelled.")
+            return
+            
+        self.set_status(f"Search finished: {len(results)} items found.")
+        
+        if not results:
+            self.show_error_dialog("Search Results", f"No items found matching '{query}'.")
+            return
+            
+        # Show Results Dialog
+        dialog = Gtk.Dialog(title=f"Search Results ({len(results)} found)", transient_for=self, flags=Gtk.DialogFlags.DESTROY_WITH_PARENT)
+        dialog.set_default_size(700, 400)
+        dialog.add_button("Close", Gtk.ResponseType.CLOSE)
+        
+        liststore = Gtk.ListStore(str, str)
+        for r in results:
+            liststore.append([os.path.basename(r), r])
+            
+        treeview = Gtk.TreeView(model=liststore)
+        
+        renderer = Gtk.CellRendererText()
+        col1 = Gtk.TreeViewColumn("Filename", renderer, text=0)
+        col1.set_sort_column_id(0)
+        col1.set_resizable(True)
+        treeview.append_column(col1)
+        
+        renderer2 = Gtk.CellRendererText()
+        col2 = Gtk.TreeViewColumn("Full Path", renderer2, text=1)
+        col2.set_sort_column_id(1)
+        col2.set_resizable(True)
+        treeview.append_column(col2)
+        
+        # Navigate to file on double click
+        def on_row_activated(tv, path, col):
+            iter_ = liststore.get_iter(path)
+            full_path = liststore.get_value(iter_, 1)
+            target_dir = os.path.dirname(full_path)
+            target_file = os.path.basename(full_path)
+            
+            if pane == "local":
+                self.load_local_directory(target_dir)
+                GLib.idle_add(self._select_item_in_treeview, self.local_treeview, target_file)
+            else:
+                self.load_remote_directory(target_dir.replace('\\', '/'))
+                GLib.idle_add(self._select_item_in_treeview, self.remote_treeview, target_file)
+                
+            dialog.response(Gtk.ResponseType.CLOSE)
+            
+        treeview.connect("row-activated", on_row_activated)
+        
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        scroll.add(treeview)
+        
+        box = dialog.get_content_area()
+        
+        hint_label = Gtk.Label(label="<i>Double-click an item to navigate to its folder.</i>")
+        hint_label.set_use_markup(True)
+        hint_label.set_margin_top(5)
+        hint_label.set_margin_bottom(5)
+        box.pack_start(hint_label, False, False, 0)
+        
+        box.pack_start(scroll, True, True, 0)
+        dialog.show_all()
+        dialog.run()
+        dialog.destroy()
+
+    def _select_item_in_treeview(self, treeview, filename):
+        model = treeview.get_model()
+        for i, row in enumerate(model):
+            if row[1] == filename:
+                path = Gtk.TreePath.new_from_indices([i])
+                selection = treeview.get_selection()
+                selection.unselect_all()
+                selection.select_path(path)
+                treeview.scroll_to_cell(path, None, True, 0.5, 0.0)
                 break
 
     # --- SHOW ERROR DIALOG ---
@@ -1006,20 +1204,54 @@ class SFTPWindow(Gtk.Window):
 
         menu = Gtk.Menu()
 
+        # Search functionality logic based on selection type
+        search_item = Gtk.MenuItem(label="Search Here...")
+        if paths and len(paths) == 1:
+            iter_ = model.get_iter(paths[0])
+            is_dir = model.get_value(iter_, 3)
+            filename = model.get_value(iter_, 1)
+            
+            if is_dir:
+                search_item.set_sensitive(True)
+                target_dir = os.path.join(self.current_local_dir, filename) if pane == "local" else f"{self.current_remote_dir}/{filename}".replace('//', '/')
+                if filename == "..":
+                    target_dir = os.path.dirname(self.current_local_dir) if pane == "local" else os.path.dirname(self.current_remote_dir)
+                search_item.connect("activate", lambda w: self._open_search_dialog(pane, target_dir))
+            else:
+                search_item.set_sensitive(False) # Greyed out if it's a file
+        elif empty_space:
+            search_item.set_sensitive(True)
+            target_dir = self.current_local_dir if pane == "local" else self.current_remote_dir
+            search_item.connect("activate", lambda w: self._open_search_dialog(pane, target_dir))
+        else:
+            search_item.set_sensitive(False)
+            
+        menu.append(search_item)
+        menu.append(Gtk.SeparatorMenuItem())
+
         if not empty_space and paths:
             rename_item = Gtk.MenuItem(label="Rename")
             if len(paths) > 1: rename_item.set_sensitive(False) 
             else: rename_item.connect("activate", lambda w, p=paths[0]: self.trigger_inline_rename(treeview, p))
             menu.append(rename_item)
 
-            delete_item = Gtk.MenuItem(label="Delete")
-            delete_item.connect("activate", lambda w: self.start_delete_thread(pane, selected_items))
-            menu.append(delete_item)
+            if pane == "local":
+                trash_item = Gtk.MenuItem(label="Move to Trash")
+                trash_item.connect("activate", lambda w: self.start_delete_thread(pane, selected_items, permanent=False))
+                menu.append(trash_item)
+                
+                delete_item = Gtk.MenuItem(label="Delete Permanently")
+                delete_item.connect("activate", lambda w: self.start_delete_thread(pane, selected_items, permanent=True))
+                menu.append(delete_item)
+            else:
+                delete_item = Gtk.MenuItem(label="Delete (Permanent on Remote)")
+                delete_item.connect("activate", lambda w: self.start_delete_thread(pane, selected_items, permanent=True))
+                menu.append(delete_item)
+                
             menu.append(Gtk.SeparatorMenuItem()) 
 
         mkdir_item = Gtk.MenuItem(label="Create Directory")
         mkdir_item.connect("activate", lambda w: self.create_new_directory(pane))
-        menu.append(mkdir_item)
         menu.append(Gtk.SeparatorMenuItem()) 
 
         if not empty_space and paths:
@@ -1095,7 +1327,8 @@ class SFTPWindow(Gtk.Window):
     # --- KEYBOARD SHORTCUTS ---
     def on_key_press(self, widget, event, source_pane):
         state = event.state & Gdk.ModifierType.MODIFIER_MASK
-        ctrl_pressed = (state & Gdk.ModifierType.CONTROL_MASK)
+        ctrl_pressed = bool(state & Gdk.ModifierType.CONTROL_MASK)
+        shift_pressed = bool(state & Gdk.ModifierType.SHIFT_MASK)
         keyval = event.keyval
         
         selected_items = self.get_selected_items(widget, source_pane)
@@ -1121,7 +1354,7 @@ class SFTPWindow(Gtk.Window):
             return True
 
         if keyval == Gdk.KEY_Delete and selected_items:
-            self.start_delete_thread(source_pane, selected_items)
+            self.start_delete_thread(source_pane, selected_items, permanent=shift_pressed)
             return True
             
         return False
@@ -1132,8 +1365,8 @@ class SFTPWindow(Gtk.Window):
             raise Exception("TRANSFER_CANCELLED_BY_USER")
 
     def start_transfer_thread(self, src_pane, src_paths, dst_pane, dst_dir, action, resume=False):
-        if self.transfer_active:
-            self.set_status("A transfer is already active!")
+        if self.transfer_active or self.search_active:
+            self.set_status("A task is already active!")
             return
             
         self.transfer_active = True
@@ -1143,6 +1376,7 @@ class SFTPWindow(Gtk.Window):
         self.stop_btn.set_name("stop_btn_active")
         self.transfer_btn.set_sensitive(False)
         self.resume_btn.set_sensitive(False)
+        self.search_btn.set_sensitive(False)
 
         mode_text = "Resuming" if resume else ("Moving" if action in ['move', 'cut'] else "Copying")
         self.set_status(f"{mode_text} {len(src_paths)} item(s)...")
@@ -1272,6 +1506,7 @@ class SFTPWindow(Gtk.Window):
             def _reset_ui_after_transfer():
                 self.stop_btn.set_sensitive(False)
                 self.stop_btn.set_name("")
+                self.search_btn.set_sensitive(True)
                 self.load_local_directory(self.current_local_dir)
                 self.load_remote_directory(self.current_remote_dir)
                 
@@ -1280,18 +1515,23 @@ class SFTPWindow(Gtk.Window):
                 
             GLib.idle_add(_reset_ui_after_transfer)
 
-    def start_delete_thread(self, pane, paths):
-        self.set_status(f"Deleting {len(paths)} item(s)...")
-        thread = threading.Thread(target=self._delete_worker, args=(pane, paths))
+    def start_delete_thread(self, pane, paths, permanent=False):
+        action_text = "Permanently deleting" if permanent or pane == "remote" else "Moving to Trash"
+        self.set_status(f"{action_text} {len(paths)} item(s)...")
+        thread = threading.Thread(target=self._delete_worker, args=(pane, paths, permanent))
         thread.daemon = True
         thread.start()
 
-    def _delete_worker(self, pane, paths):
+    def _delete_worker(self, pane, paths, permanent):
         try:
             for path in paths:
                 if pane == "local":
-                    if os.path.isdir(path): shutil.rmtree(path)
-                    else: os.remove(path)
+                    if permanent:
+                        if os.path.isdir(path): shutil.rmtree(path)
+                        else: os.remove(path)
+                    else:
+                        file_to_trash = Gio.File.new_for_path(path)
+                        file_to_trash.trash(None)
                 elif pane == "remote":
                     remote_stat = self.sftp.stat(path)
                     if stat.S_ISDIR(remote_stat.st_mode):
@@ -1303,7 +1543,9 @@ class SFTPWindow(Gtk.Window):
                         
             GLib.idle_add(self.load_local_directory, self.current_local_dir)
             GLib.idle_add(self.load_remote_directory, self.current_remote_dir)
-            GLib.idle_add(self.set_status, f"Successfully deleted {len(paths)} item(s).")
+            
+            action_done = "permanently deleted" if permanent or pane == "remote" else "moved to Trash"
+            GLib.idle_add(self.set_status, f"Successfully {action_done} {len(paths)} item(s).")
         except Exception as e:
             GLib.idle_add(self.set_status, f"Delete failed: {str(e)}")
 
@@ -1313,6 +1555,9 @@ class SFTPWindow(Gtk.Window):
     def on_close(self, widget):
         if self.sftp: self.sftp.close()
         if self.transport: self.transport.close()
+
+
+
 
 
 
