@@ -3550,7 +3550,7 @@ class SnapConnectionManager(Gtk.Application):
             transient_for=parent_window, # Can be None
             modal=True,
             program_name=APP_TITLE,
-            version="1.2.10",
+            version="1.2.18",
             authors=["Copilot, Gemini, Tomas Larsson"],
             artists=["Tomas Larsson"],
             comments="A GTK-based SSH/SFTP session manager"
