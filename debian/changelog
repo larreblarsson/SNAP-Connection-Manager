@@ -1,3 +1,12 @@
+snap-connection-manager (1.2.19-1) stable; urgency=medium
+
+  * Fixed right-click meny for Create Director in SFTP GUI
+  * Updated drag and drop to also include locally in SFTP GUI
+  * Added checking of accidental overwrite of data in SFTP GUI
+  * Drag and Drop to folder location list field
+    
+ -- Tomas Larsson <larre.b.larsson@gmail.com>  Mon, 30 Mars 2026 14:00:00 +0100
+
 snap-connection-manager (1.2.18-1) stable; urgency=medium
 
   * Changed Delete to move to system rubbish bin and Shift+Delete delete permanent

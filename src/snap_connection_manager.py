@@ -275,36 +275,6 @@ def center(window):
         window.show_all()
         window.set_position(Gtk.WindowPosition.CENTER)
 
-import os
-import paramiko
-import stat
-import gi
-
-gi.require_version('Gtk', '3.0')
-from gi.repository import Gtk, Gdk, GLib
-
-import os
-import stat
-import shutil
-import threading
-import paramiko
-import gi
-from datetime import datetime
-
-gi.require_version('Gtk', '3.0')
-from gi.repository import Gtk, Gdk, GLib, Gio
-
-import os
-import stat
-import shutil
-import threading
-import paramiko
-import gi
-from datetime import datetime
-
-gi.require_version('Gtk', '3.0')
-from gi.repository import Gtk, Gdk, GLib, Gio, GdkPixbuf
-
 class SFTPWindow(Gtk.Window):
     def __init__(self, parent_win, host, port, username, password=None, private_key=None):
         super().__init__(title=f"SFTP: {username}@{host}")
@@ -343,6 +313,10 @@ class SFTPWindow(Gtk.Window):
         self._last_click_time = 0
         self._rename_candidate_path = None
         self._rename_candidate_treeview = None
+        
+        # --- File Monitor Trackers ---
+        self.local_monitor = None
+        self._local_refresh_timeout_id = None        
 
         # --- Icon Engine Setup ---
         self.icon_theme = Gtk.IconTheme.get_default()
@@ -566,10 +540,16 @@ class SFTPWindow(Gtk.Window):
         main_vbox.pack_start(self.statusbar, False, False, 0)
 
         # --- DRAG AND DROP SETUP ---
-        target_entry = Gtk.TargetEntry.new("text/plain", Gtk.TargetFlags.SAME_APP, 0)
+        # Target 0: Internal drag and drop between our own panes/breadcrumbs
+        self.internal_target = Gtk.TargetEntry.new("text/plain", Gtk.TargetFlags.SAME_APP, 0)
+        # Target 1: External drag and drop from OS file managers (Nautilus, etc.)
+        self.external_target = Gtk.TargetEntry.new("text/uri-list", 0, 1)
+
         for tv in (self.local_treeview, self.remote_treeview):
-            tv.enable_model_drag_source(Gdk.ModifierType.BUTTON1_MASK, [target_entry], Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
-            tv.enable_model_drag_dest([target_entry], Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
+            # Source (Dragging out of the pane)
+            tv.enable_model_drag_source(Gdk.ModifierType.BUTTON1_MASK, [self.internal_target], Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
+            # Destination (Dropping into the main treeview pane)
+            tv.enable_model_drag_dest([self.internal_target, self.external_target], Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
         
         self.local_treeview.connect("drag-data-get", self.on_drag_data_get, "local")
         self.local_treeview.connect("drag-data-received", self.on_drag_data_received, "local")
@@ -577,7 +557,7 @@ class SFTPWindow(Gtk.Window):
         
         self.remote_treeview.connect("drag-data-get", self.on_drag_data_get, "remote")
         self.remote_treeview.connect("drag-data-received", self.on_drag_data_received, "remote")
-        self.remote_treeview.connect_after("drag-begin", self.on_drag_begin) 
+        self.remote_treeview.connect_after("drag-begin", self.on_drag_begin)
 
     # --- UI HELPERS ---
     def update_breadcrumbs(self, box, path, callback):
@@ -613,6 +593,93 @@ class SFTPWindow(Gtk.Window):
             if i < len(parts) - 1: add_separator()
             
         box.show_all()
+
+    # --- UI HELPERS: Updated to set up breadcrumb drops ---
+    def update_breadcrumbs(self, box, path, callback, pane):
+        """
+        Updated to pass the pane string ('local'/'remote') to add_link,
+        which then sets up the buttons as drop targets.
+        """
+        for child in box.get_children(): box.remove(child)
+        normalized_path = path.replace('\\', '/')
+        parts = [p for p in normalized_path.split('/') if p]
+        
+        def add_link(label, target_path):
+            btn = Gtk.Button(label=label)
+            btn.set_relief(Gtk.ReliefStyle.NONE)
+            btn.get_style_context().add_class("breadcrumb-btn")
+            btn.connect("clicked", lambda w: callback(target_path))
+            
+            # --- Added: Make individual breadcrumb buttons drag targets ---
+            # Set up as internal drag destination
+            btn.drag_dest_set(Gtk.DestDefaults.ALL, [self.internal_target], Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
+            # Connect drop signal, passing target path and pane
+            btn.connect("drag-data-received", self.on_breadcrumb_drop_received, target_path, pane)
+            # -------------------------------------------------------------
+            
+            box.pack_start(btn, False, False, 0)
+
+        def add_separator():
+            lbl = Gtk.Label(label="/")
+            lbl.get_style_context().add_class("breadcrumb-sep")
+            box.pack_start(lbl, False, False, 0)
+            
+        if normalized_path.startswith("/"):
+            add_link("/", "/")
+            
+        current_path = "/" if normalized_path.startswith("/") else ""
+        if not normalized_path.startswith("/") and parts:
+            current_path = parts[0] + "/"
+            add_link(parts[0], current_path)
+            if len(parts) > 1: add_separator()
+            parts = parts[1:]
+
+        for i, part in enumerate(parts):
+            current_path = os.path.join(current_path, part).replace('\\', '/')
+            add_link(part, current_path)
+            if i < len(parts) - 1: add_separator()
+            
+        box.show_all()
+
+
+
+    # --- New Method: Handling drops on breadcrumb buttons ---
+    def on_breadcrumb_drop_received(self, button, context, x, y, selection, info, time, target_path, dest_pane):
+        """
+        Handler for drops onto individual breadcrumb buttons.
+        target_path: the absolute path targeted by the specific button dropped on (e.g., /home/larre)
+        dest_pane: 'local' or 'remote', depending on which path trail was dropped on.
+        """
+        # 1. Parse the dragged data (same format as treeview drops)
+        data = selection.get_text()
+        if not data or ":" not in data:
+            context.finish(False, False, time)
+            return
+
+        source_pane, paths_str = data.split(":", 1)
+        source_paths = paths_str.split("|") 
+        
+        # 2. Determine if move or copy (reusing the logic from treeview drops for keyboard modifiers)
+        window = self.paned.get_window()
+        display = Gdk.Display.get_default()
+        seat = display.get_default_seat()
+        pointer = seat.get_pointer()
+        
+        if window:
+            _, _, _, state = window.get_device_position(pointer)
+            if source_pane == dest_pane:
+                # Same Pane:default to Move, Hold Ctrl to force Copy.
+                action = 'copy' if state & Gdk.ModifierType.CONTROL_MASK else 'move'
+            else:
+                # Different Panes: default to Copy, Hold Shift to force Move.
+                action = 'move' if state & Gdk.ModifierType.SHIFT_MASK else 'copy'
+        else:
+            action = 'move' if source_pane == dest_pane else 'copy'
+
+        # 3. Fire up the engine! Use start_transfer_thread with our specific target path
+        GLib.idle_add(self.set_status, f"Dropping onto parent folder: {target_path}")
+        self.start_transfer_thread(source_pane, source_paths, dest_pane, target_path, action, resume=False)
+        context.finish(True, False, time)
 
     def _add_columns(self, treeview, is_local):
         col_name = Gtk.TreeViewColumn("Filename")
@@ -1047,6 +1114,11 @@ class SFTPWindow(Gtk.Window):
 
     # --- LOCAL LOGIC ---
     def load_local_directory(self, path):
+        # 1. Clean up existing monitor before changing folders
+        if self.local_monitor:
+            self.local_monitor.cancel()
+            self.local_monitor = None
+
         self.local_liststore.clear()
         try:
             entries = []
@@ -1073,9 +1145,49 @@ class SFTPWindow(Gtk.Window):
                 self.local_liststore.append([e['pixbuf'], e['name'], e['size'], e['is_dir'], e['mtime'], e['raw_size'], e['raw_time'], e['sort_key']])
                 
             self.current_local_dir = path
-            self.update_breadcrumbs(self.local_breadcrumb_box, path, self.load_local_directory)
+            
+            # --- UPDATED: Pass 'local' as the 4th argument ---
+            self.update_breadcrumbs(self.local_breadcrumb_box, path, self.load_local_directory, 'local')
+
+            # 2. Setup the new File Monitor for the current directory
+            gfile = Gio.File.new_for_path(path)
+            self.local_monitor = gfile.monitor_directory(Gio.FileMonitorFlags.NONE, None)
+            self.local_monitor.connect("changed", self._on_local_file_changed)
+
         except Exception as e:
             self.set_status(f"Error loading local: {str(e)}")
+
+    def _on_local_file_changed(self, monitor, file, other_file, event_type):
+        # We only trigger a refresh if a file is Created, Deleted, Renamed, or Moved
+        # We ignore simple "CHANGED" events to prevent UI lag during active downloads
+        valid_events = [
+            Gio.FileMonitorEvent.CREATED,
+            Gio.FileMonitorEvent.DELETED,
+            Gio.FileMonitorEvent.MOVED_IN,
+            Gio.FileMonitorEvent.MOVED_OUT,
+            Gio.FileMonitorEvent.RENAMED
+        ]
+        
+        if event_type in valid_events:
+            # Debounce: Cancel the previous timer if events are firing rapidly
+            if self._local_refresh_timeout_id:
+                GLib.source_remove(self._local_refresh_timeout_id)
+            
+            # Wait 500ms after the file system settles down before refreshing the UI
+            self._local_refresh_timeout_id = GLib.timeout_add(500, self._do_debounced_local_refresh)
+
+    def _do_debounced_local_refresh(self):
+        self._local_refresh_timeout_id = None
+        
+        # Prevent refreshing if the user is currently renaming a file inline
+        if self._rename_candidate_path:
+            return False 
+            
+        # Refresh the directory silently
+        if self.current_local_dir and os.path.exists(self.current_local_dir):
+            self.load_local_directory(self.current_local_dir)
+            
+        return False # Returning False stops the GTK timeout from repeating
 
     def on_local_row_double_clicked(self, treeview, path, column):
         model = treeview.get_model()
@@ -1101,6 +1213,7 @@ class SFTPWindow(Gtk.Window):
         except Exception as e:
             self.set_status(f"Connection failed: {str(e)}")
 
+    # --- REMOTE LOGIC ---
     def load_remote_directory(self, path):
         if not self.sftp: return
         self.set_status(f"Loading remote {path}...")
@@ -1128,7 +1241,9 @@ class SFTPWindow(Gtk.Window):
                 self.remote_liststore.append([e['pixbuf'], e['name'], e['size'], e['is_dir'], e['mtime'], e['raw_size'], e['raw_time'], e['sort_key']])
                 
             self.current_remote_dir = path
-            self.update_breadcrumbs(self.remote_breadcrumb_box, path, self.load_remote_directory)
+            
+            # --- UPDATED: Pass 'remote' as the 4th argument ---
+            self.update_breadcrumbs(self.remote_breadcrumb_box, path, self.load_remote_directory, 'remote')
             self.set_status("Connected.")
         except Exception as e:
             self.set_status(f"Error loading remote: {str(e)}")
@@ -1252,7 +1367,9 @@ class SFTPWindow(Gtk.Window):
 
         mkdir_item = Gtk.MenuItem(label="Create Directory")
         mkdir_item.connect("activate", lambda w: self.create_new_directory(pane))
+        menu.append(mkdir_item)
         menu.append(Gtk.SeparatorMenuItem()) 
+        
 
         if not empty_space and paths:
             if pane == "local":
@@ -1301,6 +1418,50 @@ class SFTPWindow(Gtk.Window):
         selection.set_text(data, -1)
 
     def on_drag_data_received(self, treeview, context, x, y, selection, info, time, dest_pane):
+        # 1. Default to the pane's current directory
+        base_target_dir = self.current_local_dir if dest_pane == "local" else self.current_remote_dir
+        target_dir = base_target_dir
+
+        # 2. SMART TARGETING: Did the user drop this ON a specific folder in the list?
+        drop_info = treeview.get_dest_row_at_pos(x, y)
+        if drop_info:
+            path, position = drop_info
+            model = treeview.get_model()
+            iter_ = model.get_iter(path)
+            is_dir = model.get_value(iter_, 3)
+            filename = model.get_value(iter_, 1)
+            
+            # If they dropped it on a folder, make THAT folder the target destination
+            if is_dir:
+                if filename == "..":
+                    # Dropped on the "Up" folder
+                    target_dir = os.path.dirname(base_target_dir) if dest_pane == "local" else os.path.dirname(base_target_dir).replace('\\', '/')
+                else:
+                    # Dropped on a subfolder
+                    target_dir = os.path.join(base_target_dir, filename) if dest_pane == "local" else f"{base_target_dir}/{filename}".replace('//', '/')
+
+        # --- EXTERNAL DROP (From Ubuntu/OS File Manager) ---
+        if info == 1: 
+            uris = selection.get_uris()
+            if not uris:
+                context.finish(False, False, time)
+                return
+                
+            source_paths = []
+            import urllib.parse
+            for uri in uris:
+                if uri.startswith("file://"):
+                    path = urllib.parse.unquote(uri[7:])
+                    source_paths.append(path)
+            
+            if source_paths:
+                self.start_transfer_thread("local", source_paths, dest_pane, target_dir, "copy", resume=False)
+                context.finish(True, False, time)
+            else:
+                context.finish(False, False, time)
+            return
+
+        # --- INTERNAL DROP (Between Left/Right panes OR inside the same pane) ---
         data = selection.get_text()
         if not data or ":" not in data:
             context.finish(False, False, time)
@@ -1308,8 +1469,8 @@ class SFTPWindow(Gtk.Window):
 
         source_pane, paths_str = data.split(":", 1)
         source_paths = paths_str.split("|") 
-        target_dir = self.current_local_dir if dest_pane == "local" else self.current_remote_dir
         
+        # 3. Determine if we are Moving or Copying based on shortcuts and panes
         window = treeview.get_window()
         display = Gdk.Display.get_default()
         seat = display.get_default_seat()
@@ -1317,10 +1478,24 @@ class SFTPWindow(Gtk.Window):
         
         if window:
             _, _, _, state = window.get_device_position(pointer)
-            action = 'move' if state & Gdk.ModifierType.SHIFT_MASK else 'copy'
+            if source_pane == dest_pane:
+                # Same Pane: Default to Move (Organizing). Hold Ctrl to force Copy.
+                action = 'copy' if state & Gdk.ModifierType.CONTROL_MASK else 'move'
+            else:
+                # Different Panes: Default to Copy (Transferring). Hold Shift to force Move.
+                action = 'move' if state & Gdk.ModifierType.SHIFT_MASK else 'copy'
         else:
-            action = 'copy'
+            action = 'move' if source_pane == dest_pane else 'copy'
 
+        # 4. Safety Check: Prevent moving a file into the exact directory it is already in
+        if source_pane == dest_pane:
+            current_src_dir = self.current_local_dir if source_pane == "local" else self.current_remote_dir
+            if target_dir == current_src_dir and action == 'move':
+                # User dropped a file into empty space in the same folder it already lives in. Ignore.
+                context.finish(False, False, time)
+                return
+
+        # Fire up the engine!
         self.start_transfer_thread(source_pane, source_paths, dest_pane, target_dir, action, resume=False)
         context.finish(True, False, time)
 
@@ -1364,11 +1539,102 @@ class SFTPWindow(Gtk.Window):
         if self._cancel_transfer:
             raise Exception("TRANSFER_CANCELLED_BY_USER")
 
+    def _prompt_for_new_name(self, old_name):
+        dialog = Gtk.Dialog(title="Rename Transfer", transient_for=self, flags=Gtk.DialogFlags.MODAL)
+        dialog.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Rename", Gtk.ResponseType.OK)
+        
+        box = dialog.get_content_area()
+        box.set_spacing(10)
+        box.set_border_width(15)
+        
+        label = Gtk.Label(label="Enter a new name for the destination:")
+        box.pack_start(label, False, False, 0)
+        
+        entry = Gtk.Entry()
+        entry.set_text(old_name)
+        box.pack_start(entry, True, True, 0)
+        
+        dialog.show_all()
+        response = dialog.run()
+        new_name = entry.get_text().strip()
+        dialog.destroy()
+        
+        if response == Gtk.ResponseType.OK and new_name and new_name != old_name:
+            return new_name
+        return None
+
+    def _wipe_path(self, pane, path):
+        # Safely deletes the destination before an "Overwrite" to prevent merge conflicts
+        try:
+            if pane == "local":
+                if os.path.isdir(path): shutil.rmtree(path)
+                else: os.remove(path)
+            elif pane == "remote" and self.sftp:
+                remote_stat = self.sftp.stat(path)
+                if stat.S_ISDIR(remote_stat.st_mode):
+                    chan = self.transport.open_session()
+                    chan.exec_command(f'rm -rf "{path}"')
+                    chan.recv_exit_status()
+                else:
+                    self.sftp.remove(path)
+        except Exception:
+            pass # Ignore if it doesn't exist
+
     def start_transfer_thread(self, src_pane, src_paths, dst_pane, dst_dir, action, resume=False):
         if self.transfer_active or self.search_active:
             self.set_status("A task is already active!")
             return
-            
+
+        # Pre-calculate destinations and check for conflicts before starting
+        transfer_tasks = []
+        for src_path in src_paths:
+            filename = os.path.basename(src_path)
+            dst_path = os.path.join(dst_dir, filename) if dst_pane == "local" else f"{dst_dir}/{filename}".replace('//', '/')
+
+            conflict = False
+            if dst_pane == "local":
+                conflict = os.path.exists(dst_path)
+            elif dst_pane == "remote" and self.sftp:
+                try:
+                    self.sftp.stat(dst_path)
+                    conflict = True
+                except IOError:
+                    conflict = False
+
+            # If resuming, we WANT the conflict so we can append to the file. Otherwise, ask user.
+            if conflict and not resume:
+                dialog = Gtk.MessageDialog(
+                    transient_for=self, flags=Gtk.DialogFlags.MODAL, message_type=Gtk.MessageType.WARNING,
+                    text="File Conflict Detected"
+                )
+                dialog.format_secondary_markup(f"An item named <b>{filename}</b> already exists in the destination.\nWhat would you like to do?")
+                dialog.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Rename", Gtk.ResponseType.APPLY, "Overwrite", Gtk.ResponseType.YES)
+                
+                response = dialog.run()
+                dialog.destroy()
+                
+                if response == Gtk.ResponseType.YES:
+                    # Overwrite - mark it for deletion before transfer
+                    transfer_tasks.append((src_path, dst_path, True))
+                elif response == Gtk.ResponseType.APPLY:
+                    # Rename
+                    new_name = self._prompt_for_new_name(filename)
+                    if new_name:
+                        new_dst_path = os.path.join(dst_dir, new_name) if dst_pane == "local" else f"{dst_dir}/{new_name}".replace('//', '/')
+                        transfer_tasks.append((src_path, new_dst_path, False))
+                    else:
+                        self.set_status("Transfer cancelled.")
+                        return
+                else:
+                    # Cancel
+                    self.set_status("Transfer cancelled.")
+                    return
+            else:
+                transfer_tasks.append((src_path, dst_path, False))
+        
+        if not transfer_tasks:
+            return
+
         self.transfer_active = True
         self._cancel_transfer = False
         
@@ -1379,9 +1645,10 @@ class SFTPWindow(Gtk.Window):
         self.search_btn.set_sensitive(False)
 
         mode_text = "Resuming" if resume else ("Moving" if action in ['move', 'cut'] else "Copying")
-        self.set_status(f"{mode_text} {len(src_paths)} item(s)...")
+        self.set_status(f"{mode_text} {len(transfer_tasks)} item(s)...")
         
-        thread = threading.Thread(target=self._transfer_worker, args=(src_pane, src_paths, dst_pane, dst_dir, action, resume))
+        # Note: We now pass transfer_tasks instead of src_paths/dst_dir
+        thread = threading.Thread(target=self._transfer_worker, args=(src_pane, transfer_tasks, dst_pane, action, resume))
         thread.daemon = True
         thread.start()
 
@@ -1448,16 +1715,18 @@ class SFTPWindow(Gtk.Window):
             if stat.S_ISDIR(item.st_mode): self._download_dir(r_path, l_path, resume)
             else: self._get_file(r_path, l_path, resume)
 
-    def _transfer_worker(self, src_pane, src_paths, dst_pane, dst_dir, action, resume):
+    def _transfer_worker(self, src_pane, transfer_tasks, dst_pane, action, resume):
         try:
-            total = len(src_paths)
-            for idx, src_path in enumerate(src_paths):
+            total = len(transfer_tasks)
+            for idx, (src_path, dst_path, do_overwrite) in enumerate(transfer_tasks):
                 if self._cancel_transfer: raise Exception("TRANSFER_CANCELLED_BY_USER")
                 
                 filename = os.path.basename(src_path)
-                dst_path = os.path.join(dst_dir, filename) if dst_pane == "local" else f"{dst_dir}/{filename}"
-
                 GLib.idle_add(self.set_status, f"Processing {idx+1}/{total}: {filename}...")
+
+                # If user chose Overwrite, wipe the destination first so Python/SFTP doesn't throw a FileExistsError
+                if do_overwrite and not resume:
+                    self._wipe_path(dst_pane, dst_path)
 
                 if src_pane == "local" and dst_pane == "remote":
                     if os.path.isdir(src_path):
@@ -1553,20 +1822,16 @@ class SFTPWindow(Gtk.Window):
         self.statusbar.push(self.context_id, message)
 
     def on_close(self, widget):
+        # Clean up the monitor
+        if self.local_monitor:
+            self.local_monitor.cancel()
+            self.local_monitor = None
+        if self._local_refresh_timeout_id:
+            GLib.source_remove(self._local_refresh_timeout_id)
+
+        # Close connections
         if self.sftp: self.sftp.close()
         if self.transport: self.transport.close()
-
-
-
-
-
-
-
-
-
-
-
-
 
 class PassphraseInputDialog(Gtk.Dialog):
     def __init__(self, parent, title, prompt_text, confirm_text=None, show_retry_message=False):
@@ -1854,7 +2119,7 @@ class SnapConnectionManager(Gtk.Application):
             ],
             "Connect": [
                 ("SSH",  self.on_ssh),
-                ("SFTP", self.on_sftp),
+                ("SFTP (CLI)", self.on_sftp),
                 ("SFTP (GUI)", self.on_sftpgui),
             ],
             "Help": [
@@ -3623,14 +3888,8 @@ class SnapConnectionManager(Gtk.Application):
             if node == "folder":
                 # 1. Add Server (Available on all folders)
                 mi = Gtk.MenuItem(label="Add Server")
-                # We pass 'val' (the folder name) as the param to ensure we add to this specific folder
                 mi.connect("activate", lambda w: self.on_add_server(None, None)) 
                 menu.append(mi)
-                
-                # 1b. Connect SFTP GUI
-                mi_sftpgui = Gtk.MenuItem(label="Connect SFTP (GUI)")
-                mi_sftpgui.connect("activate", self.on_sftpgui, val) 
-                menu.append(mi_sftpgui)                
     
                 # 2. New Folder (Available on all folders)
                 mi = Gtk.MenuItem(label="New Folder")
@@ -3660,13 +3919,24 @@ class SnapConnectionManager(Gtk.Application):
     
             # ─── SERVER CONTEXT MENU ─────────────────────────────
             elif node == "server":
-                # (Keep your existing server menu logic here)
-                # ...
-                # 1. Connect
-                mi = Gtk.MenuItem(label="Connect")
-                # NOTE: Ensure 'on_ssh' or your specific connect function name is correct here
+                # 1. Connect SSH
+                mi = Gtk.MenuItem(label="Connect SSH")
                 mi.connect("activate", self.on_ssh, val) 
                 menu.append(mi)
+                
+                # 1b. Connect SFTP (CLI)
+                mi_sftp_cli = Gtk.MenuItem(label="Connect SFTP (CLI)")
+                mi_sftp_cli.connect("activate", self.on_sftp, val) 
+                menu.append(mi_sftp_cli)
+
+                # 1c. Connect SFTP (GUI)
+                mi_sftp_gui = Gtk.MenuItem(label="Connect SFTP (GUI)")
+                # --- FIX IS ON THIS LINE BELOW (Changed to on_sftpgui) ---
+                mi_sftp_gui.connect("activate", self.on_sftpgui, val) 
+                menu.append(mi_sftp_gui)
+
+                # Add a separator line to make it look clean
+                menu.append(Gtk.SeparatorMenuItem())
                 
                 # 2. Edit / Copy / Delete ...
                 for lbl, fn in (
