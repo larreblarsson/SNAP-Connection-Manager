@@ -13,12 +13,12 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v3
 
-      - name: Install build dependencies
+- name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y devscripts build-essential debhelper \
             python3-all python3-gi gir1.2-gtk-3.0 gir1.2-vte-2.91 \
-            gnupg apt-utils python3-paramiko
+            gnupg apt-utils python3-paramiko dh-python
 
       - name: Check apt-ftparchive
         run: which apt-ftparchive && apt-ftparchive --version
