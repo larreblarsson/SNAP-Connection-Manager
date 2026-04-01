@@ -65,9 +65,9 @@ Sensitive data is protected using a robust GnuPG-based encryption system.
 4. Data decrypted only in memory during active sessions  
 
 ### 3.2 Data Storage Location
-- Path: `~/.local/share/snap_connection_manager/`  
+- Path: `~/.local/share/scarpa_connection_manager/`  
 - Files:  
-  - `snap_cm_settings.json` → settings, hash + salt of passphrase  
+  - `scarpa_cm_settings.json` → settings, hash + salt of passphrase  
   - `ssh_servers.json.gpg` → encrypted server configurations  
 
 ### 3.3 Changing Your Passphrase
@@ -96,21 +96,21 @@ Accessed via `File -> Global Settings...`, this dialog defines **default configu
 ## 6. Installation Instructions
 
 ### 6.1 Quick Install Script
-curl -sL [https://raw.githubusercontent.com/larreblarsson/SNAP-Connection-Manager/main/install.sh](https://raw.githubusercontent.com/larreblarsson/SNAP-Connection-Manager/main/install.sh) | bash
+curl -sL [https://raw.githubusercontent.com/larreblarsson/SCARPA-Connection-Manager/main/install.sh](https://raw.githubusercontent.com/larreblarsson/SCARPA-Connection-Manager/main/install.sh) | bash
 
 ### 6.2 Manual Installation
 #### Add the GPG key
-curl -sL [https://larreblarsson.github.io/SNAP-Connection-Manager/public.key](https://larreblarsson.github.io/SNAP-Connection-Manager/public.key) | sudo gpg --dearmor -o /usr/share/keyrings/SNAP-Connection-Manager-keyring.gpg
+curl -sL [https://larreblarsson.github.io/SCARPA-Connection-Manager/public.key](https://larreblarsson.github.io/SCARPA-Connection-Manager/public.key) | sudo gpg --dearmor -o /usr/share/keyrings/SCARPA-Connection-Manager-keyring.gpg
 
 #### Add the repository (64-bit architecture only)
-echo "deb [arch=amd64 signed-by=/usr/share/keyrings/SNAP-Connection-Manager-keyring.gpg] [https://larreblarsson.github.io/SNAP-Connection-Manager](https://larreblarsson.github.io/SNAP-Connection-Manager) stable main" | sudo tee /etc/apt/sources.list.d/SNAP-Connection-Manager.list
+echo "deb [arch=amd64 signed-by=/usr/share/keyrings/SCARPA-Connection-Manager-keyring.gpg] [https://larreblarsson.github.io/SCARPA-Connection-Manager](https://larreblarsson.github.io/SCARPA-Connection-Manager) stable main" | sudo tee /etc/apt/sources.list.d/SCARPA-Connection-Manager.list
 
 #### Update and install
 sudo apt update
-sudo apt install snap-connection-manager
+sudo apt install scarpa-connection-manager
 
 ## 7. Troubleshooting & Dependencies
-- **Incorrect master passphrase** → unrecoverable, delete `~/.local/share/snap_connection_manager/` to reset  
+- **Incorrect master passphrase** → unrecoverable, delete `~/.local/share/scarpa_connection_manager/` to reset  
 - **Dependencies required**:  
   - `python3-gi`  
   - `gir1.2-gtk-3.0`  

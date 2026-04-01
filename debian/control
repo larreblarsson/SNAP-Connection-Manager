@@ -1,12 +1,12 @@
-Source: snap-connection-manager
+Source: scarpa-connection-manager
 Section: utils
 Priority: optional
 Maintainer: Tomas Larsson <larre.b.larsson@gmail.com>
 Build-Depends: debhelper-compat (= 13), python3, python3-gi, gir1.2-gtk-3.0, gir1.2-vte-2.91
 Standards-Version: 4.6.0
-Homepage: https://github.com/larreblarsson/SNAP-Connection-Manager
+Homepage: https://github.com/larreblarsson/SCARPA-Connection-Manager
 
-Package: snap-connection-manager
+Package: scarpa-connection-manager
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, python3, python3-gi, gir1.2-gtk-3.0, gir1.2-vte-2.91, python3-paramiko
 Description: Simple SSH/SFTP connection manager with GTK interface

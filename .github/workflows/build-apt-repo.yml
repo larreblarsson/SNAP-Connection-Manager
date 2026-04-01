@@ -53,7 +53,7 @@ jobs:
         run: |
           REPO_DIR=repo
           CODENAME=stable
-          PACKAGE_DEB=$(ls -t ../snap-connection-manager*.deb | head -n1)
+          PACKAGE_DEB=$(ls -t ../scarpa-connection-manager*.deb | head -n1)
 
           # Clean old repo contents
           rm -rf ${REPO_DIR}
@@ -109,7 +109,7 @@ jobs:
 
       - name: Verify published Packages
         run: |
-          curl -s https://larreblarsson.github.io/SNAP-Connection-Manager/dists/stable/main/binary-amd64/Packages | grep Version
+          curl -s https://larreblarsson.github.io/SCARPA-Connection-Manager/dists/stable/main/binary-amd64/Packages | grep Version
 
       - name: Extract full changelog entry
         id: changelog
@@ -122,8 +122,8 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.ref_name }}
-          name: snap-connection-manager ${{ github.ref_name }}
+          name: scarpa-connection-manager ${{ github.ref_name }}
           body: ${{ env.RELEASE_BODY }}
-          files: ../snap-connection-manager*.deb
+          files: ../scarpa-connection-manager*.deb
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

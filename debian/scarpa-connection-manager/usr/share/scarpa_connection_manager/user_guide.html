@@ -213,7 +213,7 @@
     <h2 id="encryption">5. Security & Encryption</h2>
     <p>Your credentials are protected by industry-standard cryptography.</p>
     <ul>
-        <li><strong>Storage:</strong> Data is saved in <code>~/.local/share/snap_connection_manager/ssh_servers.json.gpg</code>.</li>
+        <li><strong>Storage:</strong> Data is saved in <code>~/.local/share/scarpa_connection_manager/ssh_servers.json.gpg</code>.</li>
         <li><strong>Algorithm:</strong> The file is encrypted using <strong>AES256</strong> via GnuPG.</li>
         <li><strong>Keys:</strong> Your Master Passphrase is hashed using <strong>PBKDF2-HMAC-SHA256</strong> (600,000 iterations) with a unique salt to derive the encryption key.</li>
         <li><strong>Memory Safety:</strong> Passwords are decrypted only in RAM and are never written to disk in plain text during normal operation.</li>
@@ -229,7 +229,7 @@
 
     <h2 id="installation">7. Installation</h2>
     <p>To install or update to the latest version:</p>
-    <pre><code>curl -sL https://raw.githubusercontent.com/larreblarsson/SNAP-Connection-Manager/main/install.sh | bash</code></pre>
+    <pre><code>curl -sL https://raw.githubusercontent.com/larreblarsson/SCARPA-Connection-Manager/main/install.sh | bash</code></pre>
 
     <p class="note">© 2025 SNAP Connection Manager. Built with Python & GTK3.</p>
 

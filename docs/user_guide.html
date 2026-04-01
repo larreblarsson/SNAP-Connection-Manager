@@ -132,7 +132,7 @@
         <h3>Encryption Architecture</h3>
         <ul>
             <li><strong>Master Passphrase:</strong> On first launch, you are required to set a Master Passphrase. This phrase is hashed using <strong>PBKDF2-HMAC-SHA256</strong> (600,000 iterations) paired with a unique 16-byte cryptographically secure salt.</li>
-            <li><strong>Data Storage:</strong> Your server configurations are encrypted symmetrically using <strong>AES-256 via GnuPG</strong>. The encrypted file is stored locally at <code>~/.local/share/snap_connection_manager/ssh_servers.json.gpg</code>.</li>
+            <li><strong>Data Storage:</strong> Your server configurations are encrypted symmetrically using <strong>AES-256 via GnuPG</strong>. The encrypted file is stored locally at <code>~/.local/share/scarpa_connection_manager/ssh_servers.json.gpg</code>.</li>
             <li><strong>Memory Safety:</strong> Passwords are decrypted exclusively in memory (RAM) during active sessions and are never written to your disk in plain text.</li>
         </ul>
     </div>
@@ -140,7 +140,7 @@
     <h3>Changing Your Passphrase</h3>
     <p>Navigate to <strong>File -> Change Passphrase...</strong>. You will be prompted for your current passphrase, followed by your new one. SNAP will automatically generate a new salt and securely re-encrypt your entire database.</p>
     
-    <p class="note warning"><strong>WARNING:</strong> There is no password recovery mechanism. If you forget your Master Passphrase, your data is permanently inaccessible. You will need to manually delete the <code>~/.local/share/snap_connection_manager/</code> directory to reset the application.</p>
+    <p class="note warning"><strong>WARNING:</strong> There is no password recovery mechanism. If you forget your Master Passphrase, your data is permanently inaccessible. You will need to manually delete the <code>~/.local/share/scarpa_connection_manager/</code> directory to reset the application.</p>
 
     <h2 id="management">3. Server & Folder Management</h2>
     <p>SNAP allows you to logically organize hundreds of servers using the main "Session" tree view.</p>
@@ -264,19 +264,19 @@
     <h2 id="installation">9. Installation & Troubleshooting</h2>
     
     <h3>Quick Install Script</h3>
-    <pre><code>curl -sL https://raw.githubusercontent.com/larreblarsson/SNAP-Connection-Manager/main/install.sh | bash</code></pre>
+    <pre><code>curl -sL https://raw.githubusercontent.com/larreblarsson/SCARPA-Connection-Manager/main/install.sh | bash</code></pre>
 
     <h3>Manual APT Installation</h3>
     <p>Run the following commands to add the official repository and install the application:</p>
     <pre><code># Add the GPG key
-curl -sL https://larreblarsson.github.io/SNAP-Connection-Manager/public.key | sudo gpg --dearmor -o /usr/share/keyrings/SNAP-Connection-Manager-keyring.gpg
+curl -sL https://larreblarsson.github.io/SCARPA-Connection-Manager/public.key | sudo gpg --dearmor -o /usr/share/keyrings/SCARPA-Connection-Manager-keyring.gpg
 
 # Add the repository (64-bit architecture only)
-echo "deb [arch=amd64 signed-by=/usr/share/keyrings/SNAP-Connection-Manager-keyring.gpg] https://larreblarsson.github.io/SNAP-Connection-Manager stable main" | sudo tee /etc/apt/sources.list.d/SNAP-Connection-Manager.list
+echo "deb [arch=amd64 signed-by=/usr/share/keyrings/SCARPA-Connection-Manager-keyring.gpg] https://larreblarsson.github.io/SCARPA-Connection-Manager stable main" | sudo tee /etc/apt/sources.list.d/SCARPA-Connection-Manager.list
 
 # Update and install dependencies/app
 sudo apt update
-sudo apt install snap-connection-manager</code></pre>
+sudo apt install scarpa-connection-manager</code></pre>
 
     <p class="note">© 2026 SNAP Connection Manager. Built with Python & GTK3.</p>
 

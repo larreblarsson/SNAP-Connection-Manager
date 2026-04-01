@@ -2,7 +2,7 @@
 set -e
 
 # Define the relative path within the user's home directory
-APP_DATA_RELATIVE_PATH=".local/share/snap_connection_manager"
+APP_DATA_RELATIVE_PATH=".local/share/scarpa_connection_manager"
 
 # Attempt to determine the home directory of the user who initiated the 'sudo' command.
 # $SUDO_USER is set by 'sudo' and contains the original user's name.

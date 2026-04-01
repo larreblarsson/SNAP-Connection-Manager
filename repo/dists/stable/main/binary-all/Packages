@@ -1,9 +1,9 @@
-Package: snap-connection-manager
+Package: scarpa-connection-manager
 Architecture: all
 Version: 1.2.1-1
 Maintainer: Tomas Larsson <larre.b.larsson@gmail.com>
 Depends: python3, python3-gi, gnupg, python3-gnupg, expect, openssh-client, gir1.2-vte-2.91
-Filename: repo/pool/snap_connection_manager_1.2.1.deb
+Filename: repo/pool/scarpa_connection_manager_1.2.1.deb
 Size: 84202
 MD5sum: 5e2b75b0d38d64c96d0bf591b399bba5
 SHA1: 1dfbbdbddbe6cfb35049745e0d70db10887ad4d2

@@ -1,41 +1,41 @@
-snap-connection-manager (1.2.10-2) stable; urgency=medium
+scarpa-connection-manager (1.2.10-2) stable; urgency=medium
 
   * Smaller changes to user interface
   
  -- Tomas Larsson <larre.b.larsson@gmail.com>  Thu, 12 Dec 2025 15:00:00 +0100
 
 
-snap-connection-manager (1.2.10-1) stable; urgency=medium
+scarpa-connection-manager (1.2.10-1) stable; urgency=medium
 
   * Added append text to log file
   
  -- Tomas Larsson <larre.b.larsson@gmail.com>  Thu, 08 Dec 2025 15:00:00 +0100
 
-snap-connection-manager (1.2.9-3) stable; urgency=medium
+scarpa-connection-manager (1.2.9-3) stable; urgency=medium
 
   * Updated user_guide.html
   
  -- Tomas Larsson <larre.b.larsson@gmail.com>  Thu, 08 Dec 2025 15:00:00 +0100
 
-snap-connection-manager (1.2.9-2) stable; urgency=medium
+scarpa-connection-manager (1.2.9-2) stable; urgency=medium
 
   * Small fix for About version
   
  -- Tomas Larsson <larre.b.larsson@gmail.com>  Thu, 08 Dec 2025 15:00:00 +0100
 
-snap-connection-manager (1.2.9-1) stable; urgency=medium
+scarpa-connection-manager (1.2.9-1) stable; urgency=medium
 
   * Introduce send a command file at login
   
  -- Tomas Larsson <larre.b.larsson@gmail.com>  Thu, 08 Dec 2025 15:00:00 +0100
 
-snap-connection-manager (1.2.8-1) stable; urgency=medium
+scarpa-connection-manager (1.2.8-1) stable; urgency=medium
 
   * Introduce inline setting on terminal session window 
   
  -- Tomas Larsson <larre.b.larsson@gmail.com>  Thu, 08 Dec 2025 07:00:00 +0100
 
-snap-connection-manager (1.2.7-1) stable; urgency=medium
+scarpa-connection-manager (1.2.7-1) stable; urgency=medium
 
   * Introduce new Terminal Tab and move of Buffer and Anti-Idle to new Terminal Tab 
   * Added append/overwright option for logging
@@ -43,39 +43,39 @@ snap-connection-manager (1.2.7-1) stable; urgency=medium
   
  -- Tomas Larsson <larre.b.larsson@gmail.com>  Thu, 04 Dec 2025 07:00:00 +0100
 
-snap-connection-manager (1.2.6-2) stable; urgency=medium
+scarpa-connection-manager (1.2.6-2) stable; urgency=medium
 
   * Changed look of Anti Idle funciton
   
  -- Tomas Larsson <larre.b.larsson@gmail.com>  Thu, 04 Dec 2025 07:00:00 +0100
 
-snap-connection-manager (1.2.6-1) stable; urgency=medium
+scarpa-connection-manager (1.2.6-1) stable; urgency=medium
 
   * Changed name of "Global Settings" to "Default Settings"
   * Introduced Anti Idle funciton
   
  -- Tomas Larsson <larre.b.larsson@gmail.com>  Thu, 25 Nov 2025 07:00:00 +0100
 
-snap-connection-manager (1.2.5-1) stable; urgency=medium
+scarpa-connection-manager (1.2.5-1) stable; urgency=medium
 
   * Fixed all focus on main window
   
  -- Tomas Larsson <larre.b.larsson@gmail.com>  Thu, 25 Nov 2025 07:00:00 +0100
 
-snap-connection-manager (1.2.4-1) stable; urgency=medium
+scarpa-connection-manager (1.2.4-1) stable; urgency=medium
 
   * Added Global Setting to change default apperance
   * Fixed Paste Server in rightclick meny at Folder
   
  -- Tomas Larsson <larre.b.larsson@gmail.com>  Thu, 25 Nov 2025 07:00:00 +0100
 
-snap-connection-manager (1.2.3-1) stable; urgency=medium
+scarpa-connection-manager (1.2.3-1) stable; urgency=medium
 
   * Fixed error at atp update
   
  -- Tomas Larsson <larre.b.larsson@gmail.com>  Thu, 25 Nov 2025 07:00:00 +0100
 
-snap-connection-manager (1.2.2-1) stable; urgency=medium
+scarpa-connection-manager (1.2.2-1) stable; urgency=medium
 
   * New release 1.2.2
   * Inline server name change added
@@ -85,7 +85,7 @@ snap-connection-manager (1.2.2-1) stable; urgency=medium
   
  -- Tomas Larsson <larre.b.larsson@gmail.com>  Thu, 25 Nov 2025 07:00:00 +0100
 
-snap-connection-manager (1.2.1-1) stable; urgency=medium
+scarpa-connection-manager (1.2.1-1) stable; urgency=medium
 
   * Initial APT repository release of SNAP Connection Manager.
 
