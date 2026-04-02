@@ -76,12 +76,12 @@ jobs:
           # --- FIX: Generate Release config on the fly ---
           cat << 'EOF' > apt-release.conf
           APT::FTPArchive::Release::Origin "Tomas Larsson";
-          APT::FTPArchive::Release::Label "SNAP Connection Manager";
+          APT::FTPArchive::Release::Label "SCARPA Connection Manager";
           APT::FTPArchive::Release::Suite "stable";
           APT::FTPArchive::Release::Codename "stable";
           APT::FTPArchive::Release::Architectures "amd64 all";
           APT::FTPArchive::Release::Components "main";
-          APT::FTPArchive::Release::Description "SNAP Connection Manager Repository";
+          APT::FTPArchive::Release::Description "SCARPA Connection Manager Repository";
           EOF
 
           # Generate Release with the new config
