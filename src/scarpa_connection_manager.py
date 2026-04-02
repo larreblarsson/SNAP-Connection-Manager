@@ -3815,10 +3815,10 @@ class ScarpaConnectionManager(Gtk.Application):
             transient_for=parent_window, # Can be None
             modal=True,
             program_name=APP_TITLE,
-            version="1.2.18",
+            version="1.2.20",
             authors=["Copilot, Gemini, Tomas Larsson"],
             artists=["Tomas Larsson"],
-            comments="A GTK-based SSH/SFTP session manager"
+            comments="A GTK-based SSH/SFTP session manager. Riposa in pace, Aquila di Filottrano. Sarai sempre con noi!"
         )
         about.run()
         about.destroy()

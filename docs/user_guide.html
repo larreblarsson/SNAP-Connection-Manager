@@ -262,23 +262,15 @@
     <p>You can override global settings on a per-server basis in the <strong>Appearance</strong> tab of the Server Editor. If you ever want to revert a highly customized server back to standard, click the <strong>Reset to Defaults</strong> button.</p>
 
     <h2 id="installation">9. Installation & Troubleshooting</h2>
-    
-    <h3>Quick Install Script</h3>
-    <pre><code>curl -sL https://raw.githubusercontent.com/larreblarsson/SCARPA-Connection-Manager/main/install.sh | bash</code></pre>
+ <p>SCARPA Connection Manager is distributed via an official Ubuntu PPA, ensuring you always have secure access to the latest updates.</p>
 
-    <h3>Manual APT Installation</h3>
-    <p>Run the following commands to add the official repository and install the application:</p>
-    <pre><code># Add the GPG key
-curl -sL https://larreblarsson.github.io/SCARPA-Connection-Manager/public.key | sudo gpg --dearmor -o /usr/share/keyrings/SCARPA-Connection-Manager-keyring.gpg
-
-# Add the repository (64-bit architecture only)
-echo "deb [arch=amd64 signed-by=/usr/share/keyrings/SCARPA-Connection-Manager-keyring.gpg] https://larreblarsson.github.io/SCARPA-Connection-Manager stable main" | sudo tee /etc/apt/sources.list.d/SCARPA-Connection-Manager.list
-
-# Update and install dependencies/app
+    <h3>Installation</h3>
+    <p>Open your terminal and execute the following commands to add the repository and install the application:</p>
+    <pre><code>sudo add-apt-repository ppa:larre-b-larsson/scarpa-connection-manager
 sudo apt update
 sudo apt install scarpa-connection-manager</code></pre>
 
-    <p class="note">© 2026 SCARPA Connection Manager. Built with Python & GTK3.</p>
+    <p class="note">© 2026 SCARPA Connection Manager. Built with Python & GTK3. Riposa in pace, Aquila di Filottrano. Sarai sempre con noi!</p>
 
 </body>
 </html>

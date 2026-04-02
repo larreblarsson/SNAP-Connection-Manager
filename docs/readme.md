@@ -95,15 +95,10 @@ Accessed via `File -> Global Settings...`, this dialog defines **default configu
 
 ## 6. Installation Instructions
 
-### 6.1 Quick Install Script
-curl -sL [https://raw.githubusercontent.com/larreblarsson/SCARPA-Connection-Manager/main/install.sh](https://raw.githubusercontent.com/larreblarsson/SCARPA-Connection-Manager/main/install.sh) | bash
-
-### 6.2 Manual Installation
-#### Add the GPG key
-curl -sL [https://larreblarsson.github.io/SCARPA-Connection-Manager/public.key](https://larreblarsson.github.io/SCARPA-Connection-Manager/public.key) | sudo gpg --dearmor -o /usr/share/keyrings/SCARPA-Connection-Manager-keyring.gpg
+SCARPA Connection Manager is officially hosted on an Ubuntu Personal Package Archive (PPA) for easy installation and automatic updates.
 
 #### Add the repository (64-bit architecture only)
-echo "deb [arch=amd64 signed-by=/usr/share/keyrings/SCARPA-Connection-Manager-keyring.gpg] [https://larreblarsson.github.io/SCARPA-Connection-Manager](https://larreblarsson.github.io/SCARPA-Connection-Manager) stable main" | sudo tee /etc/apt/sources.list.d/SCARPA-Connection-Manager.list
+sudo add-apt-repository ppa:larre-b-larsson/scarpa-connection-manager
 
 #### Update and install
 sudo apt update

@@ -1,3 +1,15 @@
+scarpa-connection-manager (1.2.20-7) stable; urgency=medium
+
+  * Changes in User guide and About section
+    
+ -- Tomas Larsson <larre.b.larsson@gmail.com>  Thu, 02 Apr 2026 16:00:00 +0100
+
+scarpa-connection-manager (1.2.20-6) stable; urgency=medium
+
+  * Change in workflow yaml file
+    
+ -- Tomas Larsson <larre.b.larsson@gmail.com>  Thu, 02 Apr 2026 13:00:00 +0100
+ 
 scarpa-connection-manager (1.2.20-4) stable; urgency=medium
 
   * Change name of project 4
