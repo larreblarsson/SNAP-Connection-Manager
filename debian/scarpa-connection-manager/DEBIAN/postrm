@@ -48,11 +48,11 @@ fi
 case "$1" in
     purge)
         if $IS_SAFE_PATH && [ -d "$APP_DATA_DIR" ]; then
-            echo "Purging SNAP Connection Manager user data from: $APP_DATA_DIR"
+            echo "Purging SCARPA Connection Manager user data from: $APP_DATA_DIR"
             rm -rf "$APP_DATA_DIR"
             echo "User data directory removed."
         else
-            echo "Skipping purge of SNAP Connection Manager user data. Directory '$APP_DATA_DIR' does not exist or is not a recognized safe user home path."
+            echo "Skipping purge of SCARPA Connection Manager user data. Directory '$APP_DATA_DIR' does not exist or is not a recognized safe user home path."
             # Note: This message will be visible during purge.
         fi
         ;;

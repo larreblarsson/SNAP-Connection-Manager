@@ -1,4 +1,4 @@
-# SNAP Connection Manager – User & Technical Guide
+# SCARPA Connection Manager – User & Technical Guide
 
 ## Table of Contents
 1. [Introduction](#introduction)  
@@ -19,7 +19,7 @@
 ---
 
 ## 1. Introduction
-SNAP Connection Manager is a secure GTK3-based desktop application for managing and launching SSH and SFTP connections. It organizes server configurations into folders, automates login sequences, and supports port forwarding.  
+SCARPA Connection Manager is a secure GTK3-based desktop application for managing and launching SSH and SFTP connections. It organizes server configurations into folders, automates login sequences, and supports port forwarding.  
 Sensitive data is protected using a robust GnuPG-based encryption system.
 
 ---

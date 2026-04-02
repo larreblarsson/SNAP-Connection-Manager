@@ -49,8 +49,8 @@ DATA_DIR       = "/usr/share/scarpa_connection_manager/"
 FOLDER_ICON    = os.path.join(DATA_DIR, "folder.png")
 SERVER_ICON    = os.path.join(DATA_DIR, "server.png")
 HELP_FILE_PATH = os.path.join(DATA_DIR, "user_guide.html")
-APP_ID         = "com.example.SnapCM"
-APP_TITLE      = "Snap Connection Manager"
+APP_ID         = "com.example.ScarpaCM"
+APP_TITLE      = "Scarpa Connection Manager"
 ROOT_FOLDER    = "Session"
 DEFAULT_TERM_FONT = "Ubuntu Mono 12"
 DEFAULT_TERM_FG = "#000000"
@@ -450,7 +450,7 @@ class SnapConnectionManager(Gtk.Application):
         box.set_margin_start(10)
         box.set_margin_end(10)
     
-        disclaimer_text = """SNAP Connection Manager – Legal Disclaimer
+        disclaimer_text = """SCARPA Connection Manager – Legal Disclaimer
     
         This software is provided "as is", without warranty of any kind, express or implied,
         including but not limited to the warranties of merchantability, fitness for a particular
@@ -2751,24 +2751,6 @@ class SnapConnectionManager(Gtk.Application):
             _toggle_idle(chk_idle)
             _toggle_cmd(chk_cmd)
     
-
-
-
-
-
-		
-		
-
-
-
-
-
-
-
-
-
-
-
         # ──  Login Actions Tab ──────────────────────
         seq_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin=10)
         nb.append_page(seq_page, Gtk.Label(label="Login Actions"))

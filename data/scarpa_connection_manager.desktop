@@ -1,5 +1,5 @@
 [Desktop Entry]
-Name=Snap Connection Manager
+Name=Scarpa Connection Manager
 Exec=python3 /usr/bin/scarpa_connection_manager.py
 Icon=/usr/share/icons/hicolor/512x512/apps/scarpa_icon.png
 Terminal=false
