@@ -52,8 +52,8 @@ DATA_DIR       = "/usr/share/scarpa_connection_manager/"
 FOLDER_ICON    = os.path.join(DATA_DIR, "folder.png")
 SERVER_ICON    = os.path.join(DATA_DIR, "server.png")
 HELP_FILE_PATH = os.path.join(DATA_DIR, "user_guide.html")
-APP_ID         = "com.example.SnapCM"
-APP_TITLE      = "Snap Connection Manager"
+APP_ID         = "com.example.scarpacm"
+APP_TITLE      = "Scarpa Connection Manager"
 ROOT_FOLDER    = "Session"
 DEFAULT_TERM_FONT = "Ubuntu Mono 12"
 DEFAULT_TERM_FG = "#000000"
@@ -192,7 +192,7 @@ def load_servers(passphrase): # NOW REQUIRES PASSPHRASE
         if tf and os.path.exists(tf.name):
             os.remove(tf.name)
 
-        # Re-raise the exception for SnapConnectionManager to handle with its _error method
+        # Re-raise the exception for ScarpaConnectionManager to handle with its _error method
         raise ex
 
 def save_servers(servers, passphrase): # NOW REQUIRES PASSPHRASE
@@ -236,7 +236,7 @@ def save_servers(servers, passphrase): # NOW REQUIRES PASSPHRASE
     except Exception as ex:
         if tf and os.path.exists(tf.name): # Clean up temp file on GPG error
             os.remove(tf.name)
-        # Re-raise the exception for SnapConnectionManager to handle with its _error method
+        # Re-raise the exception for ScarpaConnectionManager to handle with its _error method
         raise ex
 
 # --- Helper functions for dialogs ---
@@ -1895,7 +1895,7 @@ class PassphraseInputDialog(Gtk.Dialog):
 def _vte_spawn_callback(terminal, pid, error, user_data):
     pass
 
-class SnapConnectionManager(Gtk.Application):
+class ScarpaConnectionManager(Gtk.Application):
     def __init__(self):
         super().__init__(application_id=APP_ID)
         # Initialize log_buffer early so log() method can always write to it
@@ -2012,7 +2012,7 @@ class SnapConnectionManager(Gtk.Application):
         box.set_margin_start(10)
         box.set_margin_end(10)
     
-        disclaimer_text = """SNAP Connection Manager – Legal Disclaimer
+        disclaimer_text = """SCARPA Connection Manager – Legal Disclaimer
     
         This software is provided "as is", without warranty of any kind, express or implied,
         including but not limited to the warranties of merchantability, fitness for a particular
@@ -2246,7 +2246,7 @@ class SnapConnectionManager(Gtk.Application):
             self.servers_menu_items["Paste"].set_sensitive(can_paste)
 
 
-    # --- New Passphrase Management Methods (add these inside SnapConnectionManager) ---
+    # --- New Passphrase Management Methods (add these inside ScarpaConnectionManager) ---
     def set_master_passphrase(self):
         """Prompts user to set a new master passphrase for the first time."""
         while True:
@@ -3558,7 +3558,7 @@ class SnapConnectionManager(Gtk.Application):
                 
                 # B. Create a unique TEMP file for raw output
                 import uuid
-                raw_log_path = os.path.join(tempfile.gettempdir(), f"snapcm_raw_{uuid.uuid4().hex[:8]}.log")
+                raw_log_path = os.path.join(tempfile.gettempdir(), f"scarpacm_raw_{uuid.uuid4().hex[:8]}.log")
                 # Create it empty
                 open(raw_log_path, 'w').close()
                 
@@ -4327,7 +4327,7 @@ class SnapConnectionManager(Gtk.Application):
         # --- Load Values ---
         if cfg:
             log_enable.set_active(cfg.get("logging_enabled", False))
-            log_entry.set_text(cfg.get("log_path", "/tmp/snapcm_log.txt"))
+            log_entry.set_text(cfg.get("log_path", "/tmp/scarpacm_log.txt"))
             if cfg.get("log_mode", "append") == "overwrite": rb_overwr.set_active(True)
             else: rb_append.set_active(True)
             
@@ -4350,7 +4350,7 @@ class SnapConnectionManager(Gtk.Application):
         else:
             # Defaults
             def_log_dir = self.settings.get("global_log_dir", "/tmp")
-            log_entry.set_text(os.path.join(def_log_dir, "snapcm_log.txt"))
+            log_entry.set_text(os.path.join(def_log_dir, "scarpacm_log.txt"))
             rb_append.set_active(True)
             ent_idle_str.set_text("\\r")
             spin_idle.set_value(300)
@@ -4636,7 +4636,7 @@ class SnapConnectionManager(Gtk.Application):
                 
             # --- ALSO SET DEFAULT LOG PATH ---
             def_log_dir = self.settings.get("global_log_dir", "/tmp")
-            log_entry.set_text(os.path.join(def_log_dir, "snapcm_log.txt"))
+            log_entry.set_text(os.path.join(def_log_dir, "scarpacm_log.txt"))
        
         # --- Scheme change handler ---
         def on_scheme_changed(cb):
@@ -5148,7 +5148,7 @@ class SnapConnectionManager(Gtk.Application):
 # ── main() ─────────────────────────────────────────────────────────────────────────────
 
 def main():
-    app = SnapConnectionManager()
+    app = ScarpaConnectionManager()
     import sys
     sys.exit(app.run(sys.argv))
 

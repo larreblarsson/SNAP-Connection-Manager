@@ -1,5 +1,11 @@
 scarpa-connection-manager (1.2.20-3) stable; urgency=medium
 
+  * Change name of project 4
+    
+ -- Tomas Larsson <larre.b.larsson@gmail.com>  Wed, 01 Apr 2026 12:00:00 +0100
+
+scarpa-connection-manager (1.2.20-3) stable; urgency=medium
+
   * Fixed workflow
     
  -- Tomas Larsson <larre.b.larsson@gmail.com>  Wed, 01 Apr 2026 12:00:00 +0100
@@ -12,7 +18,7 @@ scarpa-connection-manager (1.2.20-2) stable; urgency=medium
 
 scarpa-connection-manager (1.2.20-1) stable; urgency=medium
 
-  * Renamed project from SNAP to SCARPA Connection Manager
+  * Renamed project from SCARPA to SCARPA Connection Manager
     
  -- Tomas Larsson <larre.b.larsson@gmail.com>  Mon, 1 April 2026 11:00:00 +0100
 
@@ -147,7 +153,7 @@ scarpa-connection-manager (1.2.2-1) stable; urgency=medium
 
 scarpa-connection-manager (1.2.1-1) stable; urgency=medium
 
-  * Initial APT repository release of SNAP Connection Manager.
+  * Initial APT repository release of SCARPA Connection Manager.
 
  -- Tomas Larsson <larre.b.larsson@gmail.com>  Wed, 19 Nov 2025 14:40:00 +0100
 

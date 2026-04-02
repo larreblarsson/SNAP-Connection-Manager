@@ -1,4 +1,4 @@
-SNAP Connection Manager – Legal Disclaimer
+SCARPA Connection Manager – Legal Disclaimer
 
 This software is provided "as is", without warranty of any kind, express or implied,
 including but not limited to the warranties of merchantability, fitness for a particular
