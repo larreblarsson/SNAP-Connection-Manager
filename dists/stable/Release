@@ -1,0 +1,32 @@
+Architectures: amd64 all
+Codename: stable
+Components: main
+Date: Thu, 02 Apr 2026 14:26:13 +0000
+Description: SCARPA Connection Manager Repository
+Label: SCARPA Connection Manager
+Origin: Tomas Larsson
+Suite: stable
+MD5Sum:
+ 38cee71730655ca17ab4c7ce7e6fbf9c              216 Release
+ cf3d77014e8798b2ea2b4af7550873ac              913 main/binary-all/Packages
+ e457375acae6827b31d46df62864928c              608 main/binary-all/Packages.gz
+ cf3d77014e8798b2ea2b4af7550873ac              913 main/binary-amd64/Packages
+ e457375acae6827b31d46df62864928c              608 main/binary-amd64/Packages.gz
+SHA1:
+ 90bd42b455e5b3ad080344166642c17fa2405fef              216 Release
+ ef393e41429d84f6fd993e7b2ef5f64f3a4fb30b              913 main/binary-all/Packages
+ 590c3be4f591dd56ac0c92e1a41de4c0cfa9fe4d              608 main/binary-all/Packages.gz
+ ef393e41429d84f6fd993e7b2ef5f64f3a4fb30b              913 main/binary-amd64/Packages
+ 590c3be4f591dd56ac0c92e1a41de4c0cfa9fe4d              608 main/binary-amd64/Packages.gz
+SHA256:
+ 29c096528867ee361186e68e2b1bb4b0bac08eac36bb33f991040f56601a434f              216 Release
+ c217afdcf4a683be7d73a93b1c4dac4f805bdee93cc5adb641ec5b1d2437a542              913 main/binary-all/Packages
+ 3cbd57e489352e5d676883f9b41964982acadab86e48c5b0d17914a530dd1cb9              608 main/binary-all/Packages.gz
+ c217afdcf4a683be7d73a93b1c4dac4f805bdee93cc5adb641ec5b1d2437a542              913 main/binary-amd64/Packages
+ 3cbd57e489352e5d676883f9b41964982acadab86e48c5b0d17914a530dd1cb9              608 main/binary-amd64/Packages.gz
+SHA512:
+ d4466b07e33fabbfb98bcf335e047017b80ce2712a39e41ec004ee274b067c7581cd441a47d336dd1365788ed13dbc396ec9fe4f65d0eb2960d8f82e1928af12              216 Release
+ ce65cc726bc0271a9349810e2994f331011c684fe08ba695b8e3e8c81c399b80b3ec4cd9e7d65d9ee0e2efc733cccee37eb2be6c250668e73f768f19716206df              913 main/binary-all/Packages
+ 6eba0a7922b40d8530e5f84e753321d5fb82f2e91b76beb7c9b46b9a7f87336ff1bda2c615dc4470b8192cce7542e99eaac3a2e39bc1f25bb066d1f8c097a06c              608 main/binary-all/Packages.gz
+ ce65cc726bc0271a9349810e2994f331011c684fe08ba695b8e3e8c81c399b80b3ec4cd9e7d65d9ee0e2efc733cccee37eb2be6c250668e73f768f19716206df              913 main/binary-amd64/Packages
+ 6eba0a7922b40d8530e5f84e753321d5fb82f2e91b76beb7c9b46b9a7f87336ff1bda2c615dc4470b8192cce7542e99eaac3a2e39bc1f25bb066d1f8c097a06c              608 main/binary-amd64/Packages.gz
