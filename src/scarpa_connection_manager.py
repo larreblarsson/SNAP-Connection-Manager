@@ -3539,8 +3539,17 @@ class ScarpaConnectionManager(Gtk.Application):
     # ── Generate & Launch Expect Script ───────────────────────────────────────
     def _launch_expect(self, lines, title, cfg):
         # 1. Verify Expect
-        expect = shutil.which("expect")
-        if not expect:
+        expect_path = shutil.which("expect")
+        
+        # --- Fallback for Snap Container ---
+        if not expect_path:
+            snap_dir = os.environ.get('SNAP', '')
+            if snap_dir:
+                snap_expect = os.path.join(snap_dir, 'usr/bin/expect')
+                if os.path.exists(snap_expect):
+                    expect_path = snap_expect        
+        
+        if not expect_path:
             return self._error("'expect' not found. Please install the 'expect' package.")
 
         # --- 2. Setup Real-time Logging (Temp File Strategy) ---
@@ -3717,16 +3726,16 @@ class ScarpaConnectionManager(Gtk.Application):
             
             terminal.connect("child-exited", on_child_exited)
             
-            argv = [expect, "-f", tf.name]
+            argv = [expect_path, "-f", tf.name]
 
             import warnings
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 terminal.spawn_sync(
                     Vte.PtyFlags.DEFAULT,
-                    os.environ['HOME'],
+                    os.environ.get('HOME', '/tmp'), # Made this safer just in case
                     argv,
-                    [],
+                    GLib.get_environ(),             # <--- THE MAGIC FIX!
                     GLib.SpawnFlags.SEARCH_PATH, 
                     None,
                     None,
@@ -3818,7 +3827,7 @@ class ScarpaConnectionManager(Gtk.Application):
             version="1.2.20",
             authors=["Copilot, Gemini, Tomas Larsson"],
             artists=["Tomas Larsson"],
-            comments="A GTK-based SSH/SFTP session manager. Riposa in pace, Aquila di Filottrano. Sarai sempre con noi!"
+            comments="A GTK-based SSH/SFTP session manager.\nRiposa in pace, Aquila di Filottrano. Sarai sempre con noi!"
         )
         about.run()
         about.destroy()

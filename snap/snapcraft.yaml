@@ -1,0 +1,55 @@
+name: scarpa-connection-manager
+base: core24
+version: '1.2.20'
+summary: A slimmed down desktop application for managing SSH and SFTP.
+description: |
+  SCARPA Connection Manager is a secure, lightweight desktop application 
+  for managing and launching SSH and SFTP connections.
+
+# We start in devmode for testing. We will change this to 'strict' later!
+grade: devel 
+confinement: devmode 
+
+apps:
+  scarpa-connection-manager:
+    # Just point directly to your script!
+    command: src/scarpa_connection_manager.py
+    extensions: [gnome]
+    desktop: data/scarpa_connection_manager.desktop
+    plugs:
+      - network
+      - home
+      - ssh-keys
+      - ssh-public-keys
+      - password-manager-service
+      - removable-media
+    environment:
+      PYTHONPATH: $SNAP/usr/lib/python3/dist-packages:$PYTHONPATH
+
+layout:
+  /usr/share/scarpa_connection_manager:
+    bind: $SNAP/usr/share/scarpa_connection_manager
+    
+  /usr/share/tcltk:                     # <--- Add this redirect!
+    bind: $SNAP/usr/share/tcltk         # <--- Add this redirect!
+      
+parts:
+  scarpa:
+    plugin: dump
+    source: .
+    stage-packages:
+      - python3
+      - python3-gi
+      - gir1.2-gtk-3.0
+      - gir1.2-vte-2.91
+      - python3-paramiko
+      - gnupg
+      - expect
+      - openssh-client
+      - tcl
+      
+    organize:
+      data/icons/hicolor/: usr/share/icons/hicolor/
+      docs/folder.png: usr/share/scarpa_connection_manager/folder.png
+      docs/server.png: usr/share/scarpa_connection_manager/server.png
+      docs/user_guide.html: usr/share/scarpa_connection_manager/user_guide.html

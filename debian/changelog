@@ -41,7 +41,7 @@ scarpa-connection-manager (1.2.19-1) stable; urgency=medium
   * Added checking of accidental overwrite of data in SFTP GUI
   * Drag and Drop to folder location list field
     
- -- Tomas Larsson <larre.b.larsson@gmail.com>  Mon, 30 Mars 2026 14:00:00 +0100
+ -- Tomas Larsson <larre.b.larsson@gmail.com>  Mon, 30 Mar 2026 14:00:00 +0100
 
 scarpa-connection-manager (1.2.18-1) stable; urgency=medium
 
@@ -49,69 +49,69 @@ scarpa-connection-manager (1.2.18-1) stable; urgency=medium
   * Added recursive search function
   * Updated user_guide.html
   
- -- Tomas Larsson <larre.b.larsson@gmail.com>  Fri, 27 Mars 2026 09:00:00 +0100
+ -- Tomas Larsson <larre.b.larsson@gmail.com>  Fri, 27 Mar 2026 09:00:00 +0100
 
 scarpa-connection-manager (1.2.17-2) stable; urgency=medium
 
   * Changes in Depends
   
- -- Tomas Larsson <larre.b.larsson@gmail.com>  Fri, 27 Mars 2026 09:00:00 +0100
+ -- Tomas Larsson <larre.b.larsson@gmail.com>  Fri, 27 Mar 2026 09:00:00 +0100
 
 scarpa-connection-manager (1.2.17-1) stable; urgency=medium
 
   * Updates on README.md
   
- -- Tomas Larsson <larre.b.larsson@gmail.com>  Fri, 27 Mars 2026 09:00:00 +0100
+ -- Tomas Larsson <larre.b.larsson@gmail.com>  Fri, 27 Mar 2026 09:00:00 +0100
 
 scarpa-connection-manager (1.2.16-1) stable; urgency=medium
 
   * Updates on README.md and user_guide.html
   
- -- Tomas Larsson <larre.b.larsson@gmail.com>  Fri, 27 Mars 2026 09:00:00 +0100
+ -- Tomas Larsson <larre.b.larsson@gmail.com>  Fri, 27 Mar 2026 09:00:00 +0100
 
 scarpa-connection-manager (1.2.11-1) stable; urgency=medium
 
   * Adding SFTP GUI functionallity
   * Fixed Release Info for APT Repo 386 warning
   
- -- Tomas Larsson <larre.b.larsson@gmail.com>  Thu, 26 Mars 2026 12:00:00 +0100
+ -- Tomas Larsson <larre.b.larsson@gmail.com>  Thu, 26 Mar 2026 12:00:00 +0100
 
 scarpa-connection-manager (1.2.10-2) stable; urgency=medium
 
   * Smaller changes to user interface
   
- -- Tomas Larsson <larre.b.larsson@gmail.com>  Thu, 12 Dec 2025 15:00:00 +0100
+ -- Tomas Larsson <larre.b.larsson@gmail.com>  Fri, 12 Dec 2025 15:00:00 +0100
 
 
 scarpa-connection-manager (1.2.10-1) stable; urgency=medium
 
   * Added append text to log file
   
- -- Tomas Larsson <larre.b.larsson@gmail.com>  Thu, 08 Dec 2025 15:00:00 +0100
+ -- Tomas Larsson <larre.b.larsson@gmail.com>  Mon, 08 Dec 2025 15:00:00 +0100
 
 scarpa-connection-manager (1.2.9-3) stable; urgency=medium
 
   * Updated user_guide.html
   
- -- Tomas Larsson <larre.b.larsson@gmail.com>  Thu, 08 Dec 2025 15:00:00 +0100
+ -- Tomas Larsson <larre.b.larsson@gmail.com>  Mon, 08 Dec 2025 15:00:00 +0100
 
 scarpa-connection-manager (1.2.9-2) stable; urgency=medium
 
   * Small fix for About version
   
- -- Tomas Larsson <larre.b.larsson@gmail.com>  Thu, 08 Dec 2025 15:00:00 +0100
+ -- Tomas Larsson <larre.b.larsson@gmail.com>  Mon, 08 Dec 2025 15:00:00 +0100
 
 scarpa-connection-manager (1.2.9-1) stable; urgency=medium
 
   * Introduce send a command file at login
   
- -- Tomas Larsson <larre.b.larsson@gmail.com>  Thu, 08 Dec 2025 15:00:00 +0100
+ -- Tomas Larsson <larre.b.larsson@gmail.com>  Mon, 08 Dec 2025 15:00:00 +0100
 
 scarpa-connection-manager (1.2.8-1) stable; urgency=medium
 
   * Introduce inline setting on terminal session window 
   
- -- Tomas Larsson <larre.b.larsson@gmail.com>  Thu, 08 Dec 2025 07:00:00 +0100
+ -- Tomas Larsson <larre.b.larsson@gmail.com>  Mon, 08 Dec 2025 07:00:00 +0100
 
 scarpa-connection-manager (1.2.7-1) stable; urgency=medium
 
@@ -132,26 +132,26 @@ scarpa-connection-manager (1.2.6-1) stable; urgency=medium
   * Changed name of "Global Settings" to "Default Settings"
   * Introduced Anti Idle funciton
   
- -- Tomas Larsson <larre.b.larsson@gmail.com>  Thu, 25 Nov 2025 07:00:00 +0100
+ -- Tomas Larsson <larre.b.larsson@gmail.com>  Tue, 25 Nov 2025 07:00:00 +0100
 
 scarpa-connection-manager (1.2.5-1) stable; urgency=medium
 
   * Fixed all focus on main window
   
- -- Tomas Larsson <larre.b.larsson@gmail.com>  Thu, 25 Nov 2025 07:00:00 +0100
+ -- Tomas Larsson <larre.b.larsson@gmail.com>  Tue, 25 Nov 2025 07:00:00 +0100
 
 scarpa-connection-manager (1.2.4-1) stable; urgency=medium
 
   * Added Global Setting to change default apperance
   * Fixed Paste Server in rightclick meny at Folder
   
- -- Tomas Larsson <larre.b.larsson@gmail.com>  Thu, 25 Nov 2025 07:00:00 +0100
+ -- Tomas Larsson <larre.b.larsson@gmail.com>  Tue, 25 Nov 2025 07:00:00 +0100
 
 scarpa-connection-manager (1.2.3-1) stable; urgency=medium
 
   * Fixed error at atp update
   
- -- Tomas Larsson <larre.b.larsson@gmail.com>  Thu, 25 Nov 2025 07:00:00 +0100
+ -- Tomas Larsson <larre.b.larsson@gmail.com>  Tue, 25 Nov 2025 07:00:00 +0100
 
 scarpa-connection-manager (1.2.2-1) stable; urgency=medium
 
@@ -161,7 +161,7 @@ scarpa-connection-manager (1.2.2-1) stable; urgency=medium
   * Introduced Delete server and folders at push on Delete key on keyboard
   * Introduced Ctrl C and Ctrl V for copy paste servers
   
- -- Tomas Larsson <larre.b.larsson@gmail.com>  Thu, 25 Nov 2025 07:00:00 +0100
+ -- Tomas Larsson <larre.b.larsson@gmail.com>  Tue, 25 Nov 2025 07:00:00 +0100
 
 scarpa-connection-manager (1.2.1-1) stable; urgency=medium
 
