@@ -3973,7 +3973,7 @@ def on_change_passphrase(self, action, param):
             transient_for=parent_window, # Can be None
             modal=True,
             program_name=APP_TITLE,
-            version="1.2.20",
+            version="1.2.21",
             authors=["Copilot, Gemini, Tomas Larsson"],
             artists=["Tomas Larsson"],
             comments="A GTK-based SSH/SFTP session manager.\nRiposa in pace, Aquila di Filottrano. Sarai sempre con noi!"
