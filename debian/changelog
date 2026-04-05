@@ -1,3 +1,10 @@
+scarpa-connection-manager (1.2.21-1) stable; urgency=medium
+
+  * Added SNAP packaging and Chameleon Environment detection
+    
+ -- Tomas Larsson <larre.b.larsson@gmail.com>  Sun, 05 Apr 2026 09:00:00 +0100
+
+
 scarpa-connection-manager (1.2.20-7) stable; urgency=medium
 
   * Changes in User guide and About section
