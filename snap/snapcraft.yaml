@@ -1,6 +1,6 @@
 name: scarpa-connection-manager
 base: core24
-version: '1.2.20'
+version: '1.2.21-1'
 summary: A slimmed down desktop application for managing SSH and SFTP.
 description: |
   SCARPA Connection Manager is a secure, lightweight desktop application 
@@ -8,7 +8,7 @@ description: |
 
 # We start in devmode for testing. We will change this to 'strict' later!
 grade: devel 
-confinement: devmode 
+confinement: strict 
 
 apps:
   scarpa-connection-manager:
@@ -30,9 +30,9 @@ layout:
   /usr/share/scarpa_connection_manager:
     bind: $SNAP/usr/share/scarpa_connection_manager
     
-  /usr/share/tcltk:                     # <--- Add this redirect!
-    bind: $SNAP/usr/share/tcltk         # <--- Add this redirect!
-      
+  /usr/share/tcltk:
+    bind: $SNAP/usr/share/tcltk
+
 parts:
   scarpa:
     plugin: dump
@@ -43,7 +43,7 @@ parts:
       - gir1.2-gtk-3.0
       - gir1.2-vte-2.91
       - python3-paramiko
-      - gnupg
+      - gnupg1             # <--- THE MAGIC FIX
       - expect
       - openssh-client
       - tcl

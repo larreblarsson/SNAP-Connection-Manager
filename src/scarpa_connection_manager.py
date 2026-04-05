@@ -16,6 +16,8 @@ import socketserver
 import threading 
 import paramiko
 import stat
+import getpass
+
 from datetime import datetime
 
 gi.require_version('Gtk', '3.0')
@@ -75,13 +77,41 @@ BUILTIN_SCHEMES = {
     "Solarized dark":        {"term_fg": "#839496", "term_bg": "#002B36", "term_palette": "Solarized Dark"},
     "Custom": None,
 }
-
+# --- CHAMELEON MODE: Detect Environment ---
+IS_SNAP = 'SNAP' in os.environ
 
 # --- Passphrase Hashing Globals ---
 PBKDF2_ITERATIONS = 600000  # Number of iterations for PBKDF2. Higher = more secure but slower.
 SALT_SIZE = 16              # Salt size in bytes (16 bytes = 128 bits)
 # --- End Passphrase Hashing Globals ---
 
+def is_safe_sandbox_path(filename, parent_dialog):
+    # CHAMELEON: If installed via Debian (.deb) or run locally, bypass the sandbox rules entirely!
+    if not IS_SNAP:
+        return True 
+
+    # --- Standard Snap Sandbox Checks ---
+    real_home = os.environ.get('SNAP_REAL_HOME', os.path.expanduser('~'))
+    
+    if filename.startswith(real_home):
+        return True
+        
+    warning = Gtk.MessageDialog(
+        transient_for=parent_dialog, 
+        modal=True,
+        message_type=Gtk.MessageType.WARNING,
+        buttons=Gtk.ButtonsType.OK,
+        text="Sandbox Security Restriction"
+    )
+    warning.format_secondary_text(
+        "Because this application runs inside a secure Linux Sandbox, it cannot read or save files in system folders like /tmp or /etc.\n\n"
+        f"Please select a location inside your home folder:\n{real_home}"
+    )
+    warning.run()
+    warning.destroy()
+    
+    return False
+    
 # --- Passphrase Hashing Helper Functions ---
 def generate_salt(size=SALT_SIZE):
     """Generates a random salt as bytes."""
@@ -132,7 +162,7 @@ def save_settings(settings):
         print(f"Error: Could not save settings to {SETTINGS_FILE}: {ex}", file=sys.stderr)
 
 
-def load_servers(passphrase): # NOW REQUIRES PASSPHRASE
+def load_servers(passphrase): 
     """
     Decrypts ssh_servers.json.gpg and loads the server list from it.
     """
@@ -146,18 +176,31 @@ def load_servers(passphrase): # NOW REQUIRES PASSPHRASE
         tf = tempfile.NamedTemporaryFile("w", delete=False)
         tf.close()
         
-        # Run GPG to decrypt the file
-        result = subprocess.run(
-            [
-                "gpg", "--batch", "--yes",
+        # --- CHAMELEON GPG LOGIC ---
+        if IS_SNAP:
+            gpg_cmd = [
+                "gpg1", "--batch", "--yes",
                 "--passphrase", passphrase,
                 "--output", tf.name,
                 "--decrypt", enc_path
-            ],
+            ]
+        else:
+            gpg_cmd = [
+                "gpg", "--batch", "--yes",
+                "--no-tty", "--pinentry-mode", "loopback",
+                "--passphrase", passphrase,
+                "--output", tf.name,
+                "--decrypt", enc_path
+            ]
+
+        # Run GPG to decrypt the file
+        result = subprocess.run(
+            gpg_cmd,
             check=False,
             capture_output=True,
             text=True
         )
+        # ---------------------------
 
         if result.returncode != 0:
             # Handle decryption failure specifically
@@ -171,7 +214,7 @@ def load_servers(passphrase): # NOW REQUIRES PASSPHRASE
             else:
                 raise RuntimeError(f"GPG decryption failed with exit code {result.returncode}.\n\n"
                                    f"STDOUT:\n{result.stdout}\n\n"
-                                   f"STDERR:\n{err_msg}") # Use err_msg as it's already stripped
+                                   f"STDERR:\n{err_msg}") 
 
         # Load the data from the decrypted temp file
         with open(tf.name, "r") as f:
@@ -210,18 +253,32 @@ def save_servers(servers, passphrase): # NOW REQUIRES PASSPHRASE
         # 2) encrypt with GPG → ssh_servers.json.gpg
         enc_path = SERVER_FILE + ".gpg"
         
-        result = subprocess.run(
-            [
-                "gpg", "--batch", "--yes",
+        # --- CHAMELEON GPG LOGIC ---
+        if IS_SNAP:
+            gpg_cmd = [
+                "gpg1", "--batch", "--yes",
                 "--symmetric", "--cipher-algo", "AES256",
                 "--passphrase", passphrase,
                 "-o", enc_path,
                 tf.name
-            ],
+            ]
+        else:
+            gpg_cmd = [
+                "gpg", "--batch", "--yes",
+                "--no-tty", "--pinentry-mode", "loopback",
+                "--symmetric", "--cipher-algo", "AES256",
+                "--passphrase", passphrase,
+                "-o", enc_path,
+                tf.name
+            ]
+
+        result = subprocess.run(
+            gpg_cmd,
             check=False,
             capture_output=True,
             text=True
         )
+        # ---------------------------
 
         # 3) clean up temp and any old plaintext
         os.remove(tf.name)
@@ -239,34 +296,73 @@ def save_servers(servers, passphrase): # NOW REQUIRES PASSPHRASE
         # Re-raise the exception for ScarpaConnectionManager to handle with its _error method
         raise ex
 
-# --- Helper functions for dialogs ---
-def browse_key(parent, entry):
+def browse_key(parent_dialog, key_entry):
+    # 1. Create the FileChooser dialog
     dlg = Gtk.FileChooserDialog(
-        title="Select private key", parent=parent,
-        action=Gtk.FileChooserAction.OPEN
+        title="Select SSH Key",
+        parent=parent_dialog,
+        action=Gtk.FileChooserAction.OPEN,
     )
+    
+    # 2. Force it to the real home directory
+    real_home = os.environ.get('SNAP_REAL_HOME', os.path.expanduser('~'))
+    dlg.set_current_folder(real_home)
+
+    # 3. Add buttons
     dlg.add_buttons(
         Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
-        Gtk.STOCK_OPEN,   Gtk.ResponseType.OK
+        Gtk.STOCK_OPEN,   Gtk.ResponseType.OK,
     )
+
+    # 4. Run the dialog and wait for the user
     if dlg.run() == Gtk.ResponseType.OK:
-        entry.set_text(dlg.get_filename())
+        # User clicked Open! Grab the filename FIRST:
+        filename = dlg.get_filename()
+        
+        # Now check if the filename they chose is safe:
+        if not is_safe_sandbox_path(filename, dlg):
+            dlg.destroy()
+            return # It was outside the home folder, stop here!
+            
+        # It is safe! Update the text box:
+        key_entry.set_text(filename)
+        
+    # Always destroy the dialog when done
     dlg.destroy()
 
-
-def browse_log(parent, entry):
+def browse_log(parent_dialog, log_entry):
+    # 1. Create the dialog
     dlg = Gtk.FileChooserDialog(
-        title="Select log file", parent=parent,
-        action=Gtk.FileChooserAction.SAVE
+        title="Select Log File",
+        parent=parent_dialog,
+        action=Gtk.FileChooserAction.SAVE,
     )
+    
+    # 2. Force it to the real home directory
+    real_home = os.environ.get('SNAP_REAL_HOME', os.path.expanduser('~'))
+    dlg.set_current_folder(real_home)
+
+    # 3. Add buttons
     dlg.add_buttons(
         Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
-        Gtk.STOCK_SAVE,   Gtk.ResponseType.OK
+        Gtk.STOCK_SAVE,   Gtk.ResponseType.OK,
     )
-    if dlg.run() == Gtk.ResponseType.OK:
-        entry.set_text(dlg.get_filename())
-    dlg.destroy()
 
+    # 4. Run the dialog and wait for the user
+    if dlg.run() == Gtk.ResponseType.OK:
+        # User clicked Save! Grab the filename FIRST:
+        filename = dlg.get_filename()
+        
+        # Now check if the filename they chose is safe:
+        if not is_safe_sandbox_path(filename, dlg):
+            dlg.destroy()
+            return # It was outside the home folder, stop here!
+            
+        # It is safe! Update the text box:
+        log_entry.set_text(filename)
+        
+    # Always destroy the dialog when done
+    dlg.destroy()
 
 def center(window):
     """Centers the window. Only call if window is already shown."""
@@ -640,8 +736,6 @@ class SFTPWindow(Gtk.Window):
             if i < len(parts) - 1: add_separator()
             
         box.show_all()
-
-
 
     # --- New Method: Handling drops on breadcrumb buttons ---
     def on_breadcrumb_drop_received(self, button, context, x, y, selection, info, time, target_path, dest_pane):
@@ -1837,9 +1931,10 @@ class PassphraseInputDialog(Gtk.Dialog):
     def __init__(self, parent, title, prompt_text, confirm_text=None, show_retry_message=False):
         super().__init__(
             title=title,
-            transient_for=parent, # parent can now be None for early dialogs
-            flags=Gtk.DialogFlags.MODAL
-        )
+            transient_for=parent, 
+            modal=True
+        )        
+        
         self.add_buttons(
             Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
             Gtk.STOCK_OK, Gtk.ResponseType.OK
@@ -1897,7 +1992,7 @@ def _vte_spawn_callback(terminal, pid, error, user_data):
 
 class ScarpaConnectionManager(Gtk.Application):
     def __init__(self):
-        super().__init__(application_id=APP_ID)
+        super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.NON_UNIQUE)
         # Initialize log_buffer early so log() method can always write to it
         self.log_buffer = Gtk.TextBuffer() 
         self.log_text_view = None # Will be set in init_ui_elements
@@ -2245,7 +2340,6 @@ class ScarpaConnectionManager(Gtk.Application):
         if hasattr(self, "servers_menu_items"):
             self.servers_menu_items["Paste"].set_sensitive(can_paste)
 
-
     # --- New Passphrase Management Methods (add these inside ScarpaConnectionManager) ---
     def set_master_passphrase(self):
         """Prompts user to set a new master passphrase for the first time."""
@@ -2300,7 +2394,6 @@ class ScarpaConnectionManager(Gtk.Application):
                 self._error("Master passphrase not set. Application will quit.")
                 self.master_passphrase = None # Ensure it's None if user cancels
                 return
-
 
     def verify_master_passphrase(self):
         """Prompts user to verify their master passphrase."""
@@ -2358,7 +2451,6 @@ class ScarpaConnectionManager(Gtk.Application):
         self._error("Maximum passphrase attempts reached. Application will quit.")
         self.master_passphrase = None
     # --- End New Passphrase Management Methods ---
-
 
     # ── Simple Input Dialog ────────────────────────────────────────────────
     def _simple_input(self, title, prompt=None, default_text=""):
@@ -2600,6 +2692,8 @@ class ScarpaConnectionManager(Gtk.Application):
             parent=self.win,
             action=Gtk.FileChooserAction.OPEN,
         )
+        real_home = os.environ.get('SNAP_REAL_HOME', f"/home/{getpass.getuser()}")
+        dlg.set_current_folder(real_home)
         dlg.add_buttons(
             Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
             Gtk.STOCK_OPEN,   Gtk.ResponseType.OK,
@@ -2617,6 +2711,13 @@ class ScarpaConnectionManager(Gtk.Application):
     
         if dlg.run() == Gtk.ResponseType.OK:
             filename = dlg.get_filename()
+            
+            # 1. Check if the path is safe
+            if not is_safe_sandbox_path(filename, dlg):
+                dlg.destroy()
+                return # Stop here if it's outside the home folder!
+                
+            # 2. If safe, close the dialog and proceed
             dlg.destroy()
             try:
                 is_encrypted = filename.lower().endswith(".gpg")
@@ -2627,18 +2728,28 @@ class ScarpaConnectionManager(Gtk.Application):
                     tf = tempfile.NamedTemporaryFile("w", delete=False)
                     tf.close()
                     
-                    # Ensure subprocess captures output for debugging
+                    # --- CHAMELEON GPG LOGIC ---
+                    if IS_SNAP:
+                        gpg_cmd = [
+                            "gpg1", "--batch", "--yes", 
+                            "--passphrase", self.master_passphrase, 
+                            "--output", tf.name, "--decrypt", filename
+                        ]
+                    else:
+                        gpg_cmd = [
+                            "gpg", "--batch", "--yes", 
+                            "--no-tty", "--pinentry-mode", "loopback", 
+                            "--passphrase", self.master_passphrase, 
+                            "--output", tf.name, "--decrypt", filename
+                        ]
+
                     result = subprocess.run(
-                        [
-                            "gpg", "--batch", "--yes",
-                            "--passphrase", self.master_passphrase, # USE MASTER PASSPHRASE
-                            "--output", tf.name,
-                            "--decrypt", filename
-                        ],
-                        check=False, # Don't raise exception automatically
+                        gpg_cmd,
+                        check=False,
                         capture_output=True,
                         text=True
                     )
+                    # ---------------------------
                     
                     if result.returncode != 0:
                         if os.path.exists(tf.name): os.remove(tf.name) # Clean up temp file
@@ -2709,6 +2820,8 @@ class ScarpaConnectionManager(Gtk.Application):
             parent=self.win,
             action=Gtk.FileChooserAction.SAVE,
         )
+        real_home = os.environ.get('SNAP_REAL_HOME', f"/home/{getpass.getuser()}")
+        dlg.set_current_folder(real_home)
         dlg.add_buttons(
             Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
             Gtk.STOCK_SAVE,   Gtk.ResponseType.OK,
@@ -2755,6 +2868,13 @@ class ScarpaConnectionManager(Gtk.Application):
 
         if dlg.run() == Gtk.ResponseType.OK:
             filename = dlg.get_filename()
+            
+            # 1. Check if the path is safe
+            if not is_safe_sandbox_path(filename, dlg):
+                dlg.destroy()
+                return # Stop here if it's outside the home folder!
+                
+            # 2. If safe, close the dialog and proceed
             dlg.destroy()
             try:
                 is_encrypted = filename.lower().endswith(".gpg")
@@ -2772,19 +2892,31 @@ class ScarpaConnectionManager(Gtk.Application):
                     tf.flush()
                     tf.close()
                     
-                    # Ensure subprocess captures output for debugging
-                    result = subprocess.run(
-                        [
-                            "gpg", "--batch", "--yes",
+                    # --- CHAMELEON GPG LOGIC ---
+                    if IS_SNAP:
+                        gpg_cmd = [
+                            "gpg1", "--batch", "--yes",
                             "--symmetric", "--cipher-algo", "AES256",
-                            "--passphrase", self.master_passphrase, # USE MASTER PASSPHRASE
-                            "-o", filename,
-                            tf.name
-                        ],
-                        check=False, # Don't raise exception automatically
+                            "--passphrase", self.master_passphrase, 
+                            "-o", filename, tf.name
+                        ]
+                    else:
+                        gpg_cmd = [
+                            "gpg", "--batch", "--yes",
+                            "--no-tty", "--pinentry-mode", "loopback", 
+                            "--symmetric", "--cipher-algo", "AES256",
+                            "--passphrase", self.master_passphrase, 
+                            "-o", filename, tf.name
+                        ]
+
+                    result = subprocess.run(
+                        gpg_cmd,
+                        check=False,
                         capture_output=True,
                         text=True
                     )
+                    # ---------------------------
+ 
                     os.remove(tf.name) # Clean up temp file
                     
                     if result.returncode != 0:
@@ -2930,7 +3062,7 @@ class ScarpaConnectionManager(Gtk.Application):
     
             dlg.destroy()
 
-    def on_change_passphrase(self, action, param):
+def on_change_passphrase(self, action, param):
         # 0) Ensure we have servers in memory and a verified session passphrase
         if not getattr(self, "master_passphrase", None):
             return self._error("No active passphrase in session. Restart the app and unlock first.")
@@ -2981,15 +3113,29 @@ class ScarpaConnectionManager(Gtk.Application):
             json.dump(self.servers, tf, indent=4)
             tf.flush(); tf.close()
     
-            result = subprocess.run(
-                [
-                    "gpg", "--batch", "--yes",
+            # --- CHAMELEON GPG LOGIC ---
+            if IS_SNAP:
+                gpg_cmd = [
+                    "gpg1", "--batch", "--yes",
                     "--symmetric", "--cipher-algo", "AES256",
                     "--passphrase", new_pass,
                     "-o", enc_tmp, tf.name
-                ],
+                ]
+            else:
+                gpg_cmd = [
+                    "gpg", "--batch", "--yes",
+                    "--no-tty", "--pinentry-mode", "loopback",
+                    "--symmetric", "--cipher-algo", "AES256",
+                    "--passphrase", new_pass,
+                    "-o", enc_tmp, tf.name
+                ]
+
+            result = subprocess.run(
+                gpg_cmd,
                 check=False, capture_output=True, text=True
             )
+            # ---------------------------
+
             os.remove(tf.name); tf = None
     
             if result.returncode != 0:
@@ -3027,7 +3173,7 @@ class ScarpaConnectionManager(Gtk.Application):
                     os.rename(enc_bak, enc_path)
             finally:
                 self._error(f"Failed to change passphrase: {e}")
-    
+   
     # ── Folder Commands (New/Rename/Delete) ───────────────────────────────────────
     def on_new_folder(self, action, param):
         # prompt for folder name
@@ -3239,9 +3385,11 @@ class ScarpaConnectionManager(Gtk.Application):
                 forward_opts.append(f'-R {int(rule["source_port"])}:{rule["dest_host"]}:{int(rule["dest_port"])}')
     
         auth      = cfg.get("auth_method")
-        cmd_parts = ["spawn", "ssh"]
+        safe_known_hosts = os.path.join(get_user_data_dir(), "known_hosts")
+        cmd_parts = ["spawn", "ssh", f"-oUserKnownHostsFile={safe_known_hosts}"]
         if auth == "password":
             cmd_parts.append("-o PubkeyAuthentication=no")
+
         cmd_parts.append("-t")
         cmd_parts.extend(forward_opts)
         if auth == "key_file" and cfg.get("key_file"):
@@ -3304,10 +3452,11 @@ class ScarpaConnectionManager(Gtk.Application):
     
         key_opt    = f"-i {cfg['key_file']}" if auth == "key_file" and cfg.get("key_file") else ""
         pubkey_opt = "-o PubkeyAuthentication=no" if auth == "password" else ""
-        
-        cmd_parts = ["spawn", "sftp", "-oBatchMode=no"]
+        safe_known_hosts = os.path.join(get_user_data_dir(), "known_hosts")
+        cmd_parts = ["spawn", "sftp", f"-oUserKnownHostsFile={safe_known_hosts}", "-oBatchMode=no"]
         if pubkey_opt:
             cmd_parts.append(pubkey_opt)
+
         if key_opt:
             cmd_parts.extend(key_opt.split())
         cmd_parts.extend(["-P", str(port), f'{cfg["user"]}@{cfg["host"]}'])
@@ -4321,13 +4470,30 @@ class ScarpaConnectionManager(Gtk.Application):
         chk_cmd = Gtk.CheckButton(label="Send file content at login")
         ent_cmd = Gtk.Entry(); ent_cmd.set_size_request(280, -1)
         btn_cmd = Gtk.Button(label="Browse")
+
         def _browse_cmd(w):
+            # Create the file browser as 'd'
             d = Gtk.FileChooserDialog("Select Command File", dlg, Gtk.FileChooserAction.OPEN)
+            real_home = os.environ.get('SNAP_REAL_HOME', os.path.expanduser('~'))
+            # Tell 'd' (the file browser) to set the folder, NOT 'dlg'!
+            d.set_current_folder(real_home)
             d.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL, Gtk.STOCK_OPEN, Gtk.ResponseType.OK)
-            if d.run() == Gtk.ResponseType.OK: ent_cmd.set_text(d.get_filename())
+            
+            if d.run() == Gtk.ResponseType.OK:
+                filename = d.get_filename()
+                
+                if not is_safe_sandbox_path(filename, d):
+                    d.destroy()
+                    return
+
+                ent_cmd.set_text(filename)
+                
             d.destroy()
         btn_cmd.connect("clicked", _browse_cmd)
-        cmd_grid.attach(chk_cmd, 0, 0, 2, 1); cmd_grid.attach(ent_cmd, 0, 1, 1, 1); cmd_grid.attach(btn_cmd, 1, 1, 1, 1)
+        cmd_grid.attach(chk_cmd, 0, 0, 2, 1) 
+        cmd_grid.attach(ent_cmd, 0, 1, 1, 1) 
+        cmd_grid.attach(btn_cmd, 1, 1, 1, 1)
+
         def _toggle_cmd(chk):
             sen = chk.get_active()
             ent_cmd.set_sensitive(sen); btn_cmd.set_sensitive(sen)
@@ -4367,24 +4533,6 @@ class ScarpaConnectionManager(Gtk.Application):
             _update_log_states()
             _toggle_idle(chk_idle)
             _toggle_cmd(chk_cmd)
-    
-
-
-
-
-
-		
-		
-
-
-
-
-
-
-
-
-
-
 
         # ──  Login Actions Tab ──────────────────────
         seq_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin=10)
@@ -4479,8 +4627,6 @@ class ScarpaConnectionManager(Gtk.Application):
                     int(rule.get("dest_port", 0)),
                     rule
                 ])
-
-
 
         # ── Appearance Tab (Grid layout for alignment) ───────────────────────────────
         app_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, margin=12)
@@ -4822,6 +4968,9 @@ class ScarpaConnectionManager(Gtk.Application):
         if dlg.run() == Gtk.ResponseType.OK:
             t = type_cb.get_active_text()
             rule = {"type": t, "source_port": int(src_port_spin.get_value())}
+            if not is_safe_sandbox_path(filename, dlg):
+                dlg.destroy()
+                return # Stop the process and make them try again!
             if t != "Dynamic":
                 rule["dest_host"] = dest_host_entry.get_text().strip() or "localhost"
                 rule["dest_port"] = int(dest_port_spin.get_value())
@@ -4833,16 +4982,12 @@ class ScarpaConnectionManager(Gtk.Application):
                 store.append(row)
         dlg.destroy()
     
-    
     def _delete_selected_from_view(self, view, store):
         """Delete the currently selected rows from a Gtk.TreeView/ListStore."""
         model, paths = view.get_selection().get_selected_rows()
         for p in sorted(paths, reverse=True):
             it = store.get_iter(p)
             store.remove(it)
-    
-
-    
 
     def _edit_seq_selected(self, view, store, parent):
         model, paths = view.get_selection().get_selected_rows()
@@ -4857,7 +5002,6 @@ class ScarpaConnectionManager(Gtk.Application):
             it = store.get_iter(p)
             store.remove(it)
 
-
     def _move_seq_up(self, view, store):
         model, paths = view.get_selection().get_selected_rows()
         if not paths: return
@@ -4868,7 +5012,6 @@ class ScarpaConnectionManager(Gtk.Application):
         store.remove(it)
         new_it = store.insert(row-1, [e, s, h])
         view.get_selection().select_iter(new_it)
-
 
     def _move_seq_down(self, view, store):
         model, paths = view.get_selection().get_selected_rows()
