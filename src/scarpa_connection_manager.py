@@ -3062,7 +3062,7 @@ class ScarpaConnectionManager(Gtk.Application):
     
             dlg.destroy()
 
-def on_change_passphrase(self, action, param):
+    def on_change_passphrase(self, action, param):
         # 0) Ensure we have servers in memory and a verified session passphrase
         if not getattr(self, "master_passphrase", None):
             return self._error("No active passphrase in session. Restart the app and unlock first.")
