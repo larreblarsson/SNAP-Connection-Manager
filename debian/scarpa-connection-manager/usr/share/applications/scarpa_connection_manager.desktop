@@ -1,8 +1,0 @@
-[Desktop Entry]
-Name=Scarpa Connection Manager
-Exec=/usr/bin/scarpa_connection_manager.py
-Icon=scarpa_icon
-Terminal=false
-Type=Application
-StartupWMClass=scarpa_connection_manager.py
-Categories=Utility;Network;

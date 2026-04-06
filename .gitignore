@@ -2,3 +2,10 @@
 offline-bundle/
 *.gpg
 *.snap
+# Debian build artifacts
+debian/scarpa-connection-manager/
+debian/.debhelper/
+debian/debhelper-build-stamp
+*.deb
+*.buildinfo
+*.changes
