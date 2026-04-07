@@ -15,7 +15,7 @@ apps:
     # Just point directly to your script!
     command: src/scarpa_connection_manager.py
     extensions: [gnome]
-    desktop: data/scarpa_connection_manager.desktop
+    desktop: data/snap_desktop.desktop
     plugs:
       - network
       - home

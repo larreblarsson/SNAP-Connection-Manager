@@ -179,7 +179,7 @@ def load_servers(passphrase):
         # --- CHAMELEON GPG LOGIC ---
         if IS_SNAP:
             gpg_cmd = [
-                "gpg1", "--batch", "--yes",
+                "gpg", "--batch", "--yes",
                 "--passphrase", passphrase,
                 "--output", tf.name,
                 "--decrypt", enc_path
