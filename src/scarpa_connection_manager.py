@@ -2358,12 +2358,12 @@ class ScarpaConnectionManager(Gtk.Application):
                 
                 if not passphrase:
                     self._error("Passphrase cannot be empty.")
-                    # dlg.show_retry_error() # No need, dialog is destroyed and re-shown
+                    #dlg.destroy()
                     continue # Loop back to prompt again
                 
                 if passphrase != confirm_passphrase:
                     self._error("Passphrases do not match. Please try again.")
-                    # dlg.show_retry_error() # No need
+                    dlg.destroy()
                     continue # Loop back
                 
                 # Generate salt and hash the passphrase
