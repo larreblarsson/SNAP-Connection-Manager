@@ -1,4 +1,4 @@
-Desktop Entry]
+[Desktop Entry]
 Name=SCARPA Connection Manager
 Comment=Manage SSH and SFTP Connections
 Exec=connection-manager-scarpa
