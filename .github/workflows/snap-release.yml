@@ -1,0 +1,29 @@
+name: Build and Publish Snap
+
+# This workflow triggers ONLY when you push a tag starting with "v" (e.g., v1.2.22)
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publish-snap:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. Grab your code from GitHub
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Build the Snap using Canonical's official builder
+      - name: Build Snap
+        uses: snapcore/action-build@v1
+        id: build
+
+      # 3. Upload and release it to the stable channel
+      - name: Publish Snap to Store
+        uses: snapcore/action-publish@v1
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        with:
+          snap: ${{ steps.build.outputs.snap }}
+          release: stable
