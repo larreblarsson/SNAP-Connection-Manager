@@ -7,7 +7,7 @@ description: |
   for managing and launching SSH and SFTP connections.
 
 # We start in devmode for testing. We will change this to 'strict' later!
-grade: devel 
+grade: stable 
 confinement: strict 
 
 apps:
