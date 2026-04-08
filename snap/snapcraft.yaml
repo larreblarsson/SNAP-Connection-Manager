@@ -20,7 +20,7 @@ description: |
 
 icon: data/icons/hicolor/512x512/apps/scarpa_icon.png
 
-grade: devel 
+grade: stable
 confinement: strict 
 
 apps:
