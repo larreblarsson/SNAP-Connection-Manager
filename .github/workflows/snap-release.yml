@@ -4,7 +4,7 @@ name: Build and Publish Snap
 on:
   push:
     tags:
-      - 'v*'
+      - '*'
 
 jobs:
   publish-snap:
