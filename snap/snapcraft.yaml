@@ -1,9 +1,9 @@
 name: connection-manager-scarpa
 base: core24
-version: '1.2.21-5'
+version: '1.2.21-6'
 summary: A slimmed down desktop application for managing SSH and SFTP.
 description: |
-  SCARPA Connection Manager is a secure, lightweight desktop application 
+  Scarpa Connection Manager is a secure, lightweight desktop application 
   for managing and launching SSH and SFTP connections.
 
 # We start in devmode for testing. We will change this to 'strict' later!
