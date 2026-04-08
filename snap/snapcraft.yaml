@@ -3,21 +3,23 @@ base: core22
 version: '1.2.21-7'
 summary: A slimmed down desktop application for managing SSH and SFTP.
 description: |
-  **SCARPA Connection Manager** is a secure, GTK3-based desktop application designed to streamline how you manage and launch SSH and SFTP connections. It organizes server configurations into folders, automates login sequences, and protects your sensitive data with a robust GnuPG-based encryption system.
+  **SCARPA Connection Manager** is a secure, GTK3-based desktop application designed to streamline
+  how you manage and launch SSH and SFTP connections. It organizes server configurations into
+  folders, automates login sequences, and protects your sensitive data with a robust GnuPG-based
+  encryption system.
   
   **Core Features:**
-  
-  * **Server & Folder Management:** Organize servers hierarchically. Supports drag-and-drop reordering, inline renaming, and quick copy/paste via keyboard shortcuts.
-  * **Embedded VTE Terminal:** Features smart copy/paste, auto-resize sync with the remote host, and support for advanced port forwarding (Local, Remote, Dynamic).
-  * **Connection Automation:** Automate login sequences with built-in Expect/Send steps (with passwords hidden in the UI), or authenticate securely using standard key files.
-  * **Dual-Pane SFTP Manager:** Visually manage files between your local machine and remote servers side-by-side. Supports drag-and-drop, recursive search, smart transfer resuming, and real-time status updates.
-  * **"Super Safe" Encryption:** All server configurations and credentials are encrypted at rest using AES256 via GnuPG. Your master passphrase is heavily hashed (PBKDF2-HMAC-SHA256), and data is only decrypted in memory during active sessions.
-  * **Customization:** Set global defaults or customize the font, color palette (Tango, Solarized, etc.), and scrollback buffer on a per-server basis.
-  * **Data Portability:** Easily export and import your configurations as either plaintext JSON or encrypted GPG files.
+  * **Server & Folder Management:** Organize servers hierarchically. Supports drag-and-drop.
+  * **Embedded VTE Terminal:** Features smart copy/paste and auto-resize sync.
+  * **Connection Automation:** Automate login sequences or use standard key files.
+  * **Dual-Pane SFTP Manager:** Visually manage files side-by-side.
+  * **Super Safe Encryption:** All credentials are encrypted using AES256 via GnuPG.
+  * **Customization:** Customize the font, color palette, and scrollback buffer.
+  * **Data Portability:** Export and import configurations easily.
   
   A GTK-based SSH/SFTP session manager.
   Riposa in pace, Aquila di Filottrano. Sarai sempre con noi!
-  	
+   	
 icon: data/icons/hicolor/512x512/apps/scarpa_icon.png
 
 grade: stable 
