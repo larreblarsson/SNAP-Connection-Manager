@@ -3503,14 +3503,30 @@ class ScarpaConnectionManager(Gtk.Application):
         key_opt    = f"-i {cfg['key_file']}" if auth == "key_file" and cfg.get("key_file") else ""
         pubkey_opt = "-o PubkeyAuthentication=no" if auth == "password" else ""
         safe_known_hosts = os.path.join(get_user_data_dir(), "known_hosts")
-        cmd_parts = ["spawn", "sftp", f"-oUserKnownHostsFile={safe_known_hosts}", "-oStrictHostKeyChecking=accept-new", "-oBatchMode=no"]
+        
+        # --- NEW: Fix SFTP transport binary for the Snap Sandbox ---
+        ssh_binary = "ssh" 
+        snap_path = os.environ.get("SNAP")
+        if snap_path:
+            ssh_binary = os.path.join(snap_path, "usr", "bin", "ssh")
+
+        # Create the command with the new -S flag
+        cmd_parts = [
+            "spawn", "sftp", 
+            f"-S {ssh_binary}", 
+            f"-oUserKnownHostsFile={safe_known_hosts}", 
+            "-oStrictHostKeyChecking=accept-new", 
+            "-oBatchMode=no"
+        ]
+        
         if pubkey_opt:
             cmd_parts.append(pubkey_opt)
 
         if key_opt:
             cmd_parts.extend(key_opt.split())
+            
         cmd_parts.extend(["-P", str(port), f'{cfg["user"]}@{cfg["host"]}'])
-        
+
         lines = [" ".join(cmd_parts) + "\n", "log_user 1\n"]
         
         if auth == "password" and cfg.get("password"):
@@ -3923,7 +3939,7 @@ class ScarpaConnectionManager(Gtk.Application):
                 if os.path.exists(tf.name):
                     os.remove(tf.name)
             
-            #terminal.connect("child-exited", on_child_exited)
+            terminal.connect("child-exited", on_child_exited)
             
             argv = [expect_path, "-f", tf.name]
 
