@@ -50,10 +50,39 @@ def get_user_data_dir():
 APP_DATA_DIR = get_user_data_dir()
 SERVER_FILE    = os.path.join(APP_DATA_DIR, "ssh_servers.json")
 SETTINGS_FILE  = os.path.join(APP_DATA_DIR, "scarpa_cm_settings.json")
-DATA_DIR       = "/usr/share/scarpa_connection_manager/"
-FOLDER_ICON    = os.path.join(DATA_DIR, "folder.png")
-SERVER_ICON    = os.path.join(DATA_DIR, "server.png")
-HELP_FILE_PATH = os.path.join(DATA_DIR, "user_guide.html")
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(SCRIPT_DIR) 
+
+def get_asset_path(filename, top_folder="docs"):
+    """
+    Dynamically finds static assets across Debian (.deb), Snap, or Local Development.
+    """
+    # 1. Debian system path (Debian usually installs files flat in this directory)
+    system_path = os.path.join("/usr/share/scarpa_connection_manager", filename)
+    if os.path.exists(system_path):
+        return system_path
+        
+    # 2. Snap environment path
+    snap_base = os.environ.get("SNAP")
+    if snap_base:
+        # Check inside the specific folder in the snap
+        snap_path = os.path.join(snap_base, top_folder, filename)
+        if os.path.exists(snap_path):
+            return snap_path
+            
+    # 3. Local Development path (running via python3 locally)
+    local_path = os.path.join(PROJECT_ROOT, top_folder, filename)
+    return local_path
+
+# --- Apply the dynamic function to your assets ---
+# Now we tell it explicitly to look in the "docs" folder!
+FOLDER_ICON    = get_asset_path("folder.png", "docs")
+SERVER_ICON    = get_asset_path("server.png", "docs")
+HELP_FILE_PATH = get_asset_path("user_guide.html", "docs")
+
+
+
+
 APP_ID         = "com.example.scarpacm"
 APP_TITLE      = "Scarpa Connection Manager"
 ROOT_FOLDER    = "Session"
@@ -3407,7 +3436,7 @@ class ScarpaConnectionManager(Gtk.Application):
     
         auth      = cfg.get("auth_method")
         safe_known_hosts = os.path.join(get_user_data_dir(), "known_hosts")
-        cmd_parts = ["spawn", "ssh", f"-oUserKnownHostsFile={safe_known_hosts}"]
+        cmd_parts = ["spawn", "ssh", f"-oUserKnownHostsFile={safe_known_hosts}", "-oStrictHostKeyChecking=accept-new"]
         if auth == "password":
             cmd_parts.append("-o PubkeyAuthentication=no")
 
@@ -3474,7 +3503,7 @@ class ScarpaConnectionManager(Gtk.Application):
         key_opt    = f"-i {cfg['key_file']}" if auth == "key_file" and cfg.get("key_file") else ""
         pubkey_opt = "-o PubkeyAuthentication=no" if auth == "password" else ""
         safe_known_hosts = os.path.join(get_user_data_dir(), "known_hosts")
-        cmd_parts = ["spawn", "sftp", f"-oUserKnownHostsFile={safe_known_hosts}", "-oBatchMode=no"]
+        cmd_parts = ["spawn", "sftp", f"-oUserKnownHostsFile={safe_known_hosts}", "-oStrictHostKeyChecking=accept-new", "-oBatchMode=no"]
         if pubkey_opt:
             cmd_parts.append(pubkey_opt)
 
@@ -3894,7 +3923,7 @@ class ScarpaConnectionManager(Gtk.Application):
                 if os.path.exists(tf.name):
                     os.remove(tf.name)
             
-            terminal.connect("child-exited", on_child_exited)
+            #terminal.connect("child-exited", on_child_exited)
             
             argv = [expect_path, "-f", tf.name]
 
