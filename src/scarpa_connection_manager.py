@@ -93,9 +93,19 @@ def is_safe_sandbox_path(filename, parent_dialog):
     # --- Standard Snap Sandbox Checks ---
     real_home = os.environ.get('SNAP_REAL_HOME', os.path.expanduser('~'))
     
-    if filename.startswith(real_home):
+    # 1. Fully resolve symlinks for both the target path and the home directory
+    resolved_path = os.path.realpath(os.path.abspath(filename))
+    resolved_home = os.path.realpath(os.path.abspath(real_home))
+    
+    # 2. Check if the resolved path is inside the user's real home folder
+    if resolved_path.startswith(resolved_home):
         return True
         
+    # 3. Allow access to USB drives and external mounts (if using removable-media plug)
+    if resolved_path.startswith('/media/') or resolved_path.startswith('/mnt/') or resolved_path.startswith('/run/media/'):
+        return True
+        
+    # If we get here, it's a restricted folder! Show the warning.
     warning = Gtk.MessageDialog(
         transient_for=parent_dialog, 
         modal=True,
@@ -1678,6 +1688,17 @@ class SFTPWindow(Gtk.Window):
         if self.transfer_active or self.search_active:
             self.set_status("A task is already active!")
             return
+
+        # 1. If Uploading (Local -> Remote): Check the local source files
+        if src_pane == "local":
+            for src_path in src_paths:
+                if not is_safe_sandbox_path(src_path, self):
+                    return # A file is outside the sandbox, stop the transfer!
+
+        # 2. If Downloading (Remote -> Local): Check the local destination folder
+        if dst_pane == "local":
+            if not is_safe_sandbox_path(dst_dir, self):
+                return # The destination folder is outside the sandbox, stop the transfer!
 
         # Pre-calculate destinations and check for conflicts before starting
         transfer_tasks = []
