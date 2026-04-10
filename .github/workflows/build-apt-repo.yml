@@ -76,12 +76,12 @@ jobs:
           # --- FIX: Generate Release config on the fly ---
           cat << 'EOF' > apt-release.conf
           APT::FTPArchive::Release::Origin "Tomas Larsson";
-          APT::FTPArchive::Release::Label "SCARPA Connection Manager";
+          APT::FTPArchive::Release::Label "Scarpa Connection Manager";
           APT::FTPArchive::Release::Suite "stable";
           APT::FTPArchive::Release::Codename "stable";
           APT::FTPArchive::Release::Architectures "amd64 all";
           APT::FTPArchive::Release::Components "main";
-          APT::FTPArchive::Release::Description "SCARPA Connection Manager Repository";
+          APT::FTPArchive::Release::Description "Scarpa Connection Manager Repository";
           EOF
 
           # Generate Release with the new config
@@ -109,7 +109,7 @@ jobs:
 
       - name: Verify published Packages
         run: |
-          curl -s https://larreblarsson.github.io/SCARPA-Connection-Manager/dists/stable/main/binary-amd64/Packages | grep Version
+          curl -s https://larreblarsson.github.io/scarpa-connection-manager/dists/stable/main/binary-amd64/Packages | grep Version
 
       - name: Extract full changelog entry
         id: changelog
