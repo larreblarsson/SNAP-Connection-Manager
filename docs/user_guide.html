@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SCARPA Connection Manager - User Guide</title>
+    <title>Scarpa Connection Manager - User Guide</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
@@ -104,7 +104,7 @@
 </head>
 <body>
 
-    <h1>SCARPA Connection Manager</h1>
+    <h1>Scarpa Connection Manager</h1>
     <p><strong>Comprehensive User & Technical Guide</strong></p>
 
     <div class="toc">
@@ -123,10 +123,10 @@
     </div>
 
     <h2 id="introduction">1. Introduction</h2>
-    <p>Welcome to the <strong>SCARPA Connection Manager</strong>. SCARPA is a professional-grade GTK3 desktop application built to streamline how system administrators and developers manage SSH and SFTP connections. It combines military-grade encrypted storage, a high-performance VTE terminal emulator, and a fully integrated dual-pane SFTP file manager into a single, cohesive workflow.</p>
+    <p>Welcome to the <strong>Scarpa Connection Manager</strong>. Scarpa is a professional-grade GTK3 desktop application built to streamline how system administrators and developers manage SSH and SFTP connections. It combines military-grade encrypted storage, a high-performance VTE terminal emulator, and a fully integrated dual-pane SFTP file manager into a single, cohesive workflow.</p>
 
     <h2 id="security">2. Initial Setup & Security</h2>
-    <p>SCARPA prioritizes the security of your sensitive credentials above all else. Passwords and private keys are never stored in plain text.</p>
+    <p>Scarpa prioritizes the security of your sensitive credentials above all else. Passwords and private keys are never stored in plain text.</p>
     
     <div class="feature-box">
         <h3>Encryption Architecture</h3>
@@ -138,12 +138,12 @@
     </div>
     
     <h3>Changing Your Passphrase</h3>
-    <p>Navigate to <strong>File -> Change Passphrase...</strong>. You will be prompted for your current passphrase, followed by your new one. SCARPA will automatically generate a new salt and securely re-encrypt your entire database.</p>
+    <p>Navigate to <strong>File -> Change Passphrase...</strong>. You will be prompted for your current passphrase, followed by your new one. Scarpa will automatically generate a new salt and securely re-encrypt your entire database.</p>
     
     <p class="note warning"><strong>WARNING:</strong> There is no password recovery mechanism. If you forget your Master Passphrase, your data is permanently inaccessible. You will need to manually delete the <code>~/.local/share/scarpa_connection_manager/</code> directory to reset the application.</p>
 
     <h2 id="management">3. Server & Folder Management</h2>
-    <p>SCARPA allows you to logically organize hundreds of servers using the main "Session" tree view.</p>
+    <p>Scarpa allows you to logically organize hundreds of servers using the main "Session" tree view.</p>
     
     <h3>Adding & Organizing</h3>
     <ul>
@@ -169,15 +169,15 @@
     <p>Connections launch in a native, hardware-accelerated terminal window based on the GNOME VTE library.</p>
     <ul>
         <li><strong>Smart Copy/Paste:</strong> Pressing <kbd>Ctrl</kbd> + <kbd>C</kbd> will copy text if you have text highlighted. If nothing is highlighted, it intelligently sends a standard interrupt signal (<code>SIGINT</code>) to the server. Use <kbd>Ctrl</kbd> + <kbd>V</kbd> to paste.</li>
-        <li><strong>Smart Resize:</strong> The terminal window size is synchronized with the remote host (<code>SIGWINCH</code>). If you maximize the SCARPA window, text-based apps like <code>htop</code> or <code>vim</code> will scale perfectly.</li>
-        <li><strong>Anti-Idle:</strong> Keep restrictive firewalls from dropping your connection. Configurable in the server's <strong>Terminal</strong> tab, SCARPA can automatically send hidden "keepalive" null packets at set intervals.</li>
+        <li><strong>Smart Resize:</strong> The terminal window size is synchronized with the remote host (<code>SIGWINCH</code>). If you maximize the Scarpa window, text-based apps like <code>htop</code> or <code>vim</code> will scale perfectly.</li>
+        <li><strong>Anti-Idle:</strong> Keep restrictive firewalls from dropping your connection. Configurable in the server's <strong>Terminal</strong> tab, Scarpa can automatically send hidden "keepalive" null packets at set intervals.</li>
     </ul>
 
     <h3>4.3 Live Settings (In-Session)</h3>
     <p>You do not need to disconnect to change terminal settings. Click the <strong>Menu Button (≡)</strong> in the header bar of any active terminal window to open the Server Editor. Any changes to Fonts, Colors, or Scrollback are applied instantly when you click OK.</p>
 
     <h2 id="sftp">5. SFTP File Manager (GUI)</h2>
-    <p>SCARPA includes a powerful, fully graphical SFTP client for visual file management. Right-click any server and select <strong>SFTP (GUI)</strong> to open it.</p>
+    <p>Scarpa includes a powerful, fully graphical SFTP client for visual file management. Right-click any server and select <strong>SFTP (GUI)</strong> to open it.</p>
     
     <h3>5.1 Interface & Navigation</h3>
     <ul>
@@ -190,7 +190,7 @@
     <ul>
         <li><strong>Drag and Drop:</strong> Click and drag files or folders from one pane to the other to initiate an upload or download.</li>
         <li><strong>Toolbar Transfers:</strong> Select items and click the Green (Upload) or Blue (Download) transfer buttons in the toolbar.</li>
-        <li><strong>Resume Transfers:</strong> If a large transfer is interrupted, select the file again and click the Yellow <strong>Fast Forward</strong> button. SCARPA will calculate the size difference and only transfer the missing bytes.</li>
+        <li><strong>Resume Transfers:</strong> If a large transfer is interrupted, select the file again and click the Yellow <strong>Fast Forward</strong> button. Scarpa will calculate the size difference and only transfer the missing bytes.</li>
         <li><strong>Cancel:</strong> Click the Red <strong>Stop</strong> button to abort any ongoing transfer or deep search.</li>
     </ul>
 
@@ -211,7 +211,7 @@
     <h2 id="automation">6. Advanced Automation & Tunneling</h2>
 
     <h3>6.1 Startup Command Files</h3>
-    <p>Automate your workflow by having SCARPA execute commands immediately after a successful login.</p>
+    <p>Automate your workflow by having Scarpa execute commands immediately after a successful login.</p>
     <ol>
         <li>Create a local text file (e.g., <code>startup.txt</code>) containing the commands you want to run (one per line).</li>
         <li>In the Server Editor, navigate to the <strong>Terminal</strong> tab.</li>
@@ -224,7 +224,7 @@
     <ol>
         <li>In the Server Editor, go to the <strong>Login Actions</strong> tab and click <strong>Add Row</strong>.</li>
         <li><strong>Expect:</strong> Enter the exact text the server outputs (e.g., <code>Verification code:</code>).</li>
-        <li><strong>Send:</strong> Enter the response SCARPA should type.</li>
+        <li><strong>Send:</strong> Enter the response Scarpa should type.</li>
         <li><strong>Hide:</strong> Check this box if the "Send" text is a sensitive password. It will be masked in the UI and stripped from session logs.</li>
     </ol>
 
@@ -239,11 +239,11 @@
     <h2 id="logging">7. Logging & Data Management</h2>
 
     <h3>7.1 Clean Session Logging</h3>
-    <p>SCARPA features a sophisticated logging engine perfect for troubleshooting and auditing.</p>
+    <p>Scarpa features a sophisticated logging engine perfect for troubleshooting and auditing.</p>
     <ul>
         <li><strong>Enable Logging:</strong> In the <strong>Terminal</strong> tab, check "Enable Logging" and select an output file path.</li>
         <li><strong>Append vs. Overwrite:</strong> Choose whether to add new session data to the end of an existing file (historical tracking) or wipe it clean every time you connect (current state debugging).</li>
-        <li><strong>"Clean Text" Technology:</strong> SCARPA automatically strips out terminal control codes (ANSI colors, window title updates) in real-time, resulting in clean, human-readable text perfect for use with <code>grep</code>.</li>
+        <li><strong>"Clean Text" Technology:</strong> Scarpa automatically strips out terminal control codes (ANSI colors, window title updates) in real-time, resulting in clean, human-readable text perfect for use with <code>grep</code>.</li>
     </ul>
 
     <h3>7.2 Import / Export</h3>
@@ -261,16 +261,28 @@
     <h3>8.2 Per-Server Customization</h3>
     <p>You can override global settings on a per-server basis in the <strong>Appearance</strong> tab of the Server Editor. If you ever want to revert a highly customized server back to standard, click the <strong>Reset to Defaults</strong> button.</p>
 
-    <h2 id="installation">9. Installation & Troubleshooting</h2>
- <p>SCARPA Connection Manager is distributed via an official Ubuntu PPA, ensuring you always have secure access to the latest updates.</p>
+<h2 id="installation">9. Installation & Troubleshooting</h2>
+    <p>Scarpa Connection Manager is officially hosted on an Ubuntu PPA for the most flexible installation, and the Canonical Snap Store for users who prefer sandboxed containers.</p>
 
-    <h3>Installation</h3>
-    <p>Open your terminal and execute the following commands to add the repository and install the application:</p>
+    <h3>🚀 Install via Ubuntu PPA (Recommended)</h3>
+    <p>The recommended way to install Scarpa on Ubuntu is via our official Personal Package Archive (PPA). Because this uses standard Debian packaging, the application has unrestricted access to your host file system. This is highly recommended if you plan to save session logs to system directories like <code>/tmp</code> or custom external drives.</p>
+    
+    <p>Open your terminal and run the following commands:</p>
     <pre><code>sudo add-apt-repository ppa:larre-b-larsson/scarpa-connection-manager
 sudo apt update
 sudo apt install scarpa-connection-manager</code></pre>
 
-    <p class="note">© 2026 SCARPA Connection Manager. Built with Python & GTK3. Riposa in pace, Aquila di Filottrano. Sarai sempre con noi!</p>
+    <h3>📦 Alternative: Install via Snap Store</h3>
+    <p>If you prefer containerized applications, Scarpa is also available in the official Snap Store. The Snap package comes pre-packaged with all background tools (like specific versions of SSH and Expect) so they don't clutter your main system.</p>
+    <p><em>Note: Because the Snap package runs in a strict, isolated container, the application is restricted from writing to certain parts of your host file system.</em></p>
+    
+    <p>To install the Snap version, run:</p>
+    <pre><code>sudo snap install connection-manager-scarpa</code></pre>
+    
+    <p><strong>Launching the App:</strong> Once installed, you can launch the application from your desktop's main application menu, or by typing the application name into your terminal.</p>
+
+
+    <p class="note" style="margin-top: 30px;">© 2026 Scarpa Connection Manager. Built with Python & GTK3. Riposa in pace, Aquila di Filottrano. Sarai sempre con noi!</p>
 
 </body>
 </html>

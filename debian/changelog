@@ -1,6 +1,18 @@
+scarpa-connection-manager (1.2.21-15) stable; urgency=medium
+
+  * Updated user_guide.html and readme.md
+    
+ -- Tomas Larsson <larre.b.larsson@gmail.com>  Fri, 10 Apr 2026 08:00:00 +0100
+
+scarpa-connection-manager (1.2.21-14) stable; urgency=medium
+
+  * Fix for window at no passphrase
+    
+ -- Tomas Larsson <larre.b.larsson@gmail.com>  Fri, 10 Apr 2026 07:00:00 +0100
+
 scarpa-connection-manager (1.2.21-13) stable; urgency=medium
 
-  * Align version numberS
+  * Align version number
     
  -- Tomas Larsson <larre.b.larsson@gmail.com>  Thu, 09 Apr 2026 15:00:00 +0100
 

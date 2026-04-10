@@ -1,4 +1,4 @@
-# SCARPA Connection Manager – User & Technical Guide
+# Scarpa Connection Manager – User & Technical Guide
 
 ## Table of Contents
 1. [Introduction](#1-introduction)  
@@ -18,7 +18,7 @@
 7. [Troubleshooting & Dependencies](#7-troubleshooting--dependencies)
 
 ## 1. Introduction
-SCARPA Connection Manager is a secure GTK3-based desktop application for managing and launching SSH and SFTP connections. It organizes server configurations into folders, automates login sequences, and supports port forwarding.  
+Scarpa Connection Manager is a secure GTK3-based desktop application for managing and launching SSH and SFTP connections. It organizes server configurations into folders, automates login sequences, and supports port forwarding.  
 Sensitive data is protected using a robust GnuPG-based encryption system.
 
 ## 2. Core Features
@@ -95,14 +95,18 @@ Accessed via `File -> Global Settings...`, this dialog defines **default configu
 
 ## 6. Installation Instructions
 
-SCARPA Connection Manager is officially hosted on an Ubuntu Personal Package Archive (PPA) for easy installation and automatic updates.
-
-#### Add the repository (64-bit architecture only)
+Scarpa Connection Manager is officially hosted on an Ubuntu Personal Package Archive (PPA) for easy installation and automatic updates.
+### 🚀 Install via PPA (Recommended)
+#### Add the repository
 sudo add-apt-repository ppa:larre-b-larsson/scarpa-connection-manager
 
 #### Update and install
 sudo apt update
 sudo apt install scarpa-connection-manager
+
+### 🚀 Install via Snap Store 
+sudo snap install connection-manager-scarpa
+
 
 ## 7. Troubleshooting & Dependencies
 - **Incorrect master passphrase** → unrecoverable, delete `~/.local/share/scarpa_connection_manager/` to reset  
