@@ -1,0 +1,19 @@
+Package: scarpa-connection-manager
+Architecture: all
+Version: 1.2.21-16-1
+Priority: optional
+Section: net
+Maintainer: Tomas Larsson <larre.b.larsson@gmail.com>
+Installed-Size: 337
+Depends: python3, python3-gi, gir1.2-gtk-3.0, gir1.2-vte-2.91, python3-paramiko, expect, gnupg, openssh-client
+Filename: pool/scarpa-connection-manager_1.2.21-16-1_all.deb
+Size: 108510
+MD5sum: c07cd03502bb1218143922f4f3bb86a6
+SHA1: c2e08d278495126208d88f43ea40904e8cc96fc9
+SHA256: 3df3124cfe4418c538846eb9ef6ccd9498dcac9f214ac96e9ac4c1a0d7d24d2b
+SHA512: 946d66ed1cf0207d622b30bcd0b669ae70fadf4d3bbebcd7f27836281def90b98be40930cbb3f47eaa803c40edbafb701edfd75a78e2b390328ce9c8627eb04c
+Homepage: https://github.com/larreblarsson/SCARPA_Connection_Manager
+Description: SCARPA Connection Manager
+ A GTK-based SSH/SFTP manager that provides a user-friendly interface
+ for managing connections. Includes terminal integration and file transfer.
+
