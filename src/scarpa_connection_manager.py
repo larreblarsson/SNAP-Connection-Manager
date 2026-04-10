@@ -2408,7 +2408,7 @@ class ScarpaConnectionManager(Gtk.Application):
                 
                 if not passphrase:
                     self._error("Passphrase cannot be empty.")
-                    #dlg.destroy()
+                    dlg.destroy()
                     continue # Loop back to prompt again
                 
                 if passphrase != confirm_passphrase:
