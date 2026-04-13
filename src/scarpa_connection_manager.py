@@ -17,6 +17,9 @@ import threading
 import paramiko
 import stat
 import getpass
+import uuid
+import xml.etree.ElementTree as ET
+import urllib.parse
 
 from datetime import datetime
 
@@ -113,6 +116,178 @@ IS_SNAP = 'SNAP' in os.environ
 PBKDF2_ITERATIONS = 600000  # Number of iterations for PBKDF2. Higher = more secure but slower.
 SALT_SIZE = 16              # Salt size in bytes (16 bytes = 128 bits)
 # --- End Passphrase Hashing Globals ---
+
+def parse_securecrt_xml(file_path):
+    """
+    Parses native SecureCRT (VanDyke) XML export files.
+    """
+    servers = []
+    try:
+        tree = ET.parse(file_path)
+        root = tree.getroot()
+    except Exception as e:
+        print(f"Error reading XML: {e}")
+        return servers
+
+    # Ensure it's actually a SecureCRT file
+    if root.tag != "VanDyke":
+        print("Not a valid SecureCRT (VanDyke) XML file.")
+        return servers
+
+    sessions_root = None
+    for key in root.findall("key"):
+        if key.get("name") == "Sessions":
+            sessions_root = key
+            break
+            
+    if sessions_root is not None:
+        def traverse_nodes(node, current_folder_path):
+            for child_key in node.findall("key"):
+                node_name = child_key.get("name")
+                if not node_name: continue
+                
+                # SecureCRT Folders only contain other <key> tags.
+                # Server Sessions contain <string> and <dword> tags.
+                is_server = len(child_key.findall("string")) > 0 or len(child_key.findall("dword")) > 0
+                
+                if is_server:
+                    hostname = ""
+                    username = ""
+                    port = "22"
+                    
+                    for prop in child_key:
+                        if not isinstance(prop.tag, str): continue
+                        attr_name = prop.get("name")
+                        if not attr_name: continue
+                        
+                        attr_lower = attr_name.lower()
+                        clean_text = prop.text.strip() if prop.text else ""
+                        
+                        if attr_lower == "hostname":
+                            hostname = clean_text
+                        elif attr_lower == "username":
+                            username = clean_text
+                        elif attr_lower == "port" or attr_lower == "[ssh2] port":
+                            if prop.tag.lower() == "dword" and clean_text:
+                                try: port = str(int(clean_text, 16))
+                                except: port = clean_text
+                            elif clean_text:
+                                port = clean_text
+                                
+                    # Fallback: If Hostname is explicitly blank, use the session's name as the Host
+                    final_host = hostname if hostname else node_name
+                    
+                    folder = current_folder_path.strip("/")
+                    
+                    # Skip the SecureCRT "Default" template so it doesn't clutter your app
+                    if node_name == "Default" and not folder:
+                        continue
+
+                    server_data = {
+                        "name": node_name,
+                        "host": final_host,
+                        "port": port,
+                        "user": username
+                    }
+                    
+                    # Only assign a folder if one actually exists!
+                    if folder:
+                        server_data["folder"] = folder
+                        
+                    servers.append(server_data)
+                else:
+                    # It's a folder. Recurse deeper!
+                    new_folder_path = f"{current_folder_path}/{node_name}" if current_folder_path else node_name
+                    traverse_nodes(child_key, new_folder_path)
+
+        # Start recursive search
+        traverse_nodes(sessions_root, "")
+        
+    return servers
+
+def parse_putty_reg(file_path):
+    """
+    Parses native Windows PuTTY (.reg) export files.
+    """
+    servers = []
+    try:
+        # Windows Registry files are often exported in UTF-16 format, 
+        # but sometimes UTF-8. We try both to be safe!
+        try:
+            with open(file_path, 'r', encoding='utf-16') as f:
+                lines = f.readlines()
+        except UnicodeError:
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                lines = f.readlines()
+
+        current_server = None
+
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+
+            # Detect a new Session block in the registry
+            if line.startswith('[') and line.endswith(']'):
+                if '\\PuTTY\\Sessions\\' in line:
+                    # Save the previous server if it had a valid host
+                    if current_server and current_server.get('host'):
+                        servers.append(current_server)
+
+                    # Extract session name and decode spaces (e.g., My%20Server -> My Server)
+                    session_part = line.split('\\PuTTY\\Sessions\\')[-1].rstrip(']')
+                    session_name = urllib.parse.unquote(session_part)
+
+                    # Skip PuTTY's default configuration template
+                    if not session_name or session_name.lower() == "default settings":
+                        current_server = None
+                        continue
+
+                    current_server = {
+                        "name": session_name,
+                        "host": "",
+                        "user": "",
+                        "port": "22",
+                   }
+                else:
+                    # If it's some other registry key, save our current server and move on
+                    if current_server and current_server.get('host'):
+                        servers.append(current_server)
+                    current_server = None
+
+            elif current_server is not None:
+                # Extract the connection properties
+                if line.startswith('"HostName"='):
+                    raw_host = line.split('=', 1)[1].strip('"')
+                    # PuTTY sometimes saves the user inside the host (user@192.168.1.1)
+                    if '@' in raw_host:
+                        user_part, host_part = raw_host.split('@', 1)
+                        current_server['user'] = user_part
+                        current_server['host'] = host_part
+                    else:
+                        current_server['host'] = raw_host
+
+                elif line.startswith('"UserName"='):
+                    user_val = line.split('=', 1)[1].strip('"')
+                    if user_val: 
+                        current_server['user'] = user_val
+
+                elif line.startswith('"PortNumber"='):
+                    # Convert Hexadecimal DWORD to standard Port (e.g., 00000016 -> 22)
+                    try:
+                        hex_val = line.split('dword:')[1]
+                        current_server['port'] = str(int(hex_val, 16))
+                    except (IndexError, ValueError):
+                        pass
+
+        # Catch the very last server in the file
+        if current_server and current_server.get('host'):
+            servers.append(current_server)
+
+    except Exception as e:
+        print(f"Error parsing PuTTY file: {e}")
+
+    return servers
 
 def is_safe_sandbox_path(filename, parent_dialog):
     # CHAMELEON: If installed via Debian (.deb) or run locally, bypass the sandbox rules entirely!
@@ -2261,6 +2436,8 @@ class ScarpaConnectionManager(Gtk.Application):
                 ("Add",    self.on_new_folder),
                 ("Rename", self.on_rename_folder),
                 ("Delete", self.on_delete_folder),
+                ("Copy",   self.execute_smart_copy),  
+                ("Paste",  self.execute_smart_paste), 
             ],
             "Connect": [
                 ("SSH",  self.on_ssh),
@@ -2288,12 +2465,15 @@ class ScarpaConnectionManager(Gtk.Application):
                     self.servers_menu_items[lbl] = mi
             else:
                 for lbl, fn in items:
-                    mi = Gtk.MenuItem(label=lbl)
-                    mi.connect("activate", lambda w, f=fn: f(None, None))
-                    submenu.append(mi)
-        
-            menu_bar.append(root)
+                    if lbl == "-":
+                        # If it sees a dash, it draws a clean horizontal line
+                        submenu.append(Gtk.SeparatorMenuItem())
+                    else:
+                        mi = Gtk.MenuItem(label=lbl)
+                        mi.connect("activate", lambda w, f=fn: f(None, None))
+                        submenu.append(mi)        
 
+            menu_bar.append(root)
 
         # ── Paned: TreeView + Log ─────────────────────────────────
         paned = Gtk.Paned(orientation=Gtk.Orientation.VERTICAL)
@@ -2389,6 +2569,250 @@ class ScarpaConnectionManager(Gtk.Application):
         can_paste = hasattr(self, "_copied_server")
         if hasattr(self, "servers_menu_items"):
             self.servers_menu_items["Paste"].set_sensitive(can_paste)
+
+    def execute_smart_copy(self, widget=None, data=None, action="copy"):
+        """Universal Copy/Cut triggered by Keyboard or Menus"""
+        selection = self.tree.get_selection()
+        model, tree_iter = selection.get_selected()
+        if not tree_iter: return
+            
+        row_data = model.get_value(tree_iter, 2)
+        if not row_data or len(row_data) < 2: return
+            
+        typ, item = row_data[0], row_data[1]
+        actual_data = self.servers[item] if isinstance(item, int) else item
+
+        if not hasattr(self, '_app_clipboard'):
+            self._app_clipboard = {"action": None, "type": None, "data": None}
+
+        import copy
+        self._app_clipboard = {"action": action, "type": typ, "data": copy.deepcopy(actual_data)}
+        
+        if typ == "server":
+            self.on_copy_server(None, None)
+            
+        safe_name = actual_data.get("name", "Unknown") if isinstance(actual_data, dict) else str(actual_data)
+        if action == "copy":
+            self.log(f"Copied {typ}: '{safe_name}'")
+        else:
+            self.log(f"Cut {typ}: '{safe_name}'. Awaiting Paste...")
+
+    def execute_smart_cut(self, widget=None, data=None):
+        """Helper to trigger Cut from Menus"""
+        self.execute_smart_copy(widget, data, action="cut")
+
+    def execute_smart_paste(self, widget=None, data=None):
+        """Universal Paste triggered by Keyboard or Menus"""
+        selection = self.tree.get_selection()
+        model, tree_iter = selection.get_selected()
+        if not tree_iter: return
+            
+        row_data = model.get_value(tree_iter, 2)
+        if not row_data or len(row_data) < 2: return
+            
+        typ, item = row_data[0], row_data[1]
+        is_folder = (typ == "folder")
+        actual_data = self.servers[item] if isinstance(item, int) else item
+
+        clip = getattr(self, '_app_clipboard', {})
+        action = clip.get("action")
+        c_type = clip.get("type")
+        c_data = clip.get("data")
+        
+        if not action or not c_data:
+            if not is_folder:
+                self.on_paste_server(None, None)
+            return
+            
+        try: root_val = ROOT_FOLDER
+        except NameError: root_val = "Session"
+            
+        target_path = str(actual_data) if is_folder else actual_data.get("folder", root_val)
+        is_root_target = (target_path == root_val or target_path == "")
+        clean_target = "" if is_root_target else target_path
+
+        # --- PASTE SERVER ---
+        if c_type == "server":
+            if action == "copy":
+                import copy
+                new_srv = copy.deepcopy(c_data)
+                new_srv["folder"] = target_path if not is_root_target else root_val
+                
+                base_name = c_data.get('name', 'Server')
+                existing_names = {s.get("name") for s in self.servers}
+                
+                final_name = base_name
+                counter = 1
+                while final_name in existing_names:
+                    final_name = f"{base_name} (Copy {counter})" if counter > 1 else f"{base_name} (Copy)"
+                    counter += 1
+                    
+                new_srv["name"] = final_name
+                if "uuid" in new_srv:
+                    import uuid
+                    new_srv["uuid"] = str(uuid.uuid4())
+                    
+                self.servers.append(new_srv)
+                self.log(f"Pasted server '{final_name}' into '{target_path}'")
+                
+            elif action == "cut":
+                c_data["folder"] = target_path if not is_root_target else root_val
+                self._app_clipboard = {} 
+                self.log(f"Moved server to '{target_path}'")
+                
+        # --- PASTE FOLDER ---
+        elif c_type == "folder":
+            source_path = str(c_data)
+            source_name = source_path.split("/")[-1]
+            source_parent = "/".join(source_path.split("/")[:-1])
+            
+            if clean_target == source_path or clean_target.startswith(source_path + "/"):
+                self.log("Notice: Cannot paste a folder inside itself.")
+                return
+                
+            if action == "cut" and clean_target == source_parent:
+                self.log("Notice: Folder is already in this location.")
+                self._app_clipboard = {}
+                return
+
+            new_base = source_name if is_root_target else f"{clean_target}/{source_name}"
+                
+            final_base = new_base
+            counter = 1
+            while final_base in self.user_folders and final_base != source_path:
+                suffix = f" (Copy {counter})" if action == "copy" else f" ({counter})"
+                final_base = f"{source_name}{suffix}" if is_root_target else f"{clean_target}/{source_name}{suffix}"
+                counter += 1
+
+            folders_to_add = [final_base]
+            folders_to_remove = [] if action == "copy" else [source_path]
+            
+            for uf in self.user_folders:
+                if uf.startswith(source_path + "/"):
+                    remainder = uf[len(source_path):]
+                    folders_to_add.append(final_base + remainder)
+                    if action == "cut":
+                        folders_to_remove.append(uf)
+
+            for f in folders_to_remove:
+                if f in self.user_folders:
+                    self.user_folders.remove(f)
+            for f in folders_to_add:
+                if f not in self.user_folders:
+                    self.user_folders.append(f)
+
+            for s in self.servers:
+                s_folder = s.get("folder", "")
+                if s_folder == source_path or s_folder.startswith(source_path + "/"):
+                    remainder = s_folder[len(source_path):]
+                    new_folder_path = final_base + remainder
+                    
+                    if action == "copy":
+                        import copy
+                        new_s = copy.deepcopy(s)
+                        new_s["folder"] = new_folder_path
+                        if "uuid" in new_s:
+                            import uuid
+                            new_s["uuid"] = str(uuid.uuid4())
+                        self.servers.append(new_s)
+                    elif action == "cut":
+                        s["folder"] = new_folder_path
+
+            if action == "cut":
+                self._app_clipboard = {}
+                self.log(f"Moved folder '{source_name}' -> '{final_base}'")
+            else:
+                self.log(f"Copied folder '{source_name}' -> '{final_base}'")
+
+        # --- Save and Reload ---
+        self.save_state_and_reload()
+
+    def save_state_and_reload(self):
+        """Helper to cleanly save and refresh the UI"""
+        try: root_val = ROOT_FOLDER
+        except NameError: root_val = "Session"
+        
+        save_servers(self.servers, self.master_passphrase)
+        all_f = {s.get("folder") for s in self.servers if s.get("folder") and s.get("folder") != root_val}
+        self.user_folders = sorted(list(all_f | set(self.user_folders)), key=natural_key)
+        self.settings["folders"] = self.user_folders
+        save_settings(self.settings)
+        self.reload_folders()
+        self.populate_tree()
+        self.tree.expand_row(Gtk.TreePath.new_from_string("0"), False)
+
+    def on_tree_key_press(self, widget, event):
+        """Clean Keyboard Handler routing to Universal Clipboard"""
+        try:
+            state = event.state & Gdk.ModifierType.MODIFIER_MASK
+            ctrl_pressed = bool(state & Gdk.ModifierType.CONTROL_MASK)
+            keyval = event.keyval
+            lower_keyval = Gdk.keyval_to_lower(keyval)
+
+            selection = self.tree.get_selection()
+            model, tree_iter = selection.get_selected()
+            if not tree_iter: return False
+                
+            path = model.get_path(tree_iter)
+            row_data = model.get_value(tree_iter, 2)
+            if not row_data or len(row_data) < 2: return False
+                
+            is_folder = (row_data[0] == "folder")
+
+            # --- SMART CLIPBOARD ROUTING ---
+            if ctrl_pressed:
+                if lower_keyval == Gdk.KEY_c:
+                    self.execute_smart_copy()
+                    return True
+                elif lower_keyval == Gdk.KEY_x:
+                    self.execute_smart_cut()
+                    return True
+                elif lower_keyval == Gdk.KEY_v:
+                    self.execute_smart_paste()
+                    return True
+
+            # --- DELETE ROUTING ---
+            if keyval in (Gdk.KEY_Delete, Gdk.KEY_KP_Delete):
+                if is_folder: self.on_delete_folder(None, None)
+                else: self.on_delete_server(None, None)
+                return True
+
+            # --- ARROWS AND ENTER ---
+            if keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter):
+                if is_folder:
+                    if self.tree.row_expanded(path): self.tree.collapse_row(path)
+                    else: self.tree.expand_row(path, False)
+                    return True
+                else:
+                    self.on_ssh(None, None)
+                    return True
+
+            if keyval == Gdk.KEY_Right:
+                if is_folder:
+                    if not self.tree.row_expanded(path):
+                        self.tree.expand_row(path, False)
+                        return True
+                    else:
+                        child_iter = model.iter_children(tree_iter)
+                        if child_iter:
+                            self.tree.set_cursor(model.get_path(child_iter), None, False)
+                            return True
+                return False
+
+            elif keyval == Gdk.KEY_Left:
+                if is_folder and self.tree.row_expanded(path):
+                    self.tree.collapse_row(path)
+                    return True
+                else:
+                    parent_iter = model.iter_parent(tree_iter)
+                    if parent_iter:
+                        self.tree.set_cursor(model.get_path(parent_iter), None, False)
+                        return True
+                return False
+
+        except Exception as e:
+            self.log(f"Keyboard error: {type(e).__name__}: {e}")
+        return False
 
     # --- New Passphrase Management Methods (add these inside ScarpaConnectionManager) ---
     def set_master_passphrase(self):
@@ -2586,95 +3010,99 @@ class ScarpaConnectionManager(Gtk.Application):
     # Populate the TreeStore with folder and server icons
     def populate_tree(self):
         """
-        Rebuild the TreeStore so that:
-          - Folders (self.subfolders) are sorted alphabetically (natural sort)
-          - “Default Session” (ROOT_FOLDER) is always the root node
-          - Under it:
-              • First each folder (sorted) and its servers (sorted by name)
-              • Then the session-scoped servers (sorted by name)
-          - Expansion state of the root and each folder is preserved
-        Assumes:
-          - self.store is a Gtk.TreeStore(icon, text, payload)
-          - self.tree is the Gtk.TreeView using self.store
-          - ROOT_FOLDER and natural_key() are defined globally
+        Rebuild the TreeStore with full hierarchical folder nesting.
         """
-        # 1) Capture which rows are expanded
-        sorted_subs = sorted(self.subfolders, key=lambda f: natural_key(f))
-        root_path = Gtk.TreePath.new_from_string("0")
-        # Ensure self.tree exists before calling row_expanded
-        root_open = self.tree.row_expanded(root_path) if hasattr(self, 'tree') and self.tree else False
-    
+        # --- 1) Capture dynamically which folders are currently expanded ---
         expanded_folders = set()
-        if hasattr(self, 'tree') and self.tree: # Ensure tree exists before iterating
-            for idx, fld in enumerate(sorted_subs):
-                p = Gtk.TreePath.new_from_string(f"0:{idx}")
-                if self.tree.row_expanded(p):
-                    expanded_folders.add(fld)
-    
-        # 2) Clear & rebuild
+        if hasattr(self, 'tree') and self.tree:
+            def capture_expanded(model, path, tree_iter):
+                if self.tree.row_expanded(path):
+                    row_data = model.get_value(tree_iter, 2)
+                    if row_data and len(row_data) >= 2:
+                        typ, val = row_data[0], row_data[1]
+                        if typ == "folder":
+                            expanded_folders.add(val)
+            self.store.foreach(capture_expanded)
+
+        # --- 2) Clear & Rebuild ---
         self.store.clear()
+        
+        try: root_val = ROOT_FOLDER
+        except NameError: root_val = "Session"
+
         root_it = self.store.append(
             None,
             [self.folder_icon,
-             ROOT_FOLDER,
-             ("folder", ROOT_FOLDER)]
+             root_val,
+             ("folder", root_val)]
         )
-    
-        # 2a) Append each folder (alphabetical) + its servers (alphabetical)
+
+        folder_iters = {root_val: root_it}
+
+        # Recursive helper to build deep folder branches automatically
+        def get_or_create_folder(full_path):
+            if full_path in folder_iters:
+                return folder_iters[full_path]
+            
+            if "/" in full_path:
+                parent_path, basename = full_path.rsplit("/", 1)
+                parent_it = get_or_create_folder(parent_path)
+            else:
+                parent_it = root_it
+                basename = full_path
+                
+            new_it = self.store.append(parent_it, [self.folder_icon, basename, ("folder", full_path)])
+            folder_iters[full_path] = new_it
+            return new_it
+
+        # 2a) Generate the folder hierarchy
+        sorted_subs = sorted(self.subfolders, key=natural_key)
         for fld in sorted_subs:
-            fld_it = self.store.append(
-                root_it,
-                [self.folder_icon,
-                 fld,
-                 ("folder", fld)]
-            )
-            # collect servers in this folder
-            folder_servers = [
-                (i, s) for i, s in enumerate(self.servers)
-                if s.get("folder") == fld
-            ]
-            # sort by server name
-            for i, s in sorted(folder_servers,
-                               key=lambda x: natural_key(x[1]["name"])):
-                self.store.append(
-                    fld_it,
-                    [self.server_icon,
-                     s["name"],
-                     ("server", i)]
-                )
-    
-        # 2b) Append session-scoped servers under ROOT_FOLDER
-        session_servers = [
-            (i, s) for i, s in enumerate(self.servers)
-            if s.get("folder", ROOT_FOLDER) == ROOT_FOLDER
-        ]
-        for i, s in sorted(session_servers,
-                           key=lambda x: natural_key(x[1]["name"])):
+            get_or_create_folder(fld)
+
+        # 2b) Append servers accurately to their deeply nested folders
+        # Sort servers alphabetically before appending to maintain natural order
+        sorted_servers = sorted(enumerate(self.servers), key=lambda x: natural_key(x[1].get("name", "")))
+        
+        for i, s in sorted_servers:
+            server_folder = s.get("folder", root_val)
+            parent_it = get_or_create_folder(server_folder) if server_folder != root_val else root_it
+            
             self.store.append(
-                root_it,
+                parent_it,
                 [self.server_icon,
-                 s["name"],
+                 s.get("name", "Unknown Server"),
                  ("server", i)]
             )
-    
-        # 3) Restore expanded rows
-        if root_open and hasattr(self, 'tree') and self.tree: # Ensure self.tree exists before expanding
-            self.tree.expand_row(root_path, False)
-    
-        if hasattr(self, 'tree') and self.tree: # Ensure tree exists before iterating
-            for idx, fld in enumerate(sorted_subs):
-                if fld in expanded_folders:
-                    p = Gtk.TreePath.new_from_string(f"0:{idx}")
-                    self.tree.expand_row(p, False)
+
+        # --- 3) Restore expanded rows using dynamic pathing ---
+        if hasattr(self, 'tree') and self.tree:
+            def restore_expanded(model, path, tree_iter):
+                row_data = model.get_value(tree_iter, 2)
+                if row_data and len(row_data) >= 2:
+                    typ, val = row_data[0], row_data[1]
+                    if typ == "folder" and val in expanded_folders:
+                        self.tree.expand_row(path, False)
+            self.store.foreach(restore_expanded)
+
+
     
     # Double-click on a server row → launch SSH
-    def on_tree_activate(self, tree, path, column):
-        model, it = tree.get_selection().get_selected()
-        if not it:
-            return
-        node_type, _ = model.get_value(it, 2)
-        if node_type == "server":
+    def on_tree_activate(self, treeview, path, column):
+        """Native GTK handler for Double-Clicks"""
+        model = treeview.get_model()
+        it = model.get_iter(path)
+        typ, item = model.get_value(it, 2)
+        
+        if typ == "server":
+            # THE FIX: Added the missing second argument to stop the crash!
             self.on_ssh(None, None)
+        elif typ == "folder":
+            # Toggle expand/collapse when double-clicking a folder
+            if treeview.row_expanded(path):
+                treeview.collapse_row(path)
+            else:
+                treeview.expand_row(path, False)
 
     # Drag-and-drop: reorder servers and assign them to folders
     def on_tree_row_dropped(self, treeview, context, x, y, selection, info, time):
@@ -2735,132 +3163,424 @@ class ScarpaConnectionManager(Gtk.Application):
         context.finish(True, False, time)
 
     # ── File Menu: Import Servers ───────────────────────────────────────
-    def on_import(self, action, param):
-        # Pass self.win as parent for dialogs called from UI actions
-        dlg = Gtk.FileChooserDialog(
-            title="Import Servers…",
-            parent=self.win,
-            action=Gtk.FileChooserAction.OPEN,
+    def on_import(self, *args):
+        """Builds and displays the Graphical Import Wizard with Radio Buttons"""
+        dialog = Gtk.Dialog(
+            title="Import Server Configurations",
+            transient_for=None,
+            flags=0
         )
-        real_home = os.environ.get('SNAP_REAL_HOME', f"/home/{getpass.getuser()}")
-        dlg.set_current_folder(real_home)
-        dlg.add_buttons(
+        dialog.add_buttons(
             Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
-            Gtk.STOCK_OPEN,   Gtk.ResponseType.OK,
+            "Import", Gtk.ResponseType.OK
         )
-        filt = Gtk.FileFilter()
-        filt.set_name("JSON files")
-        filt.add_pattern("*.json")
-        dlg.add_filter(filt)
-    
-        # Add filter for GPG encrypted files
-        filt_gpg = Gtk.FileFilter()
-        filt_gpg.set_name("GPG Encrypted Files")
-        filt_gpg.add_pattern("*.gpg")
-        dlg.add_filter(filt_gpg)
-    
-        if dlg.run() == Gtk.ResponseType.OK:
-            filename = dlg.get_filename()
+        # Make the "Import" button the default action
+        dialog.set_default_response(Gtk.ResponseType.OK)
+        
+        # Setup container layout
+        box = dialog.get_content_area()
+        box.set_spacing(15)
+        box.set_margin_top(15)
+        box.set_margin_bottom(15)
+        box.set_margin_start(20)
+        box.set_margin_end(20)
+        
+        # Instruction Label
+        label = Gtk.Label(label="<b>Select the source application format:</b>")
+        label.set_use_markup(True)
+        label.set_halign(Gtk.Align.START)
+        box.pack_start(label, False, False, 0)
+        
+        # Radio Buttons
+        rb_scarpa = Gtk.RadioButton.new_with_label_from_widget(None, "SCARPA Connection Manager (.json, .gpg)")
+        rb_winscp = Gtk.RadioButton.new_with_label_from_widget(rb_scarpa, "WinSCP / SecureCRT (.xml)")
+        rb_putty = Gtk.RadioButton.new_with_label_from_widget(rb_scarpa, "PuTTY (.reg)")
+        
+        # Pack radio buttons with slight indentation
+        rb_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+        rb_box.set_margin_start(10)
+        rb_box.pack_start(rb_scarpa, False, False, 0)
+        rb_box.pack_start(rb_winscp, False, False, 0)
+        rb_box.pack_start(rb_putty, False, False, 0)
+        box.pack_start(rb_box, False, False, 0)
+        
+        # File chooser row
+        file_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        file_entry = Gtk.Entry()
+        file_entry.set_hexpand(True)
+        file_entry.set_placeholder_text("Select a file to import...")
+        file_entry.set_editable(False) # Force the user to use the Browse button
+        
+        browse_button = Gtk.Button(label="Browse...")
+        
+        file_box.pack_start(file_entry, True, True, 0)
+        file_box.pack_start(browse_button, False, False, 0)
+        box.pack_start(file_box, False, False, 5)
+        
+        # The Browse Button Callback (Changes filter based on radio button)
+        def on_browse_clicked(btn):
+            chooser = Gtk.FileChooserDialog(
+                title="Select File to Import",
+                parent=dialog,
+                action=Gtk.FileChooserAction.OPEN
+            )
+            chooser.add_buttons(
+                Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+                Gtk.STOCK_OPEN, Gtk.ResponseType.OK
+            )
             
-            # 1. Check if the path is safe
-            if not is_safe_sandbox_path(filename, dlg):
-                dlg.destroy()
-                return # Stop here if it's outside the home folder!
+            filter_custom = Gtk.FileFilter()
+            if rb_scarpa.get_active():
+                filter_custom.set_name("SCARPA Data (*.json, *.gpg)")
+                filter_custom.add_pattern("*.json")
+                filter_custom.add_pattern("*.gpg")
+            elif rb_winscp.get_active():
+                filter_custom.set_name("WinSCP / SecureCRT XML (*.xml)")
+                filter_custom.add_pattern("*.xml")
+            elif rb_putty.get_active():
+                filter_custom.set_name("PuTTY Registry (*.reg)")
+                filter_custom.add_pattern("*.reg")
+            
+            chooser.add_filter(filter_custom)
+            
+            if chooser.run() == Gtk.ResponseType.OK:
+                file_entry.set_text(chooser.get_filename())
+            chooser.destroy()
+
+        browse_button.connect("clicked", on_browse_clicked)
+        
+        # Show all elements
+        dialog.show_all()
+        
+        # Wait for the user to click Import or Cancel
+        response = dialog.run()
+        if response == Gtk.ResponseType.OK:
+            file_path = file_entry.get_text()
+            if not file_path:
+                self.show_error_message("No File Selected", "Please browse for a file to import.")
+            else:
+                # Route to the correct import backend
+                if rb_scarpa.get_active():
+                    self.process_scarpa_import(file_path)
+                elif rb_winscp.get_active():
+                    self.process_securecrt_import(file_path)
+                elif rb_putty.get_active():
+                    self.process_putty_import(file_path)
+                    
+        dialog.destroy()
+
+    # ─── IMPORT BACKENDS ───────────────────────────────────────────────────
+    def process_scarpa_import(self, filename):
+        """Handles native SCARPA JSON/GPG files with Interactive Auto-Renaming"""
+        try:
+            is_encrypted = filename.lower().endswith(".gpg")
+            payload = None
+
+            if is_encrypted:
+                tf = tempfile.NamedTemporaryFile("w", delete=False)
+                tf.close()
                 
-            # 2. If safe, close the dialog and proceed
-            dlg.destroy()
+                if IS_SNAP:
+                    gpg_cmd = [
+                        "gpg1", "--batch", "--yes", 
+                        "--passphrase", self.master_passphrase, 
+                        "--output", tf.name, "--decrypt", filename
+                    ]
+                else:
+                    gpg_cmd = [
+                        "gpg", "--batch", "--yes", 
+                        "--no-tty", "--pinentry-mode", "loopback", 
+                        "--passphrase", self.master_passphrase, 
+                        "--output", tf.name, "--decrypt", filename
+                    ]
+
+                result = subprocess.run(gpg_cmd, check=False, capture_output=True, text=True)
+                
+                if result.returncode != 0:
+                    if os.path.exists(tf.name): os.remove(tf.name)
+                    self._error(f"GPG decryption failed during import: {result.stderr.strip()}")
+                    return
+
+                with open(tf.name, "r") as f:
+                    payload = json.load(f)
+                
+                os.remove(tf.name)
+            else:
+                with open(filename, "r") as f:
+                    payload = json.load(f)
+
+            if isinstance(payload, dict):
+                imported_servers = payload.get("servers", [])
+                imported_folders = payload.get("folders", [])
+            elif isinstance(payload, list):
+                imported_servers = payload
+                imported_folders = []
+            else:
+                self._error("Unexpected format; must be list or dict")
+                return
+
+            # Normalize 
+            for srv in imported_servers:
+                srv.setdefault("folder", ROOT_FOLDER)
+                srv.setdefault("auto_sequence", [])
+                srv.setdefault("port_forwards", [])
+
+            # --- INTERACTIVE DEDUPLICATION LOGIC ---
+            existing_sigs = {
+                (s.get("name"), s.get("host"), s.get("user"), s.get("port"), s.get("folder"))
+                for s in self.servers
+            }
+            existing_names = { s.get("name") for s in self.servers if s.get("name") }
+
+            unique_new_servers = []
+            for srv in imported_servers:
+                base_name = srv.get("name")
+                
+                sig = (base_name, srv.get("host"), srv.get("user"), srv.get("port"), srv.get("folder"))
+                if sig in existing_sigs:
+                    continue  # 100% exact copy, skip silently
+                    
+                new_name = base_name
+                if base_name in existing_names:
+                    msg = (f"A connection named '{base_name}' already exists, but the imported version "
+                           f"has different settings.\n\n"
+                           f"Do you want to import this as a new connection and auto-rename it?")
+                           
+                    wants_to_import = self.ask_yes_no_dialog("Duplicate Name Detected", msg)
+                    
+                    if not wants_to_import:
+                        continue 
+                        
+                    counter = 1
+                    while new_name in existing_names:
+                        new_name = f"{base_name}({counter})"
+                        counter += 1
+                        
+                srv["name"] = new_name
+                unique_new_servers.append(srv)
+                
+                new_sig = (new_name, srv.get("host"), srv.get("user"), srv.get("port"), srv.get("folder"))
+                existing_sigs.add(new_sig)
+                existing_names.add(new_name)
+
+            if not unique_new_servers:
+                self.show_info_dialog("No New Servers", "No new servers were imported. They were either exact duplicates or skipped by the user.")
+                return
+
+            added = len(unique_new_servers)
+            self.servers.extend(unique_new_servers) 
+
             try:
-                is_encrypted = filename.lower().endswith(".gpg")
-                payload = None
-    
-                if is_encrypted:
-                    # Decrypt GPG file to a temporary file
-                    tf = tempfile.NamedTemporaryFile("w", delete=False)
-                    tf.close()
-                    
-                    # --- CHAMELEON GPG LOGIC ---
-                    if IS_SNAP:
-                        gpg_cmd = [
-                            "gpg1", "--batch", "--yes", 
-                            "--passphrase", self.master_passphrase, 
-                            "--output", tf.name, "--decrypt", filename
-                        ]
-                    else:
-                        gpg_cmd = [
-                            "gpg", "--batch", "--yes", 
-                            "--no-tty", "--pinentry-mode", "loopback", 
-                            "--passphrase", self.master_passphrase, 
-                            "--output", tf.name, "--decrypt", filename
-                        ]
-
-                    result = subprocess.run(
-                        gpg_cmd,
-                        check=False,
-                        capture_output=True,
-                        text=True
-                    )
-                    # ---------------------------
-                    
-                    if result.returncode != 0:
-                        if os.path.exists(tf.name): os.remove(tf.name) # Clean up temp file
-                        raise RuntimeError(f"GPG decryption failed during import: {result.stderr.strip()}")
-
-                    with open(tf.name, "r") as f:
-                        payload = json.load(f)
-                    
-                    os.remove(tf.name)
-                else:
-                    # Read JSON file directly
-                    with open(filename, "r") as f:
-                        payload = json.load(f)
-    
-                if isinstance(payload, dict):
-                    servers = payload.get("servers", [])
-                    imported_folders = payload.get("folders", [])
-                elif isinstance(payload, list):
-                    servers = payload
-                    imported_folders = []
-                else:
-                    raise ValueError("Unexpected format; must be list or dict")
-    
-                # Normalize each server entry
-                for srv in servers:
-                    srv.setdefault("folder", ROOT_FOLDER)
-                    srv.setdefault("auto_sequence", [])
-                    srv.setdefault("port_forwards", [])
-    
-                # 1) Restore servers
-                self.servers = servers
-                try:
-                    save_servers(self.servers, self.master_passphrase) # UPDATED CALL
-                except Exception as e:
-                    self._error(f"Failed to save imported servers: {e}")
-    
-                # 2) Restore folders: union imported folder list with any folders
-                #    that servers are actually assigned to
-                folders_from_servers = {
-                    srv["folder"] for srv in servers
-                    if srv.get("folder") != ROOT_FOLDER
-                }
-                all_folders = set(imported_folders) | folders_from_servers
-                self.user_folders = sorted(all_folders, key=natural_key)
-                self.settings["folders"] = self.user_folders
-                save_settings(self.settings) # No passphrase needed for settings
-    
-                # rebuild the UI tree
-                self.reload_folders()
-                self.populate_tree()
-                self.tree.expand_row(Gtk.TreePath.new_from_string("0"), False)
-    
-                self.log(
-                    f"Imported {len(self.servers)} servers and "
-                    f"{len(self.user_folders)} folders from '{filename}'"
-                )
-    
+                save_servers(self.servers, self.master_passphrase) 
             except Exception as e:
-                self._error(f"Import failed:\n{e}")
-        else:
-            dlg.destroy()
+                self._error(f"Failed to save imported servers: {e}")
+                return
+
+            # Handle Folders
+            folders_from_servers = {
+                srv["folder"] for srv in unique_new_servers
+                if srv.get("folder") != ROOT_FOLDER
+            }
+            all_folders = set(imported_folders) | folders_from_servers | set(self.user_folders)
+            self.user_folders = sorted(all_folders, key=natural_key)
+            self.settings["folders"] = self.user_folders
+            save_settings(self.settings) 
+
+            self.reload_folders()
+            self.populate_tree()
+            self.tree.expand_row(Gtk.TreePath.new_from_string("0"), False)
+
+            self.log(f"Imported {added} unique servers from '{filename}'")
+            self.show_info_dialog("Import Successful", f"Successfully imported {added} SCARPA servers.")
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self._error(f"Import failed:\n{e}")
+
+    def process_securecrt_import(self, file_path):
+        """Handles XML imports with Interactive Auto-Renaming"""
+        try:
+            imported_servers = parse_securecrt_xml(file_path)
+            
+            if not imported_servers:
+                self._error("No valid servers found in the selected XML file.")
+                return
+                
+            for srv in imported_servers:
+                srv.setdefault("auto_sequence", [])
+                srv.setdefault("port_forwards", [])
+                srv.setdefault("folder", ROOT_FOLDER)
+                
+            # --- INTERACTIVE DEDUPLICATION LOGIC ---
+            existing_sigs = {
+                (s.get("name"), s.get("host"), s.get("user"), s.get("port"), s.get("folder"))
+                for s in self.servers
+            }
+            existing_names = { s.get("name") for s in self.servers if s.get("name") }
+
+            unique_new_servers = []
+            for srv in imported_servers:
+                base_name = srv.get("name")
+                
+                sig = (base_name, srv.get("host"), srv.get("user"), srv.get("port"), srv.get("folder"))
+                if sig in existing_sigs:
+                    continue  # 100% exact copy, skip silently
+                    
+                new_name = base_name
+                if base_name in existing_names:
+                    msg = (f"A connection named '{base_name}' already exists, but the imported version "
+                           f"has different settings.\n\n"
+                           f"Do you want to import this as a new connection and auto-rename it?")
+                           
+                    wants_to_import = self.ask_yes_no_dialog("Duplicate Name Detected", msg)
+                    
+                    if not wants_to_import:
+                        continue 
+                        
+                    counter = 1
+                    while new_name in existing_names:
+                        new_name = f"{base_name}({counter})"
+                        counter += 1
+                        
+                srv["name"] = new_name
+                unique_new_servers.append(srv)
+                
+                new_sig = (new_name, srv.get("host"), srv.get("user"), srv.get("port"), srv.get("folder"))
+                existing_sigs.add(new_sig)
+                existing_names.add(new_name)
+
+            if not unique_new_servers:
+                self.show_info_dialog("No New Servers", "No new servers were imported. They were either exact duplicates or skipped by the user.")
+                return
+
+            added = len(unique_new_servers)
+            self.servers.extend(unique_new_servers) 
+            
+            try:
+                save_servers(self.servers, self.master_passphrase)
+            except Exception as e:
+                self._error(f"Failed to save XML imported servers: {e}")
+                return
+                
+            folders_from_servers = {
+                srv["folder"] for srv in unique_new_servers
+                if srv.get("folder") != ROOT_FOLDER
+            }
+            all_folders = folders_from_servers | set(self.user_folders)
+            self.user_folders = sorted(all_folders, key=natural_key)
+            self.settings["folders"] = self.user_folders
+            save_settings(self.settings)
+
+            self.reload_folders()
+            self.populate_tree()
+            self.tree.expand_row(Gtk.TreePath.new_from_string("0"), False)
+            
+            self.log(f"Imported {added} unique SecureCRT servers.")
+            self.show_info_dialog("Import Successful", f"Successfully imported {added} servers from XML.")
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self._error(f"An error occurred during XML import:\n{e}")
+
+    def process_putty_import(self, file_path):
+        """Handles native PuTTY (.reg) imports with Interactive Auto-Renaming"""
+        try:
+            imported_servers = parse_putty_reg(file_path)
+            
+            if not imported_servers:
+                self._error("No valid servers found in the selected .reg file.")
+                return
+                
+            for srv in imported_servers:
+                srv.setdefault("auto_sequence", [])
+                srv.setdefault("port_forwards", [])
+                srv.setdefault("folder", ROOT_FOLDER)
+                
+            existing_sigs = {
+                (s.get("name"), s.get("host"), s.get("user"), s.get("port"), s.get("folder"))
+                for s in self.servers
+            }
+            existing_names = { s.get("name") for s in self.servers if s.get("name") }
+
+            unique_new_servers = []
+            for srv in imported_servers:
+                base_name = srv.get("name")
+                
+                # First, check if this EXACT server is already in the list
+                sig = (base_name, srv.get("host"), srv.get("user"), srv.get("port"), srv.get("folder"))
+                if sig in existing_sigs:
+                    continue  # It is a 100% identical copy, skip it silently.
+                    
+                # If the name exists but the settings are different, ASK THE USER!
+                new_name = base_name
+                if base_name in existing_names:
+                    msg = (f"A connection named '{base_name}' already exists, but the imported version "
+                           f"has different settings (IP/Port/User).\n\n"
+                           f"Do you want to import this as a new connection and auto-rename it?")
+                           
+                    wants_to_import = self.ask_yes_no_dialog("Duplicate Name Detected", msg)
+                    
+                    if not wants_to_import:
+                        continue # User clicked 'No', skip it!
+                        
+                    # User clicked 'Yes', find the next available safe name
+                    counter = 1
+                    while new_name in existing_names:
+                        new_name = f"{base_name}({counter})"
+                        counter += 1
+                        
+                # Apply the name (whether it's the original or the new renamed one)
+                srv["name"] = new_name
+                unique_new_servers.append(srv)
+                
+                # Update our trackers so we don't use this name again in the same import file
+                new_sig = (new_name, srv.get("host"), srv.get("user"), srv.get("port"), srv.get("folder"))
+                existing_sigs.add(new_sig)
+                existing_names.add(new_name)
+
+            if not unique_new_servers:
+                self.show_info_dialog("No New Servers", "No new servers were imported. They were either exact duplicates or skipped by the user.")
+                return
+
+            added = len(unique_new_servers)
+            self.servers.extend(unique_new_servers) 
+            
+            try:
+                save_servers(self.servers, self.master_passphrase)
+            except Exception as e:
+                self._error(f"Failed to save PuTTY imported servers: {e}")
+                return
+                
+            self.settings["folders"] = self.user_folders
+            save_settings(self.settings)
+
+            self.reload_folders()
+            self.populate_tree()
+            self.tree.expand_row(Gtk.TreePath.new_from_string("0"), False)
+            
+            self.log(f"Imported {added} unique PuTTY servers.")
+            self.show_info_dialog("Import Successful", f"Successfully imported {added} servers from PuTTY.")
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self._error(f"An error occurred during PuTTY import:\n{e}")
+
+    def ask_yes_no_dialog(self, title, message):
+        """Safely shows a GUI Yes/No question dialog"""
+        dialog = Gtk.MessageDialog(
+            transient_for=None,
+            flags=0,
+            message_type=Gtk.MessageType.QUESTION,
+            buttons=Gtk.ButtonsType.YES_NO,
+            text=title
+        )
+        dialog.format_secondary_text(message)
+        response = dialog.run()
+        dialog.destroy()
+        return response == Gtk.ResponseType.YES
 
     # ── File Menu: Export Servers ───────────────────────────────────────
     def on_export(self, action, param):
@@ -3225,25 +3945,56 @@ class ScarpaConnectionManager(Gtk.Application):
                 self._error(f"Failed to change passphrase: {e}")
    
     # ── Folder Commands (New/Rename/Delete) ───────────────────────────────────────
-    def on_new_folder(self, action, param):
-        # prompt for folder name
-        name = self._simple_input("New Folder")
-        # require non‐empty name
-        if not name:
-            self._error("Folder name is required.")
-            return
-        # avoid duplicates
-        if name in self.user_folders:
-            self._error(f"Folder '{name}' already exists.")
-            return
+    def on_new_folder(self, widget):
+        """Creates a new folder nested under the currently selected folder"""
+        # 1. Determine the exact target folder using our smart locking
+        selection = self.tree.get_selection()
+        model, tree_iter = selection.get_selected()
+        
+        try: root_val = ROOT_FOLDER
+        except NameError: root_val = "Session"
+        
+        parent_path = root_val
+        if tree_iter:
+            row_data = model.get_value(tree_iter, 2)
+            if row_data and len(row_data) >= 2:
+                typ, item = row_data[0], row_data[1]
+                if typ == "folder":
+                    parent_path = str(item)
+                elif typ == "server":
+                    actual_data = self.servers[item] if isinstance(item, int) else item
+                    parent_path = actual_data.get("folder", root_val)
 
-        # all good → add folder
-        self.user_folders.append(name)
-        self.settings["folders"] = self.user_folders
-        save_settings(self.settings) # No passphrase needed for settings
-        self.reload_folders()
-        self.populate_tree()
-        self.tree.expand_row(Gtk.TreePath.new_from_string("0"), False)
+        # 2. Prompt for the new folder name
+        dialog = Gtk.MessageDialog(
+            transient_for=None,
+            flags=0,
+            message_type=Gtk.MessageType.QUESTION,
+            buttons=Gtk.ButtonsType.OK_CANCEL,
+            text=f"Create new folder inside '{parent_path}':"
+        )
+        entry = Gtk.Entry()
+        entry.set_placeholder_text("New Folder Name")
+        box = dialog.get_message_area()
+        box.pack_start(entry, True, True, 10)
+        dialog.show_all()
+        
+        response = dialog.run()
+        new_name = entry.get_text().strip()
+        dialog.destroy()
+        
+        # 3. Safely nest and build the folder
+        if response == Gtk.ResponseType.OK and new_name:
+            new_name = new_name.replace("/", "-") # Prevent manual path corruption
+            
+            full_new_path = new_name if parent_path == root_val else f"{parent_path}/{new_name}"
+                
+            if full_new_path not in self.user_folders:
+                self.user_folders.append(full_new_path)
+                self.save_state_and_reload() # Use our new helper!
+                self.log(f"Created new folder: '{full_new_path}'")
+            else:
+                self.log(f"Notice: Folder '{full_new_path}' already exists.")
 
     def on_rename_folder(self, action, param):
         model, it = self.tree.get_selection().get_selected()
@@ -3353,51 +4104,6 @@ class ScarpaConnectionManager(Gtk.Application):
         self.populate_tree()
         self.tree.expand_row(Gtk.TreePath.new_from_string("0"), False)
 
-    def on_tree_key_press(self, tree, event):
-        """
-        Handles keyboard shortcuts on the TreeView:
-        - Delete: Deletes selected item
-        - Ctrl+C: Copy Server
-        - Ctrl+V: Paste Server
-        """
-        # Check if Control key is held down
-        is_ctrl = (event.state & Gdk.ModifierType.CONTROL_MASK)
-
-        # ── Handle Ctrl+C (Copy) ──
-        if is_ctrl and event.keyval == Gdk.KEY_c:
-            # We call the existing handler directly. 
-            # Note: on_copy_server handles its own validation 
-            # (e.g., checking if a server is actually selected).
-            self.on_copy_server(None, None)
-            return True # Consume event
-
-        # ── Handle Ctrl+V (Paste) ──
-        if is_ctrl and event.keyval == Gdk.KEY_v:
-            # Only try to paste if we actually have something copied
-            if hasattr(self, "_copied_server"):
-                self.on_paste_server(None, None)
-            return True # Consume event
-
-        # ── Handle Delete Key (Existing Logic) ──
-        if event.keyval == Gdk.KEY_Delete:
-            selection = tree.get_selection()
-            model, it = selection.get_selected()
-            
-            if not it:
-                return False
-
-            node, val = model.get_value(it, 2)
-            
-            if node == "folder":
-                if val == ROOT_FOLDER: return False
-                self.on_delete_folder(None, None)
-                return True
-            
-            elif node == "server":
-                self.on_delete_server(None, None)
-                return True
-
-        return False
 
     # ── Connect Actions (SSH & SFTP) ─────────────────────────────────────────
     def on_ssh(self, action, param):
@@ -5362,6 +6068,43 @@ class ScarpaConnectionManager(Gtk.Application):
                 return True # Return True to stop other handlers from processing the click
             
             return False
+
+    # ─── DIALOG HELPERS ────────────────────────────────────────────────────
+    def ask_for_password(self, message):
+        """Safely pops up a password entry dialog"""
+        dialog = Gtk.MessageDialog(
+            transient_for=None,
+            flags=0,
+            message_type=Gtk.MessageType.QUESTION,
+            buttons=Gtk.ButtonsType.OK_CANCEL,
+            text=message
+        )
+        # Create a hidden password entry field
+        entry = Gtk.Entry()
+        entry.set_visibility(False)  # Hides text as dots
+        entry.set_activates_default(True)
+        
+        box = dialog.get_message_area()
+        box.pack_start(entry, True, True, 10)
+        dialog.show_all()
+        
+        response = dialog.run()
+        password = entry.get_text() if response == Gtk.ResponseType.OK else None
+        dialog.destroy()
+        return password
+
+    def show_info_dialog(self, title, message):
+        """Safely shows a GUI info message"""
+        dialog = Gtk.MessageDialog(
+            transient_for=None,
+            flags=0,
+            message_type=Gtk.MessageType.INFO,
+            buttons=Gtk.ButtonsType.OK,
+            text=title
+        )
+        dialog.format_secondary_text(message)
+        dialog.run()
+        dialog.destroy()
 
 # ── main() ─────────────────────────────────────────────────────────────────────────────
 
