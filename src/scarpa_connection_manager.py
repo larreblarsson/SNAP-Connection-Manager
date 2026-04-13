@@ -3967,7 +3967,7 @@ class ScarpaConnectionManager(Gtk.Application):
 
         # 2. Prompt for the new folder name
         dialog = Gtk.MessageDialog(
-            transient_for=None,
+            transient_for=self.win,
             flags=0,
             message_type=Gtk.MessageType.QUESTION,
             buttons=Gtk.ButtonsType.OK_CANCEL,
@@ -4745,7 +4745,7 @@ class ScarpaConnectionManager(Gtk.Application):
             transient_for=parent_window, # Can be None
             modal=True,
             program_name=APP_TITLE,
-            version="1.2.21",
+            version="1.2.22",
             authors=["Copilot, Gemini, Tomas Larsson"],
             artists=["Tomas Larsson"],
             comments="A GTK-based SSH/SFTP session manager.\nRiposa in pace, Aquila di Filottrano. Sarai sempre con noi!"
