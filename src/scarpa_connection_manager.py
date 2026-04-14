@@ -3945,7 +3945,7 @@ class ScarpaConnectionManager(Gtk.Application):
                 self._error(f"Failed to change passphrase: {e}")
    
     # ── Folder Commands (New/Rename/Delete) ───────────────────────────────────────
-    def on_new_folder(self, widget):
+    def on_new_folder(self, widget=None, data=None):
         """Creates a new folder nested under the currently selected folder"""
         # 1. Determine the exact target folder using our smart locking
         selection = self.tree.get_selection()
@@ -3996,7 +3996,7 @@ class ScarpaConnectionManager(Gtk.Application):
             else:
                 self.log(f"Notice: Folder '{full_new_path}' already exists.")
 
-    def on_rename_folder(self, action, param):
+    def on_rename_folder(self, widget=None, data=None):
         model, it = self.tree.get_selection().get_selected()
         if not it:
             return self._info("Select a folder to rename.")
