@@ -1130,7 +1130,7 @@ class SFTPWindow(Gtk.Window):
         base_dir = self.current_local_dir if pane == "local" else self.current_remote_dir
         treeview = self.local_treeview if pane == "local" else self.remote_treeview
         
-        base_name = "New Folder"
+        base_name = "Add Folder"
         new_name = base_name
         counter = 1
         
@@ -1719,11 +1719,29 @@ class SFTPWindow(Gtk.Window):
 
         Gtk.drag_set_icon_name(context, icon_name, 0, 0)
 
-    def on_drag_data_get(self, treeview, context, selection, info, time, source_pane):
-        selected_items = self.get_selected_items(treeview, source_pane)
-        if not selected_items: return
-        data = f"{source_pane}:" + "|".join(selected_items)
-        selection.set_text(data, -1)
+    # ── Build drag payload: serialize selected row-paths ────────────────────
+    def on_drag_data_get(self, treeview, context, selection, info, time):
+        """Bypasses GTK byte-mangling by using an internal memory pocket for D&D"""
+        try:
+            model, paths = treeview.get_selection().get_selected_rows()
+            if not paths: return
+            
+            # Put the dragged items into the safe internal pocket
+            self._internal_drag_data = []
+            
+            for path in paths:
+                tree_iter = model.get_iter(path)
+                row_data = model.get_value(tree_iter, 2)
+                
+                if row_data and len(row_data) >= 2:
+                    typ, item = row_data[0], row_data[1]
+                    self._internal_drag_data.append({"type": typ, "path": item})
+
+            # Send a dummy byte to satisfy GTK's handshake requirement
+            selection.set(selection.get_target(), 8, b"OK")
+            
+        except Exception as e:
+            self.log(f"Error starting D&D: {e}")
 
     def on_drag_data_received(self, treeview, context, x, y, selection, info, time, dest_pane):
         # 1. Default to the pane's current directory
@@ -2583,10 +2601,15 @@ class ScarpaConnectionManager(Gtk.Application):
         actual_data = self.servers[item] if isinstance(item, int) else item
 
         if not hasattr(self, '_app_clipboard'):
-            self._app_clipboard = {"action": None, "type": None, "data": None}
+            self._app_clipboard = {"action": None, "type": None, "data": None, "ref": None}
 
         import copy
-        self._app_clipboard = {"action": action, "type": typ, "data": copy.deepcopy(actual_data)}
+        self._app_clipboard = {
+            "action": action, 
+            "type": typ, 
+            "data": copy.deepcopy(actual_data),
+            "ref": actual_data  # CRITICAL: Store the raw reference so we can find it to move it later!
+        }
         
         if typ == "server":
             self.on_copy_server(None, None)
@@ -2602,7 +2625,7 @@ class ScarpaConnectionManager(Gtk.Application):
         self.execute_smart_copy(widget, data, action="cut")
 
     def execute_smart_paste(self, widget=None, data=None):
-        """Universal Paste triggered by Keyboard or Menus"""
+        """Universal Paste triggered by Keyboard or Menus with Local Naming"""
         selection = self.tree.get_selection()
         model, tree_iter = selection.get_selected()
         if not tree_iter: return
@@ -2618,6 +2641,7 @@ class ScarpaConnectionManager(Gtk.Application):
         action = clip.get("action")
         c_type = clip.get("type")
         c_data = clip.get("data")
+        c_ref = clip.get("ref")
         
         if not action or not c_data:
             if not is_folder:
@@ -2633,18 +2657,37 @@ class ScarpaConnectionManager(Gtk.Application):
 
         # --- PASTE SERVER ---
         if c_type == "server":
+            source_parent = c_data.get("folder", root_val)
+            is_same_parent = (target_path == source_parent)
+            
+            # --- CRITICAL BUG FIX: LOCAL NAME COLLISION ---
+            # Corrected check: Gather names of servers *in the target folder only*
+            existing_names_in_target = {
+                s.get("name") 
+                for s in self.servers 
+                if s.get("folder", root_val) == target_path
+            }
+
             if action == "copy":
                 import copy
                 new_srv = copy.deepcopy(c_data)
                 new_srv["folder"] = target_path if not is_root_target else root_val
                 
                 base_name = c_data.get('name', 'Server')
-                existing_names = {s.get("name") for s in self.servers}
                 
-                final_name = base_name
+                # We append '(Copy)' only if we are creating a duplicate within the same folder,
+                # or if the name collides with another server in the target folder.
+                if base_name in existing_names_in_target and is_same_parent:
+                    desired_name = f"{base_name} (Copy)"
+                else:
+                    desired_name = base_name
+                
+                # Handle further name collisions by appending numbers like macOS or Windows does.
+                final_name = desired_name
                 counter = 1
-                while final_name in existing_names:
-                    final_name = f"{base_name} (Copy {counter})" if counter > 1 else f"{base_name} (Copy)"
+                while final_name in existing_names_in_target:
+                    suffix = f" (Copy {counter})" if is_same_parent else f" ({counter})"
+                    final_name = f"{base_name}{suffix}"
                     counter += 1
                     
                 new_srv["name"] = final_name
@@ -2653,18 +2696,44 @@ class ScarpaConnectionManager(Gtk.Application):
                     new_srv["uuid"] = str(uuid.uuid4())
                     
                 self.servers.append(new_srv)
-                self.log(f"Pasted server '{final_name}' into '{target_path}'")
+                self.log(f"Pasted copy of server '{final_name}' into '{target_path}'")
                 
             elif action == "cut":
-                c_data["folder"] = target_path if not is_root_target else root_val
-                self._app_clipboard = {} 
-                self.log(f"Moved server to '{target_path}'")
+                if is_same_parent:
+                    self.log("Notice: Cannot cut and paste an item to its current location.")
+                    return
+
+                # --- CRITICAL BUG FIX: LOCAL NAME COLLISION ON CUT ---
+                # A cut server should keep its name if moving to a different folder.
+                # It only needs a new name if there is a collision in the *destination* folder.
+                base_name = c_data.get('name', 'Server')
+                if base_name not in existing_names_in_target:
+                    final_name = base_name
+                else:
+                    # If we cut a server named 'Atea' and paste it into a folder
+                    # that already has a server named 'Atea', rename the pasted server.
+                    counter = 1
+                    while f"{base_name} ({counter})" in existing_names_in_target:
+                        counter += 1
+                    final_name = f"{base_name} ({counter})"
+
+                if c_ref in self.servers:
+                    c_ref["name"] = final_name
+                    c_ref["folder"] = target_path if not is_root_target else root_val
+                    self._app_clipboard = {} 
+                    
+                    if final_name == base_name:
+                        self.log(f"Moved server to '{target_path}'")
+                    else:
+                        self.log(f"Moved server to '{target_path}' -> renamed to '{final_name}' due to conflict.")
+                else:
+                    self.log("Notice: Could not locate original server for move.")
                 
         # --- PASTE FOLDER ---
         elif c_type == "folder":
             source_path = str(c_data)
             source_name = source_path.split("/")[-1]
-            source_parent = "/".join(source_path.split("/")[:-1])
+            source_parent = "/".join(source_path.split("/")[:-1]) if "/" in source_path else root_val
             
             if clean_target == source_path or clean_target.startswith(source_path + "/"):
                 self.log("Notice: Cannot paste a folder inside itself.")
@@ -2675,17 +2744,36 @@ class ScarpaConnectionManager(Gtk.Application):
                 self._app_clipboard = {}
                 return
 
-            new_base = source_name if is_root_target else f"{clean_target}/{source_name}"
-                
-            final_base = new_base
-            counter = 1
-            while final_base in self.user_folders and final_base != source_path:
-                suffix = f" (Copy {counter})" if action == "copy" else f" ({counter})"
-                final_base = f"{source_name}{suffix}" if is_root_target else f"{clean_target}/{source_name}{suffix}"
-                counter += 1
+            is_same_parent = (target_path == source_parent)
 
+            def build_full_path(folder_name):
+                return folder_name if is_root_target else f"{clean_target}/{folder_name}"
+
+            if action == "copy":
+                # Start with (Copy) only if pasting into the exact same parent
+                desired_name = f"{source_name} (Copy)" if is_same_parent else source_name
+                
+                final_name = desired_name
+                counter = 1
+                while build_full_path(final_name) in self.user_folders:
+                    suffix = f" (Copy {counter})" if is_same_parent else f" ({counter})"
+                    final_name = f"{source_name}{suffix}"
+                    counter += 1
+                    
+                final_base = build_full_path(final_name)
+                
+            elif action == "cut":
+                final_name = source_name
+                counter = 1
+                while build_full_path(final_name) in self.user_folders and build_full_path(final_name) != source_path:
+                    final_name = f"{source_name} ({counter})"
+                    counter += 1
+                    
+                final_base = build_full_path(final_name)
+
+            # --- Update State Data ---
             folders_to_add = [final_base]
-            folders_to_remove = [] if action == "copy" else [source_path]
+            folders_to_remove = []
             
             for uf in self.user_folders:
                 if uf.startswith(source_path + "/"):
@@ -2693,6 +2781,10 @@ class ScarpaConnectionManager(Gtk.Application):
                     folders_to_add.append(final_base + remainder)
                     if action == "cut":
                         folders_to_remove.append(uf)
+
+            # Mark the parent folder itself for removal if cutting
+            if action == "cut" and source_path not in folders_to_remove:
+                folders_to_remove.append(source_path)
 
             for f in folders_to_remove:
                 if f in self.user_folders:
@@ -2751,33 +2843,38 @@ class ScarpaConnectionManager(Gtk.Application):
 
             selection = self.tree.get_selection()
             model, tree_iter = selection.get_selected()
+            
             if not tree_iter: return False
                 
             path = model.get_path(tree_iter)
             row_data = model.get_value(tree_iter, 2)
+            
             if not row_data or len(row_data) < 2: return False
                 
-            is_folder = (row_data[0] == "folder")
+            typ, item = row_data[0], row_data[1]
+            is_folder = (typ == "folder")
 
             # --- SMART CLIPBOARD ROUTING ---
             if ctrl_pressed:
                 if lower_keyval == Gdk.KEY_c:
-                    self.execute_smart_copy()
+                    self.execute_smart_copy(action="copy")  
                     return True
                 elif lower_keyval == Gdk.KEY_x:
-                    self.execute_smart_cut()
+                    self.execute_smart_copy(action="cut")   
                     return True
                 elif lower_keyval == Gdk.KEY_v:
-                    self.execute_smart_paste()
+                    self.execute_smart_paste()              
                     return True
 
             # --- DELETE ROUTING ---
             if keyval in (Gdk.KEY_Delete, Gdk.KEY_KP_Delete):
-                if is_folder: self.on_delete_folder(None, None)
-                else: self.on_delete_server(None, None)
+                if is_folder: 
+                    self.on_delete_folder()
+                else: 
+                    self.on_delete_server()
                 return True
 
-            # --- ARROWS AND ENTER ---
+            # --- ENTER KEY ROUTING ---
             if keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter):
                 if is_folder:
                     if self.tree.row_expanded(path): self.tree.collapse_row(path)
@@ -2787,6 +2884,7 @@ class ScarpaConnectionManager(Gtk.Application):
                     self.on_ssh(None, None)
                     return True
 
+            # --- ARROW KEY ROUTING ---
             if keyval == Gdk.KEY_Right:
                 if is_folder:
                     if not self.tree.row_expanded(path):
@@ -2811,7 +2909,8 @@ class ScarpaConnectionManager(Gtk.Application):
                 return False
 
         except Exception as e:
-            self.log(f"Keyboard error: {type(e).__name__}: {e}")
+            self.log(f"Keyboard error in on_tree_key_press: {type(e).__name__}: {e}")
+            
         return False
 
     # --- New Passphrase Management Methods (add these inside ScarpaConnectionManager) ---
@@ -2958,44 +3057,26 @@ class ScarpaConnectionManager(Gtk.Application):
 
     # ── Build drag payload: serialize selected row-paths ────────────────────
     def on_drag_data_get(self, treeview, context, selection, info, time):
-        model, paths = treeview.get_selection().get_selected_rows()
-        data = "\n".join(path.to_string() for path in paths)
-        selection.set(selection.get_target(), 8, data.encode("utf-8"))
-
-    def _start_help_server(self):
-        """
-        Starts a simple, temporary HTTP server in a background thread to serve
-        the help file, bypassing any browser sandboxing issues.
-        Returns the URL to the help file and the server object.
-        """
+        """Builds GTK drag payload and saves a safe internal reference"""
         try:
-            # The directory where user_guide.html is located
-            serve_directory = os.path.dirname(HELP_FILE_PATH)
-            # The filename of the guide
-            file_name = os.path.basename(HELP_FILE_PATH)
-
-            # A special handler that serves files from our specific directory
-            class HelpRequestHandler(http.server.SimpleHTTPRequestHandler):
-                def __init__(self, *args, **kwargs):
-                    super().__init__(*args, directory=serve_directory, **kwargs)
-
-            # Find a free port to run the server on
-            httpd = socketserver.TCPServer(("", 0), HelpRequestHandler)
-            port = httpd.server_address[1]
+            model, paths = treeview.get_selection().get_selected_rows()
+            if not paths: return
             
-            # Run the server in a daemon thread. This means the thread will
-            # automatically shut down when the main application exits.
-            server_thread = threading.Thread(target=httpd.serve_forever)
-            server_thread.daemon = True
-            server_thread.start()
-
-            url = f"http://127.0.0.1:{port}/{file_name}"
-            self.log(f"Help server started at {url}")
-            return url, httpd
-
+            # 1. Send standard string data to keep GTK's pipeline happy and prevent silent aborts
+            data = "\n".join(path.to_string() for path in paths)
+            selection.set(selection.get_target(), 8, data.encode("utf-8"))
+            
+            # 2. Store the actual rich data in our safe internal pocket
+            self._internal_drag_data = []
+            for path in paths:
+                tree_iter = model.get_iter(path)
+                row_data = model.get_value(tree_iter, 2)
+                if row_data and len(row_data) >= 2:
+                    typ, item = row_data[0], row_data[1]
+                    self._internal_drag_data.append({"type": typ, "path": item})
+                    
         except Exception as e:
-            self.log(f"Failed to start help server: {e}")
-            return None, None
+            self.log(f"Error starting D&D: {e}")
 
     # Quit application
     def on_quit(self, action, param):
@@ -3105,62 +3186,143 @@ class ScarpaConnectionManager(Gtk.Application):
                 treeview.expand_row(path, False)
 
     # Drag-and-drop: reorder servers and assign them to folders
-    def on_tree_row_dropped(self, treeview, context, x, y, selection, info, time):
-        data = selection.get_data()
-        moved_idxs = []
-        if data:
-            for line in data.decode().splitlines():
-                src_path = Gtk.TreePath.new_from_string(line)
-                it = self.store.get_iter(src_path)
-                node, idx = self.store.get_value(it, 2)
-                if node == "server":
-                    moved_idxs.append(idx)
-
-        # Determine target folder from drop position
-        target_folder = ROOT_FOLDER
-        dest = treeview.get_dest_row_at_pos(x, y)
-        if dest:
-            path_dest, _ = dest
-            it_dest = self.store.get_iter(path_dest)
-            dtype, val = self.store.get_value(it_dest, 2)
-            if dtype == "folder":
-                target_folder = val
-            elif dtype == "server":
-                parent = self.store.iter_parent(it_dest)
-                if parent:
-                    ptype, pfld = self.store.get_value(parent, 2)
-                    if ptype == "folder":
-                        target_folder = pfld
-
-        # Update folder property on moved servers
-        for idx in moved_idxs:
-            self.servers[idx]["folder"] = target_folder
-
-        # Rebuild servers list in order shown by the TreeView
-        new_order = []
-        root_it = self.store.get_iter(Gtk.TreePath.new_from_string("0"))
-        def walk(it):
-            while it:
-                ntype, payload = self.store.get_value(it, 2)
-                if ntype == "server":
-                    new_order.append(self.servers[payload])
-                elif ntype == "folder":
-                    walk(self.store.iter_children(it))
-                it = self.store.iter_next(it)
-        walk(self.store.iter_children(root_it))
-
-        self.servers = new_order
+    def on_tree_row_dropped(self, widget, context, x, y, selection_data, info, time):
+        """Handles dropping nested folder trees and servers securely with Smart Naming"""
         try:
-            save_servers(self.servers, self.master_passphrase) # UPDATED CALL
-        except Exception as e:
-            self._error(f"Failed to save servers after drag/drop: {e}")
-        
-        # Refresh the tree to update indices & icons
-        self.reload_folders()
-        self.populate_tree()
-        self.tree.expand_row(Gtk.TreePath.new_from_string("0"), False)
+            # 1. Retrieve the data from our safe internal pocket (ignoring the mangled selection_data)
+            dragged_items = getattr(self, '_internal_drag_data', None)
+            
+            if not dragged_items: 
+                Gtk.drag_finish(context, False, False, time)
+                return False
 
-        context.finish(True, False, time)
+            # 2. Precision targeting to lock onto the drop location
+            drop_info = self.tree.get_dest_row_at_pos(x, y)
+            
+            try: root_val = ROOT_FOLDER
+            except NameError: root_val = "Session"
+            
+            target_base_path = root_val
+            
+            if drop_info:
+                path, position = drop_info
+                tree_iter = self.store.get_iter(path)
+                row_data = self.store.get_value(tree_iter, 2)
+                
+                if row_data and len(row_data) >= 2:
+                    typ, item = row_data[0], row_data[1]
+                    if typ == "folder":
+                        target_base_path = str(item)
+                    elif typ == "server":
+                        actual_server = self.servers[item] if isinstance(item, int) else item
+                        target_base_path = actual_server.get("folder", root_val)
+
+            clean_target = "" if (target_base_path == root_val) else target_base_path
+            
+            servers_affected = False
+            folders_affected = False
+
+            # --- SMART LOCAL NAMING CHECK ---
+            existing_names_in_target = {
+                s.get("name") for s in self.servers if s.get("folder", root_val) == target_base_path
+            }
+
+            # 3. Process each dragged item
+            for item in dragged_items:
+                i_type = item.get("type")
+                i_path = item.get("path")
+
+                # --- DROPPING A SERVER ---
+                if i_type == "server":
+                    server_index = int(i_path)
+                    if server_index < len(self.servers):
+                        current_srv = self.servers[server_index]
+                        old_folder = current_srv.get("folder", root_val)
+                        
+                        if target_base_path != old_folder:
+                            base_name = current_srv.get("name", "Unknown Server")
+                            final_name = base_name
+                            
+                            if final_name in existing_names_in_target:
+                                counter = 1
+                                while f"{base_name} ({counter})" in existing_names_in_target:
+                                    counter += 1
+                                final_name = f"{base_name} ({counter})"
+                            
+                            current_srv["name"] = final_name
+                            current_srv["folder"] = target_base_path
+                            servers_affected = True
+                            
+                            existing_names_in_target.add(final_name)
+                            
+                            if final_name == base_name:
+                                self.log(f"Moved server to '{target_base_path}'")
+                            else:
+                                self.log(f"Moved server to '{target_base_path}' -> renamed to '{final_name}'")
+
+                # --- DROPPING A FOLDER ---
+                elif i_type == "folder":
+                    source_folder = str(i_path)
+                    source_name = source_folder.split("/")[-1]
+                    source_parent = "/".join(source_folder.split("/")[:-1]) if "/" in source_folder else root_val
+
+                    if clean_target == source_folder or clean_target.startswith(source_folder + "/"):
+                        self.log(f"Notice: Cannot move '{source_name}' inside itself.")
+                        continue
+                        
+                    if clean_target == source_parent or target_base_path == source_parent:
+                        continue
+
+                    def build_full_path(folder_name):
+                        return folder_name if target_base_path == root_val else f"{clean_target}/{folder_name}"
+
+                    final_name = source_name
+                    counter = 1
+                    while build_full_path(final_name) in self.user_folders and build_full_path(final_name) != source_folder:
+                        final_name = f"{source_name} ({counter})"
+                        counter += 1
+                        
+                    final_base = build_full_path(final_name)
+                    actual_base = final_base
+
+                    folders_to_add = []
+                    folders_to_remove = []
+                    
+                    for uf in self.user_folders:
+                        if uf == source_folder or uf.startswith(source_folder + "/"):
+                            remainder = uf[len(source_folder):]
+                            folders_to_add.append(actual_base + remainder)
+                            folders_to_remove.append(uf)
+                    
+                    for f in folders_to_remove:
+                        if f in self.user_folders: self.user_folders.remove(f)
+                    for f in folders_to_add:
+                        if f not in self.user_folders: self.user_folders.append(f)
+
+                    for s in self.servers:
+                        s_folder = s.get("folder", root_val)
+                        if s_folder == source_folder or s_folder.startswith(source_folder + "/"):
+                            remainder = s_folder[len(source_folder):]
+                            s["folder"] = actual_base + remainder
+                            servers_affected = True
+                            
+                    folders_affected = True
+                    self.log(f"Moved folder '{source_name}' -> '{actual_base}'")
+
+            # 4. Clean up memory and refresh UI
+            self._internal_drag_data = None 
+            if servers_affected or folders_affected:
+                self.save_state_and_reload()
+                
+            # Properly finish the GTK Drag sequence
+            Gtk.drag_finish(context, True, False, time)
+            return True
+
+        except Exception as e:
+            self.log(f"D&D error in on_tree_row_dropped: {type(e).__name__}: {e}")
+            Gtk.drag_finish(context, False, False, time)
+            
+        return False
 
     # ── File Menu: Import Servers ───────────────────────────────────────
     def on_import(self, *args):
@@ -3974,10 +4136,11 @@ class ScarpaConnectionManager(Gtk.Application):
             text=f"Create new folder inside '{parent_path}':"
         )
         entry = Gtk.Entry()
-        entry.set_placeholder_text("New Folder Name")
+        entry.set_placeholder_text("Add Folder Name")
         box = dialog.get_message_area()
         box.pack_start(entry, True, True, 10)
         dialog.show_all()
+        dialog.set_default_response(Gtk.ResponseType.OK)
         
         response = dialog.run()
         new_name = entry.get_text().strip()
@@ -3997,80 +4160,186 @@ class ScarpaConnectionManager(Gtk.Application):
                 self.log(f"Notice: Folder '{full_new_path}' already exists.")
 
     def on_rename_folder(self, widget=None, data=None):
-        model, it = self.tree.get_selection().get_selected()
-        if not it:
-            return self._info("Select a folder to rename.")
-        node, fld = model.get_value(it, 2)
-        if node != "folder" or fld == ROOT_FOLDER:
-            return self._info("Select a user-defined folder.")
+        """Renames a folder via the menu, showing only the short name in the dialog"""
+        selection = self.tree.get_selection()
+        model, tree_iter = selection.get_selected()
+        if not tree_iter: return
 
-        # prompt for the new name
-        new_name = self._simple_input("Rename Folder", default_text=fld)
-
-        # require non-empty
-        if not new_name:
-            self._error("Folder name is required.")
+        row_data = model.get_value(tree_iter, 2)
+        if not row_data or len(row_data) < 2 or row_data[0] != "folder":
             return
 
-        # no-op if unchanged
-        if new_name == fld:
+        old_path = str(row_data[1])
+        try: root_val = ROOT_FOLDER
+        except NameError: root_val = "Session"
+
+        if old_path == root_val:
+            self.show_info_dialog("Invalid", "Cannot rename the root Session folder.")
             return
 
-        # avoid duplicates
-        if new_name in self.user_folders:
-            self._error(f"Folder '{new_name}' already exists.")
+        # --- CRITICAL UX FIX ---
+        # Extract just the short name (basename) and the parent path separately
+        old_basename = old_path.split("/")[-1]
+        parent_path = old_path.rsplit("/", 1)[0] if "/" in old_path else ""
+
+        dialog = Gtk.MessageDialog(
+            transient_for=self.win,
+            flags=0,
+            message_type=Gtk.MessageType.QUESTION,
+            buttons=Gtk.ButtonsType.OK_CANCEL,
+            text=f"Rename folder '{old_basename}':"
+        )
+        
+        entry = Gtk.Entry()
+        # Pre-fill the box with ONLY the short name!
+        entry.set_text(old_basename) 
+        
+        # Allow pressing 'Enter' to instantly save
+        entry.connect("activate", lambda e: dialog.response(Gtk.ResponseType.OK))
+        
+        box = dialog.get_message_area()
+        box.pack_start(entry, True, True, 10)
+        dialog.show_all()
+        
+        dialog.set_default_response(Gtk.ResponseType.OK)
+        
+        response = dialog.run()
+        new_basename = entry.get_text().strip()
+        dialog.destroy()
+
+        # If they clicked OK, typed a new name, and it's actually different:
+        if response == Gtk.ResponseType.OK and new_basename and new_basename != old_basename:
+            new_basename = new_basename.replace("/", "-") # Prevent manual path corruption
+            
+            # Reconstruct the full path safely
+            if parent_path:
+                new_path = f"{parent_path}/{new_basename}"
+            else:
+                new_path = new_basename
+                
+            if new_path in self.user_folders:
+                self.show_info_dialog("Exists", f"Folder '{new_path}' already exists.")
+                return
+                
+            # 1. Update the folder names in memory
+            to_remove = []
+            to_add = []
+            for uf in self.user_folders:
+                if uf == old_path or uf.startswith(old_path + "/"):
+                    to_remove.append(uf)
+                    remainder = uf[len(old_path):]
+                    to_add.append(new_path + remainder)
+
+            for uf in to_remove:
+                if uf in self.user_folders:
+                    self.user_folders.remove(uf)
+            self.user_folders.extend(to_add)
+
+            # 2. Update all servers residing inside this folder (and its subfolders)
+            for s in self.servers:
+                s_folder = s.get("folder", root_val)
+                if s_folder == old_path or s_folder.startswith(old_path + "/"):
+                    remainder = s_folder[len(old_path):]
+                    s["folder"] = new_path + remainder
+
+            self.log(f"Renamed folder: '{old_path}' -> '{new_path}'")
+            self.save_state_and_reload()
+
+    def on_delete_folder(self, widget=None, data=None):
+        """Safely deletes a nested folder and all its contents"""
+        selection = self.tree.get_selection()
+        model, tree_iter = selection.get_selected()
+        if not tree_iter: return
+
+        row_data = model.get_value(tree_iter, 2)
+        if not row_data or len(row_data) < 2 or row_data[0] != "folder":
             return
 
-        # perform rename
-        idx = self.user_folders.index(fld)
-        self.user_folders[idx] = new_name
-        self.settings["folders"] = self.user_folders
-        save_settings(self.settings) # No passphrase needed for settings
+        fld_path = str(row_data[1])
+        try: root_val = ROOT_FOLDER
+        except NameError: root_val = "Session"
 
-        # update any servers in this folder
-        for s in self.servers:
-            if s.get("folder") == fld:
-                s["folder"] = new_name
-        try:
-            save_servers(self.servers, self.master_passphrase) # UPDATED CALL
-        except Exception as e:
-            self._error(f"Failed to save servers after folder rename: {e}")
-
-        # refresh UI
-        self.reload_folders()
-        self.populate_tree()
-        self.tree.expand_row(Gtk.TreePath.new_from_string("0"), False)
-
-    def on_delete_folder(self, action, param):
-        model, it = self.tree.get_selection().get_selected()
-        if not it:
-            return self._info("Select a folder first.")
-        node, fld = model.get_value(it, 2)
-        if node != "folder" or fld == ROOT_FOLDER:
-            return self._info("Select a non-Session folder.")
-        # Make parent transient_for self.win only if self.win exists
-        parent_window = self.win if hasattr(self, 'win') and self.win else None
-        if not self._confirm("Delete Folder", f"Delete '{fld}'? Servers move to Session.", parent_window): # Pass parent
+        if fld_path == root_val:
+            self.show_info_dialog("Invalid", "Cannot delete the root Session folder.")
             return
-        for srv in self.servers:
-            if srv.get("folder") == fld:
-                srv["folder"] = ROOT_FOLDER
-        try:
-            save_servers(self.servers, self.master_passphrase) # UPDATED CALL
-        except Exception as e:
-            self._error(f"Failed to save servers after folder deletion: {e}")
-        self.user_folders.remove(fld)
-        self.settings["folders"] = self.user_folders
-        save_settings(self.settings) # No passphrase needed for settings
-        self.reload_folders()
-        self.populate_tree()
-        self.tree.expand_row(Gtk.TreePath.new_from_string("0"), False)
 
-    # ── Server Commands (Add/Edit/Delete) ────────────────────────────────────────
-    def on_add_server(self, action, param):
-        self._open_server_dialog(None)
-        self.populate_tree()
-        self.tree.expand_row(Gtk.TreePath.new_from_string("0"), False)
+        dialog = Gtk.MessageDialog(
+            transient_for=self.win,
+            flags=0,
+            message_type=Gtk.MessageType.WARNING,
+            buttons=Gtk.ButtonsType.YES_NO,
+            text=f"Delete folder '{fld_path}' and all contents inside it?"
+        )
+        response = dialog.run()
+        dialog.destroy()
+
+        if response == Gtk.ResponseType.YES:
+            # 1. Cleanly remove the folder and any nested subfolders
+            folders_to_remove = [f for f in self.user_folders if f == fld_path or f.startswith(fld_path + "/")]
+            for f in folders_to_remove:
+                if f in self.user_folders:
+                    self.user_folders.remove(f)
+
+            # 2. Cleanly remove all servers hidden deep inside this folder tree
+            self.servers = [s for s in self.servers if not (s.get("folder", root_val) == fld_path or s.get("folder", "").startswith(fld_path + "/"))]
+
+            self.save_state_and_reload()
+            self.log(f"Deleted folder tree: '{fld_path}'")
+
+    def on_delete_server(self, widget=None, data=None):
+        """Safely deletes a single server connection"""
+        selection = self.tree.get_selection()
+        model, tree_iter = selection.get_selected()
+        if not tree_iter: return
+
+        row_data = model.get_value(tree_iter, 2)
+        if not row_data or len(row_data) < 2 or row_data[0] != "server":
+            return
+
+        item = row_data[1]
+        if isinstance(item, int) and item < len(self.servers):
+            actual_server = self.servers[item]
+            s_name = actual_server.get("name", "Unknown Server")
+
+            dialog = Gtk.MessageDialog(
+                transient_for=self.win,
+                flags=0,
+                message_type=Gtk.MessageType.WARNING,
+                buttons=Gtk.ButtonsType.YES_NO,
+                text=f"Are you sure you want to delete server '{s_name}'?"
+            )
+            response = dialog.run()
+            dialog.destroy()
+
+            if response == Gtk.ResponseType.YES:
+                self.servers.pop(item)
+                self.save_state_and_reload()
+                self.log(f"Deleted server: '{s_name}'")
+
+    def on_add_server(self, widget=None, data=None):
+        """Opens the Add Server dialog, pre-filling the currently selected folder"""
+        selection = self.tree.get_selection()
+        model, tree_iter = selection.get_selected()
+        
+        try: root_val = ROOT_FOLDER
+        except NameError: root_val = "Session"
+        
+        target_folder = root_val
+        
+        # 1. Figure out exactly what folder is currently selected
+        if tree_iter:
+            row_data = model.get_value(tree_iter, 2)
+            if row_data and len(row_data) >= 2:
+                typ, item = row_data[0], row_data[1]
+                if typ == "folder":
+                    target_folder = str(item)
+                elif typ == "server":
+                    # If a server is selected, use its parent folder
+                    actual_data = self.servers[item] if isinstance(item, int) else item
+                    target_folder = actual_data.get("folder", root_val)
+
+        # 2. Open the dialog and explicitly pass the target folder
+        self._open_server_dialog(cfg=None, preselected_folder=target_folder)
 
     def on_edit_server(self, action, param):
         model, it = self.tree.get_selection().get_selected()
@@ -4082,28 +4351,6 @@ class ScarpaConnectionManager(Gtk.Application):
         self._open_server_dialog(self.servers[idx], idx)
         self.populate_tree()
         self.tree.expand_row(Gtk.TreePath.new_from_string("0"), False)
-
-    def on_delete_server(self, action, param):
-        model, it = self.tree.get_selection().get_selected()
-        if not it:
-            return self._info("Select a server first.")
-        node, idx = model.get_value(it, 2)
-        if node != "server":
-            return self._info("Select a server first.")
-        name = self.servers[idx]["name"]
-        # Make parent transient_for self.win only if self.win exists
-        parent_window = self.win if hasattr(self, 'win') and self.win else None
-        if not self._confirm("Delete Server", f"Delete '{name}'?", parent_window): # Pass parent
-            return
-        del self.servers[idx]
-        try:
-            save_servers(self.servers, self.master_passphrase) # UPDATED CALL
-        except Exception as e:
-            self._error(f"Failed to save servers after deletion: {e}")
-        self.reload_folders()
-        self.populate_tree()
-        self.tree.expand_row(Gtk.TreePath.new_from_string("0"), False)
-
 
     # ── Connect Actions (SSH & SFTP) ─────────────────────────────────────────
     def on_ssh(self, action, param):
@@ -4821,8 +5068,8 @@ class ScarpaConnectionManager(Gtk.Application):
                 mi.connect("activate", lambda w: self.on_add_server(None, None)) 
                 menu.append(mi)
     
-                # 2. New Folder (Available on all folders)
-                mi = Gtk.MenuItem(label="New Folder")
+                # 2. Add Folder (Available on all folders)
+                mi = Gtk.MenuItem(label="Add Folder")
                 mi.connect("activate", lambda w: self.on_new_folder(None, None))
                 menu.append(mi)
     
@@ -4917,54 +5164,68 @@ class ScarpaConnectionManager(Gtk.Application):
         """Reset state if user presses Escape."""
         self.rename_path = None
 
-    def _on_cell_edited(self, widget, path_str, new_text):
-        """Validate and commit the rename."""
-        # 1. Always reset the edit state first
-        self.rename_path = None
+    def _on_cell_edited(self, widget, path, text):
+        """Handles inline renaming of folders safely without crashing GTK"""
+        new_name = text.strip()
+        if not new_name: return
         
-        it = self.store.get_iter(path_str)
-        node_type, payload = self.store.get_value(it, 2)
-        new_name = new_text.strip()
-        
-        # [Existing Validation Logic ...]
-        if node_type == "folder":
-            old_name = payload
-            if old_name not in self.user_folders: return
-            if not new_name or new_name == old_name: return
-            if new_name in self.user_folders:
-                return self._error(f"Folder '{new_name}' already exists.")
+        new_name = new_name.replace("/", "-") 
 
-            idx = self.user_folders.index(old_name)
-            self.user_folders[idx] = new_name
-            self.settings["folders"] = self.user_folders
-            save_settings(self.settings)
+        try:
+            tree_iter = self.store.get_iter(path)
+            row_data = self.store.get_value(tree_iter, 2)
+            if not row_data or len(row_data) < 2 or row_data[0] != "folder":
+                return
 
+            old_path = str(row_data[1])
+            try: root_val = ROOT_FOLDER
+            except NameError: root_val = "Session"
+
+            if old_path == root_val: return
+
+            # Calculate the new path hierarchy
+            if "/" in old_path:
+                parent_path = old_path.rsplit("/", 1)[0]
+                new_path = f"{parent_path}/{new_name}"
+            else:
+                new_path = new_name
+
+            if new_path == old_path: return
+
+            if new_path in self.user_folders:
+                self.log(f"Notice: Folder '{new_path}' already exists.")
+                return
+
+            # 1. Update the folder names in memory
+            to_remove = []
+            to_add = []
+            for uf in self.user_folders:
+                if uf == old_path or uf.startswith(old_path + "/"):
+                    to_remove.append(uf)
+                    remainder = uf[len(old_path):]
+                    to_add.append(new_path + remainder)
+
+            for uf in to_remove:
+                if uf in self.user_folders:
+                    self.user_folders.remove(uf)
+            self.user_folders.extend(to_add)
+
+            # 2. Update all servers residing inside this folder (and its subfolders)
             for s in self.servers:
-                if s.get("folder") == old_name:
-                    s["folder"] = new_name
-            try:
-                save_servers(self.servers, self.master_passphrase)
-            except Exception as e:
-                self._error(f"Failed to save servers: {e}")
+                s_folder = s.get("folder", root_val)
+                if s_folder == old_path or s_folder.startswith(old_path + "/"):
+                    remainder = s_folder[len(old_path):]
+                    s["folder"] = new_path + remainder
 
-        elif node_type == "server":
-            idx = payload
-            old_name = self.servers[idx]["name"]
-            if not new_name or new_name == old_name: return
+            self.log(f"Renamed folder: '{old_path}' -> '{new_path}'")
             
-            if any(s["name"] == new_name for i, s in enumerate(self.servers) if i != idx):
-                return self._error(f"A server named '{new_name}' already exists.")
+            # --- CRITICAL GTK RACE-CONDITION FIX ---
+            # Defer the UI rebuild until AFTER GTK finishes closing the inline text editor!
+            # This prevents the silent abort when editing a folder that contains servers.
+            GLib.idle_add(self.save_state_and_reload)
 
-            self.servers[idx]["name"] = new_name
-            try:
-                save_servers(self.servers, self.master_passphrase)
-            except Exception as e:
-                self._error(f"Failed to save server rename: {e}")
-
-        # Refresh UI
-        self.reload_folders()
-        self.populate_tree()
-        self.tree.expand_to_path(Gtk.TreePath.new_from_string(path_str))
+        except Exception as e:
+            self.log(f"Rename error: {type(e).__name__}: {e}")
         
     def on_user_guide(self, action, param):
             """
@@ -4991,7 +5252,7 @@ class ScarpaConnectionManager(Gtk.Application):
             else:
                 self._error("Could not start the local help server to display the user guide.")
 
-    def _open_server_dialog(self, cfg=None, idx=None, target_window=None):
+    def _open_server_dialog(self, cfg=None, idx=None, target_window=None, preselected_folder=None):
         is_edit = cfg is not None
     
         # Determine the parent. If we came from a specific terminal window, use that.
@@ -5044,9 +5305,17 @@ class ScarpaConnectionManager(Gtk.Application):
         folder_cb.append_text(ROOT_FOLDER)
         for f in self.subfolders:
             folder_cb.append_text(f)
+            
+        # --- SMART FOLDER SELECTION ---
         idx_f = 0
-        if cfg and cfg.get("folder") != ROOT_FOLDER:
-            idx_f = self.subfolders.index(cfg["folder"]) + 1
+        target_fld = cfg.get("folder") if cfg else preselected_folder
+        
+        try: root_val = ROOT_FOLDER
+        except NameError: root_val = "Session"
+        
+        if target_fld and target_fld != root_val and target_fld in self.subfolders:
+            idx_f = self.subfolders.index(target_fld) + 1
+            
         folder_cb.set_active(idx_f)
     
         add_row("Name:",   en_name,   0)
