@@ -1,3 +1,10 @@
+scarpa-connection-manager (1.2.22-4) stable; urgency=medium
+
+  * More Fixes for copy paste and drag and drop logic
+      
+ -- Tomas Larsson <larre.b.larsson@gmail.com>  Thu, 16 Apr 2026 14:00:00 +0100
+
+
 scarpa-connection-manager (1.2.22-3) stable; urgency=medium
 
   * Fix for copy paste and drag and drop logic

@@ -2266,18 +2266,18 @@ class ScarpaConnectionManager(Gtk.Application):
             ("quit",     self.on_quit),
             ("add_srv",  self.on_add_server),
             ("edit_srv", self.on_edit_server),
-            ("del_srv",  self.on_delete_server),
+            ("del_srv",  self.on_delete_selected),
             ("new_fld",  self.on_new_folder),
             ("ren_fld",  self.on_rename_folder),
-            ("del_fld",  self.on_delete_folder),
+            ("del_fld",  self.on_delete_selected),
             ("ssh",      self.on_ssh),
             ("sftp",     self.on_sftp),
             ("sftpgui",  self.on_sftpgui),
             ("about",    self.on_about),
             ("user_guide", self.on_user_guide),
             ("change_pass", self.on_change_passphrase),
-            ("copy_srv", self.on_copy_server),
-            ("paste_srv", self.on_paste_server),
+            ("copy_srv", self.execute_smart_copy),
+            ("paste_srv", self.execute_smart_paste), 
         ):
             act = Gio.SimpleAction.new(name, None)
             act.connect("activate", handler)
@@ -2446,14 +2446,14 @@ class ScarpaConnectionManager(Gtk.Application):
             "Servers": [
                 ("Add",    self.on_add_server),
                 ("Edit",   self.on_edit_server),
-                ("Delete", self.on_delete_server),
+                ("Delete", self.on_delete_selected),
                 ("Copy",   self.on_copy_server),
                 ("Paste",  self.on_paste_server),
             ],
             "Folders": [
                 ("Add",    self.on_new_folder),
                 ("Rename", self.on_rename_folder),
-                ("Delete", self.on_delete_folder),
+                ("Delete", self.on_delete_selected),
                 ("Copy",   self.execute_smart_copy),  
                 ("Paste",  self.execute_smart_paste), 
             ],
@@ -2519,9 +2519,8 @@ class ScarpaConnectionManager(Gtk.Application):
         )
         # supply the drag payload (selected row-paths)
         self.tree.connect("drag-data-get",       self.on_drag_data_get)
-        # handle the drop (correct signal name)
         self.tree.connect("drag-data-received",  self.on_tree_row_dropped)
-
+        self.tree.connect("drag-begin",          self.on_drag_begin)
         self.tree.connect("key-press-event", self.on_tree_key_press)
 
         # Cell renderers & column with inline‐rename for folders
@@ -2546,8 +2545,15 @@ class ScarpaConnectionManager(Gtk.Application):
         self.tree.append_column(col)
         self.tree.connect("row-activated", self.on_tree_activate)
         self.tree.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
+        self.tree.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
         self.tree.connect("button-press-event", self.on_tree_button_press)
+        
         sel = self.tree.get_selection()
+        
+        # --- NEW: UNLOCK MULTI-SELECTION AND MOUSE DRAG-BOX ---
+        sel.set_mode(Gtk.SelectionMode.MULTIPLE)
+        self.tree.set_rubber_banding(True) 
+        
         sel.connect("changed", self.on_tree_selection_changed)
 
         # pack TreeView
@@ -2579,244 +2585,198 @@ class ScarpaConnectionManager(Gtk.Application):
         paned.pack2(log_box, resize=False, shrink=False)
 
     def on_tree_selection_changed(self, selection):
-        model, it = selection.get_selected()
-        is_srv = bool(it and model.get_value(it, 2)[0] == "server")
-        if hasattr(self, "servers_menu_items"):
-            self.servers_menu_items["Copy"].set_sensitive(is_srv)
-        # Paste is enabled only if a copy exists
-        can_paste = hasattr(self, "_copied_server")
-        if hasattr(self, "servers_menu_items"):
-            self.servers_menu_items["Paste"].set_sensitive(can_paste)
+        """Updates UI state when selection changes, fully supporting Multiple Selection"""
+        model, paths = selection.get_selected_rows()
+        
+        # If nothing is selected, or if we have MULTIPLE items selected, 
+        # we don't need to trigger the single-item rename/connect logic.
+        if not paths or len(paths) > 1:
+            return
+            
+        # If exactly ONE item is selected, we can read it safely
+        try:
+            tree_iter = model.get_iter(paths[0])
+            row_data = model.get_value(tree_iter, 2)
+            if row_data and len(row_data) >= 2:
+                typ, item = row_data[0], row_data[1]
+                # (If you have any toolbar buttons to enable/disable based on selection, 
+                # they would be updated here!)
+        except Exception as e:
+            self.log(f"Selection error: {e}")
 
     def execute_smart_copy(self, widget=None, data=None, action="copy"):
-        """Universal Copy/Cut triggered by Keyboard or Menus"""
+        """Universal Copy/Cut handling multiple items"""
         selection = self.tree.get_selection()
-        model, tree_iter = selection.get_selected()
-        if not tree_iter: return
-            
-        row_data = model.get_value(tree_iter, 2)
-        if not row_data or len(row_data) < 2: return
-            
-        typ, item = row_data[0], row_data[1]
-        actual_data = self.servers[item] if isinstance(item, int) else item
-
-        if not hasattr(self, '_app_clipboard'):
-            self._app_clipboard = {"action": None, "type": None, "data": None, "ref": None}
-
-        import copy
-        self._app_clipboard = {
-            "action": action, 
-            "type": typ, 
-            "data": copy.deepcopy(actual_data),
-            "ref": actual_data  # CRITICAL: Store the raw reference so we can find it to move it later!
-        }
+        model, paths = selection.get_selected_rows()
+        if not paths: return
         
-        if typ == "server":
-            self.on_copy_server(None, None)
+        items_to_copy = []
+        for path in paths:
+            tree_iter = model.get_iter(path)
+            row_data = model.get_value(tree_iter, 2)
+            if not row_data or len(row_data) < 2: continue
             
-        safe_name = actual_data.get("name", "Unknown") if isinstance(actual_data, dict) else str(actual_data)
-        if action == "copy":
-            self.log(f"Copied {typ}: '{safe_name}'")
-        else:
-            self.log(f"Cut {typ}: '{safe_name}'. Awaiting Paste...")
+            typ, item = row_data[0], row_data[1]
+            actual_data = self.servers[item] if isinstance(item, int) else item
+            
+            import copy
+            items_to_copy.append({
+                "type": typ,
+                "data": copy.deepcopy(actual_data),
+                "ref": actual_data
+            })
+            
+        self._app_clipboard = {"action": action, "items": items_to_copy}
+        self.log(f"{action.capitalize()}ed {len(items_to_copy)} item(s).")
 
     def execute_smart_cut(self, widget=None, data=None):
-        """Helper to trigger Cut from Menus"""
         self.execute_smart_copy(widget, data, action="cut")
 
     def execute_smart_paste(self, widget=None, data=None):
-        """Universal Paste triggered by Keyboard or Menus with Local Naming"""
+        """Universal Paste handling multiple items simultaneously"""
         selection = self.tree.get_selection()
-        model, tree_iter = selection.get_selected()
-        if not tree_iter: return
+        model, paths = selection.get_selected_rows()
+        if not paths: return
             
+        # The Paste destination is ALWAYS the first item you selected
+        tree_iter = model.get_iter(paths[0])
         row_data = model.get_value(tree_iter, 2)
         if not row_data or len(row_data) < 2: return
             
-        typ, item = row_data[0], row_data[1]
-        is_folder = (typ == "folder")
-        actual_data = self.servers[item] if isinstance(item, int) else item
+        target_typ, target_item = row_data[0], row_data[1]
+        is_target_folder = (target_typ == "folder")
+        target_actual_data = self.servers[target_item] if isinstance(target_item, int) else target_item
 
         clip = getattr(self, '_app_clipboard', {})
         action = clip.get("action")
-        c_type = clip.get("type")
-        c_data = clip.get("data")
-        c_ref = clip.get("ref")
+        items_to_paste = clip.get("items", [])
         
-        if not action or not c_data:
-            if not is_folder:
-                self.on_paste_server(None, None)
-            return
+        if not action or not items_to_paste: return
             
         try: root_val = ROOT_FOLDER
         except NameError: root_val = "Session"
             
-        target_path = str(actual_data) if is_folder else actual_data.get("folder", root_val)
-        is_root_target = (target_path == root_val or target_path == "")
-        clean_target = "" if is_root_target else target_path
+        target_base_path = str(target_actual_data) if is_target_folder else target_actual_data.get("folder", root_val)
+        is_root_target = (target_base_path == root_val or target_base_path == "")
+        clean_target = "" if is_root_target else target_base_path
 
-        # --- PASTE SERVER ---
-        if c_type == "server":
-            source_parent = c_data.get("folder", root_val)
-            is_same_parent = (target_path == source_parent)
-            
-            # --- CRITICAL BUG FIX: LOCAL NAME COLLISION ---
-            # Corrected check: Gather names of servers *in the target folder only*
-            existing_names_in_target = {
-                s.get("name") 
-                for s in self.servers 
-                if s.get("folder", root_val) == target_path
-            }
+        existing_names_in_target = {
+            s.get("name") for s in self.servers if s.get("folder", root_val) == target_base_path
+        }
 
-            if action == "copy":
-                import copy
-                new_srv = copy.deepcopy(c_data)
-                new_srv["folder"] = target_path if not is_root_target else root_val
+        folders_to_add = []
+        folders_to_remove = []
+
+        # Batch process all items in the clipboard
+        for clip_item in items_to_paste:
+            c_type = clip_item.get("type")
+            c_data = clip_item.get("data")
+            c_ref = clip_item.get("ref")
+
+            if c_type == "server":
+                source_parent = c_data.get("folder", root_val)
+                is_same_parent = (target_base_path == source_parent)
                 
-                base_name = c_data.get('name', 'Server')
-                
-                # We append '(Copy)' only if we are creating a duplicate within the same folder,
-                # or if the name collides with another server in the target folder.
-                if base_name in existing_names_in_target and is_same_parent:
-                    desired_name = f"{base_name} (Copy)"
-                else:
-                    desired_name = base_name
-                
-                # Handle further name collisions by appending numbers like macOS or Windows does.
-                final_name = desired_name
-                counter = 1
-                while final_name in existing_names_in_target:
-                    suffix = f" (Copy {counter})" if is_same_parent else f" ({counter})"
-                    final_name = f"{base_name}{suffix}"
-                    counter += 1
+                if action == "copy":
+                    import copy
+                    new_srv = copy.deepcopy(c_data)
+                    new_srv["folder"] = target_base_path if not is_root_target else root_val
                     
-                new_srv["name"] = final_name
-                if "uuid" in new_srv:
-                    import uuid
-                    new_srv["uuid"] = str(uuid.uuid4())
+                    base_name = c_data.get('name', 'Server')
+                    desired_name = f"{base_name} (Copy)" if (base_name in existing_names_in_target and is_same_parent) else base_name
                     
-                self.servers.append(new_srv)
-                self.log(f"Pasted copy of server '{final_name}' into '{target_path}'")
-                
-            elif action == "cut":
-                if is_same_parent:
-                    self.log("Notice: Cannot cut and paste an item to its current location.")
-                    return
-
-                # --- CRITICAL BUG FIX: LOCAL NAME COLLISION ON CUT ---
-                # A cut server should keep its name if moving to a different folder.
-                # It only needs a new name if there is a collision in the *destination* folder.
-                base_name = c_data.get('name', 'Server')
-                if base_name not in existing_names_in_target:
-                    final_name = base_name
-                else:
-                    # If we cut a server named 'Atea' and paste it into a folder
-                    # that already has a server named 'Atea', rename the pasted server.
+                    final_name = desired_name
                     counter = 1
-                    while f"{base_name} ({counter})" in existing_names_in_target:
+                    while final_name in existing_names_in_target:
+                        suffix = f" (Copy {counter})" if is_same_parent else f" ({counter})"
+                        final_name = f"{base_name}{suffix}"
                         counter += 1
-                    final_name = f"{base_name} ({counter})"
-
-                if c_ref in self.servers:
-                    c_ref["name"] = final_name
-                    c_ref["folder"] = target_path if not is_root_target else root_val
-                    self._app_clipboard = {} 
+                        
+                    new_srv["name"] = final_name
+                    if "uuid" in new_srv:
+                        import uuid
+                        new_srv["uuid"] = str(uuid.uuid4())
+                        
+                    self.servers.append(new_srv)
+                    existing_names_in_target.add(final_name) # Ensure next item sees this new name!
                     
-                    if final_name == base_name:
-                        self.log(f"Moved server to '{target_path}'")
-                    else:
-                        self.log(f"Moved server to '{target_path}' -> renamed to '{final_name}' due to conflict.")
-                else:
-                    self.log("Notice: Could not locate original server for move.")
-                
-        # --- PASTE FOLDER ---
-        elif c_type == "folder":
-            source_path = str(c_data)
-            source_name = source_path.split("/")[-1]
-            source_parent = "/".join(source_path.split("/")[:-1]) if "/" in source_path else root_val
-            
-            if clean_target == source_path or clean_target.startswith(source_path + "/"):
-                self.log("Notice: Cannot paste a folder inside itself.")
-                return
-                
-            if action == "cut" and clean_target == source_parent:
-                self.log("Notice: Folder is already in this location.")
-                self._app_clipboard = {}
-                return
+                elif action == "cut":
+                    if is_same_parent: continue
 
-            is_same_parent = (target_path == source_parent)
+                    base_name = c_data.get('name', 'Server')
+                    final_name = base_name
+                    if final_name in existing_names_in_target:
+                        counter = 1
+                        while f"{base_name} ({counter})" in existing_names_in_target:
+                            counter += 1
+                        final_name = f"{base_name} ({counter})"
 
-            def build_full_path(folder_name):
-                return folder_name if is_root_target else f"{clean_target}/{folder_name}"
+                    if c_ref in self.servers:
+                        c_ref["name"] = final_name
+                        c_ref["folder"] = target_base_path if not is_root_target else root_val
+                        existing_names_in_target.add(final_name)
 
-            if action == "copy":
-                # Start with (Copy) only if pasting into the exact same parent
-                desired_name = f"{source_name} (Copy)" if is_same_parent else source_name
+            elif c_type == "folder":
+                source_path = str(c_data)
+                source_name = source_path.split("/")[-1]
+                source_parent = "/".join(source_path.split("/")[:-1]) if "/" in source_path else root_val
                 
-                final_name = desired_name
-                counter = 1
-                while build_full_path(final_name) in self.user_folders:
-                    suffix = f" (Copy {counter})" if is_same_parent else f" ({counter})"
-                    final_name = f"{source_name}{suffix}"
-                    counter += 1
+                if clean_target == source_path or clean_target.startswith(source_path + "/"): continue
+                if action == "cut" and clean_target == source_parent: continue
+
+                is_same_parent = (target_base_path == source_parent)
+                def build_full_path(fname): return fname if is_root_target else f"{clean_target}/{fname}"
+
+                if action == "copy":
+                    desired_name = f"{source_name} (Copy)" if is_same_parent else source_name
+                    final_name = desired_name
+                    counter = 1
+                    while build_full_path(final_name) in self.user_folders or build_full_path(final_name) in folders_to_add:
+                        suffix = f" (Copy {counter})" if is_same_parent else f" ({counter})"
+                        final_name = f"{source_name}{suffix}"
+                        counter += 1
+                    final_base = build_full_path(final_name)
                     
-                final_base = build_full_path(final_name)
-                
-            elif action == "cut":
-                final_name = source_name
-                counter = 1
-                while build_full_path(final_name) in self.user_folders and build_full_path(final_name) != source_path:
-                    final_name = f"{source_name} ({counter})"
-                    counter += 1
-                    
-                final_base = build_full_path(final_name)
+                elif action == "cut":
+                    final_name = source_name
+                    counter = 1
+                    while (build_full_path(final_name) in self.user_folders or build_full_path(final_name) in folders_to_add) and build_full_path(final_name) != source_path:
+                        final_name = f"{source_name} ({counter})"
+                        counter += 1
+                    final_base = build_full_path(final_name)
 
-            # --- Update State Data ---
-            folders_to_add = [final_base]
-            folders_to_remove = []
-            
-            for uf in self.user_folders:
-                if uf.startswith(source_path + "/"):
-                    remainder = uf[len(source_path):]
-                    folders_to_add.append(final_base + remainder)
-                    if action == "cut":
-                        folders_to_remove.append(uf)
+                for uf in self.user_folders:
+                    if uf.startswith(source_path + "/"):
+                        remainder = uf[len(source_path):]
+                        folders_to_add.append(final_base + remainder)
+                        if action == "cut": folders_to_remove.append(uf)
 
-            # Mark the parent folder itself for removal if cutting
-            if action == "cut" and source_path not in folders_to_remove:
-                folders_to_remove.append(source_path)
+                if action == "cut" and source_path not in folders_to_remove:
+                    folders_to_remove.append(source_path)
+                folders_to_add.append(final_base)
 
-            for f in folders_to_remove:
-                if f in self.user_folders:
-                    self.user_folders.remove(f)
-            for f in folders_to_add:
-                if f not in self.user_folders:
-                    self.user_folders.append(f)
+                for s in self.servers:
+                    s_folder = s.get("folder", "")
+                    if s_folder == source_path or s_folder.startswith(source_path + "/"):
+                        remainder = s_folder[len(source_path):]
+                        new_fld = final_base + remainder
+                        if action == "copy":
+                            import copy
+                            ns = copy.deepcopy(s)
+                            ns["folder"] = new_fld
+                            if "uuid" in ns: ns["uuid"] = str(uuid.uuid4())
+                            self.servers.append(ns)
+                        elif action == "cut":
+                            s["folder"] = new_fld
 
-            for s in self.servers:
-                s_folder = s.get("folder", "")
-                if s_folder == source_path or s_folder.startswith(source_path + "/"):
-                    remainder = s_folder[len(source_path):]
-                    new_folder_path = final_base + remainder
-                    
-                    if action == "copy":
-                        import copy
-                        new_s = copy.deepcopy(s)
-                        new_s["folder"] = new_folder_path
-                        if "uuid" in new_s:
-                            import uuid
-                            new_s["uuid"] = str(uuid.uuid4())
-                        self.servers.append(new_s)
-                    elif action == "cut":
-                        s["folder"] = new_folder_path
+        # Apply queued folder removals/additions safely
+        for f in set(folders_to_remove):
+            if f in self.user_folders: self.user_folders.remove(f)
+        for f in set(folders_to_add):
+            if f not in self.user_folders: self.user_folders.append(f)
 
-            if action == "cut":
-                self._app_clipboard = {}
-                self.log(f"Moved folder '{source_name}' -> '{final_base}'")
-            else:
-                self.log(f"Copied folder '{source_name}' -> '{final_base}'")
-
-        # --- Save and Reload ---
+        if action == "cut": self._app_clipboard = {}
+        self.log(f"Pasted {len(items_to_paste)} item(s) into '{target_base_path}'")
         self.save_state_and_reload()
 
     def save_state_and_reload(self):
@@ -2834,7 +2794,7 @@ class ScarpaConnectionManager(Gtk.Application):
         self.tree.expand_row(Gtk.TreePath.new_from_string("0"), False)
 
     def on_tree_key_press(self, widget, event):
-        """Clean Keyboard Handler routing to Universal Clipboard"""
+        """Clean Keyboard Handler fully supporting Multiple Selection"""
         try:
             state = event.state & Gdk.ModifierType.MODIFIER_MASK
             ctrl_pressed = bool(state & Gdk.ModifierType.CONTROL_MASK)
@@ -2842,11 +2802,16 @@ class ScarpaConnectionManager(Gtk.Application):
             lower_keyval = Gdk.keyval_to_lower(keyval)
 
             selection = self.tree.get_selection()
-            model, tree_iter = selection.get_selected()
             
-            if not tree_iter: return False
+            # --- CRITICAL FIX: Ask GTK for a LIST of rows, not just one! ---
+            model, paths = selection.get_selected_rows()
+            
+            if not paths: return False
                 
-            path = model.get_path(tree_iter)
+            # For actions that only make sense on one item (like Enter/Arrows), 
+            # we just look at the first item in your selection.
+            path = paths[0]
+            tree_iter = model.get_iter(path)
             row_data = model.get_value(tree_iter, 2)
             
             if not row_data or len(row_data) < 2: return False
@@ -2857,21 +2822,18 @@ class ScarpaConnectionManager(Gtk.Application):
             # --- SMART CLIPBOARD ROUTING ---
             if ctrl_pressed:
                 if lower_keyval == Gdk.KEY_c:
-                    self.execute_smart_copy(action="copy")  
+                    self.execute_smart_copy(action="copy")
                     return True
                 elif lower_keyval == Gdk.KEY_x:
-                    self.execute_smart_copy(action="cut")   
+                    self.execute_smart_copy(action="cut")
                     return True
                 elif lower_keyval == Gdk.KEY_v:
-                    self.execute_smart_paste()              
+                    self.execute_smart_paste()
                     return True
 
             # --- DELETE ROUTING ---
             if keyval in (Gdk.KEY_Delete, Gdk.KEY_KP_Delete):
-                if is_folder: 
-                    self.on_delete_folder()
-                else: 
-                    self.on_delete_server()
+                self.on_delete_selected()
                 return True
 
             # --- ENTER KEY ROUTING ---
@@ -3054,6 +3016,51 @@ class ScarpaConnectionManager(Gtk.Application):
         text = entry.get_text().strip() if resp == Gtk.ResponseType.OK else ""
         dlg.destroy()
         return text
+
+    def on_drag_begin(self, widget, context):
+        """Restores multi-selection and sets a dynamic drag icon"""
+        
+        # 1. Cancel any pending inline renames so they don't pop up during a drag
+        if getattr(self, 'rename_timer', None):
+            GLib.source_remove(self.rename_timer)
+            self.rename_timer = None
+            self.deferred_path = None
+
+        # 2. Restore the multi-selection if we backed it up during Mouse-Down
+        backup = getattr(self, '_drag_paths_backup', None)
+        if backup:
+            selection = widget.get_selection()
+            for p in backup: 
+                selection.select_path(p)
+            self._drag_paths_backup = None
+
+        # 3. Calculate what we are dragging to set a cool custom cursor icon
+        model, paths = widget.get_selection().get_selected_rows()
+        if not paths: return
+        
+        num_servers, num_folders = 0, 0
+        for path in paths:
+            tree_iter = model.get_iter(path)
+            row_data = model.get_value(tree_iter, 2)
+            if row_data and len(row_data) >= 2:
+                if row_data[0] == "folder": num_folders += 1
+                elif row_data[0] == "server": num_servers += 1
+
+        theme = Gtk.IconTheme.get_default()
+        
+        # Pick the best icon based on the selection
+        if num_servers == 1 and num_folders == 0: 
+            icon_name = "network-server" if theme.has_icon("network-server") else "text-x-generic"
+        elif num_folders == 1 and num_servers == 0: 
+            icon_name = "folder"
+        elif num_servers > 1 and num_folders == 0: 
+            icon_name = "network-workgroup" if theme.has_icon("network-workgroup") else "edit-copy"
+        elif num_folders > 1 and num_servers == 0: 
+            icon_name = "folder-saved-search" if theme.has_icon("folder-saved-search") else "folder"
+        else: 
+            icon_name = "folder-documents" if theme.has_icon("folder-documents") else "folder"
+
+        Gtk.drag_set_icon_name(context, icon_name, 0, 0)
 
     # ── Build drag payload: serialize selected row-paths ────────────────────
     def on_drag_data_get(self, treeview, context, selection, info, time):
@@ -4245,76 +4252,53 @@ class ScarpaConnectionManager(Gtk.Application):
             self.log(f"Renamed folder: '{old_path}' -> '{new_path}'")
             self.save_state_and_reload()
 
-    def on_delete_folder(self, widget=None, data=None):
-        """Safely deletes a nested folder and all its contents"""
+    def on_delete_selected(self, widget=None, data=None):
+        """Safely deletes a mixed selection of multiple servers and folders"""
         selection = self.tree.get_selection()
-        model, tree_iter = selection.get_selected()
-        if not tree_iter: return
-
-        row_data = model.get_value(tree_iter, 2)
-        if not row_data or len(row_data) < 2 or row_data[0] != "folder":
-            return
-
-        fld_path = str(row_data[1])
-        try: root_val = ROOT_FOLDER
-        except NameError: root_val = "Session"
-
-        if fld_path == root_val:
-            self.show_info_dialog("Invalid", "Cannot delete the root Session folder.")
-            return
+        model, paths = selection.get_selected_rows()
+        if not paths: return
 
         dialog = Gtk.MessageDialog(
-            transient_for=self.win,
-            flags=0,
-            message_type=Gtk.MessageType.WARNING,
+            transient_for=self.win, flags=0, message_type=Gtk.MessageType.WARNING,
             buttons=Gtk.ButtonsType.YES_NO,
-            text=f"Delete folder '{fld_path}' and all contents inside it?"
+            text=f"Are you sure you want to delete the {len(paths)} selected item(s)?"
         )
         response = dialog.run()
         dialog.destroy()
 
         if response == Gtk.ResponseType.YES:
-            # 1. Cleanly remove the folder and any nested subfolders
-            folders_to_remove = [f for f in self.user_folders if f == fld_path or f.startswith(fld_path + "/")]
-            for f in folders_to_remove:
-                if f in self.user_folders:
-                    self.user_folders.remove(f)
+            try: root_val = ROOT_FOLDER
+            except NameError: root_val = "Session"
+            
+            folders_to_delete = []
+            servers_to_delete = []
+            
+            # 1. Safely gather all selected items
+            for path in paths:
+                tree_iter = model.get_iter(path)
+                row_data = model.get_value(tree_iter, 2)
+                if not row_data or len(row_data) < 2: continue
+                typ, item = row_data[0], row_data[1]
+                
+                if typ == "folder" and str(item) != root_val: 
+                    folders_to_delete.append(str(item))
+                elif typ == "server":
+                    actual_srv = self.servers[item] if isinstance(item, int) else item
+                    servers_to_delete.append(actual_srv)
 
-            # 2. Cleanly remove all servers hidden deep inside this folder tree
-            self.servers = [s for s in self.servers if not (s.get("folder", root_val) == fld_path or s.get("folder", "").startswith(fld_path + "/"))]
+            # 2. Obliterate Folders (and the servers hidden inside them)
+            for fld_path in folders_to_delete:
+                to_rem = [f for f in self.user_folders if f == fld_path or f.startswith(fld_path + "/")]
+                for f in to_rem:
+                    if f in self.user_folders: self.user_folders.remove(f)
+                self.servers = [s for s in self.servers if not (s.get("folder", root_val) == fld_path or s.get("folder", "").startswith(fld_path + "/"))]
+                
+            # 3. Obliterate standalone selected Servers
+            for srv in servers_to_delete:
+                if srv in self.servers: self.servers.remove(srv)
 
             self.save_state_and_reload()
-            self.log(f"Deleted folder tree: '{fld_path}'")
-
-    def on_delete_server(self, widget=None, data=None):
-        """Safely deletes a single server connection"""
-        selection = self.tree.get_selection()
-        model, tree_iter = selection.get_selected()
-        if not tree_iter: return
-
-        row_data = model.get_value(tree_iter, 2)
-        if not row_data or len(row_data) < 2 or row_data[0] != "server":
-            return
-
-        item = row_data[1]
-        if isinstance(item, int) and item < len(self.servers):
-            actual_server = self.servers[item]
-            s_name = actual_server.get("name", "Unknown Server")
-
-            dialog = Gtk.MessageDialog(
-                transient_for=self.win,
-                flags=0,
-                message_type=Gtk.MessageType.WARNING,
-                buttons=Gtk.ButtonsType.YES_NO,
-                text=f"Are you sure you want to delete server '{s_name}'?"
-            )
-            response = dialog.run()
-            dialog.destroy()
-
-            if response == Gtk.ResponseType.YES:
-                self.servers.pop(item)
-                self.save_state_and_reload()
-                self.log(f"Deleted server: '{s_name}'")
+            self.log(f"Deleted {len(paths)} item(s).")
 
     def on_add_server(self, widget=None, data=None):
         """Opens the Add Server dialog, pre-filling the currently selected folder"""
@@ -5005,59 +4989,75 @@ class ScarpaConnectionManager(Gtk.Application):
         self._info("Disclaimer will be shown again on next launch.")
 
     def on_tree_button_press(self, tree, event):
+        state = event.state & Gdk.ModifierType.MODIFIER_MASK
+        has_modifiers = bool(state & (Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.SHIFT_MASK))
+
         # 1. Handle Right Click
         if event.button == Gdk.BUTTON_SECONDARY:
             x, y = int(event.x), int(event.y)
             path_info = tree.get_path_at_pos(x, y)
             if path_info:
                 path, col, cx, cy = path_info
-                tree.grab_focus()
-                tree.set_cursor(path, col, False)
-                model, it = tree.get_selection().get_selected()
-                node, val = model.get_value(it, 2)
-                menu = self._create_context_menu(node, val)
-                menu.popup_at_pointer(event)
+                selection = tree.get_selection()
+                model, paths = selection.get_selected_rows()
+                
+                if path not in paths:
+                    tree.set_cursor(path, col, False)
+                    model, paths = selection.get_selected_rows()
+                
+                tree_iter = model.get_iter(path)
+                row_data = model.get_value(tree_iter, 2)
+                
+                if row_data and len(row_data) >= 2:
+                    node, val = row_data[0], row_data[1]
+                    menu = self._create_context_menu(node, val)
+                    menu.popup_at_pointer(event)
                 return True
             return False
 
-        # 2. Handle Left Click (Smart Rename Logic)
+        # 2. Handle Left Click (Smart Rename & D&D Backup Logic)
         if event.button == Gdk.BUTTON_PRIMARY:
-            # Always cancel any pending rename if a new click happens
             if self.rename_timer:
                 GLib.source_remove(self.rename_timer)
                 self.rename_timer = None
                 self.deferred_path = None
 
-            # If Double Click -> Let default handler run (Connect)
             if event.type == Gdk.EventType._2BUTTON_PRESS:
                 return False 
 
-            # Check what we clicked
             path_info = tree.get_path_at_pos(int(event.x), int(event.y))
             if not path_info: return False
             path, col, cx, cy = path_info
 
-            # Check if this row is ALREADY selected
             selection = tree.get_selection()
             model, rows = selection.get_selected_rows()
-            
-            is_selected = False
-            for r in rows:
-                if r == path:
-                    is_selected = True
-                    break
-            
+            is_selected = any(r == path for r in rows)
+
+            # --- THE MULTI-DRAG BACKUP ---
+            # If we click an already selected item in a group, GTK will alter the 
+            # selection on Mouse-Down. We back up the full selection right here!
+            if is_selected and len(rows) > 1:
+                self._drag_paths_backup = rows
+            else:
+                self._drag_paths_backup = None
+
+            # Let GTK natively handle Ctrl/Shift clicks
+            if has_modifiers:
+                return False
+
+            # If clicking inside a bulk selection without modifiers, let GTK handle it.
+            if is_selected and len(rows) > 1:
+                return False
+                
+            # If it's a single item and already selected, trigger inline rename
             if is_selected:
-                # Clicked on already selected item -> Start Timer
-                # If no second click comes in 500ms, _trigger_rename runs
                 self.deferred_path = path
                 self.rename_timer = GLib.timeout_add(500, self._trigger_rename)
-                # We return False to allow the click to update focus/selection normally
                 return False
         
         return False
 
-    # build a context menu based on whether it's a folder, server or root
+   # build a context menu based on whether it's a folder, server or root
     def _create_context_menu(self, node, val):
             menu = Gtk.Menu()
     
@@ -5091,7 +5091,7 @@ class ScarpaConnectionManager(Gtk.Application):
                     menu.append(mi)
     
                     mi = Gtk.MenuItem(label="Delete Folder")
-                    mi.connect("activate", lambda w: self.on_delete_folder(None, None))
+                    mi.connect("activate", lambda w: self.on_delete_selected(None, None))
                     menu.append(mi)
     
             # ─── SERVER CONTEXT MENU ─────────────────────────────
@@ -5119,7 +5119,7 @@ class ScarpaConnectionManager(Gtk.Application):
                 for lbl, fn in (
                     ("Edit Server", self.on_edit_server),
                     ("Copy Server", self.on_copy_server),
-                    ("Delete Server", self.on_delete_server),
+                    ("Delete Server", self.on_delete_selected),
                 ):
                     mi = Gtk.MenuItem(label=lbl)
                     mi.connect("activate", lambda w, f=fn: f(None, None))
@@ -5128,23 +5128,24 @@ class ScarpaConnectionManager(Gtk.Application):
             menu.show_all()
             return menu
 
-     # ── In-line Renaming Logic (Click-Wait-Click) ─────────────────────────────
-    def _cell_data_func(self, column, renderer, model, tree_iter, data):
-        node, val = model.get_value(tree_iter, 2)
+    # ── In-line Renaming Logic (Click-Wait-Click) ─────────────────────────────
+    def _cell_data_func(self, column, cell, model, tree_iter, data):
+        """Determines which rows can be inline edited"""
+        row_data = model.get_value(tree_iter, 2)
+        if not row_data or len(row_data) < 2:
+            cell.set_property("editable", False)
+            return
+
+        typ, item = row_data[0], row_data[1]
         
-        is_editable = False
-        
-        # Folders: Always editable (or you can apply the same logic if desired)
-        if node == "folder" and val in self.user_folders:
-            is_editable = True
-            
-        # Servers: Only editable if we explicitly triggered it via the Timer
-        elif node == "server":
-            path = model.get_path(tree_iter)
-            if self.rename_path and self.rename_path == path:
-                is_editable = True
-        
-        renderer.set_property("editable", is_editable)
+        try: root_val = ROOT_FOLDER
+        except NameError: root_val = "Session"
+
+        # Lock the root folder, but allow editing for everything else!
+        if typ == "folder" and str(item) == root_val:
+            cell.set_property("editable", False)
+        else:
+            cell.set_property("editable", True)
 
     def _trigger_rename(self):
         """Called by the timer to enable editing."""
@@ -5165,64 +5166,91 @@ class ScarpaConnectionManager(Gtk.Application):
         self.rename_path = None
 
     def _on_cell_edited(self, widget, path, text):
-        """Handles inline renaming of folders safely without crashing GTK"""
+        """Handles inline renaming of folders AND servers safely without crashing GTK"""
         new_name = text.strip()
         if not new_name: return
-        
-        new_name = new_name.replace("/", "-") 
 
         try:
             tree_iter = self.store.get_iter(path)
             row_data = self.store.get_value(tree_iter, 2)
-            if not row_data or len(row_data) < 2 or row_data[0] != "folder":
+            if not row_data or len(row_data) < 2:
                 return
 
-            old_path = str(row_data[1])
+            typ, item = row_data[0], row_data[1]
+            
             try: root_val = ROOT_FOLDER
             except NameError: root_val = "Session"
 
-            if old_path == root_val: return
-
-            # Calculate the new path hierarchy
-            if "/" in old_path:
-                parent_path = old_path.rsplit("/", 1)[0]
-                new_path = f"{parent_path}/{new_name}"
-            else:
-                new_path = new_name
-
-            if new_path == old_path: return
-
-            if new_path in self.user_folders:
-                self.log(f"Notice: Folder '{new_path}' already exists.")
+            # --- RENAME SERVER ---
+            if typ == "server":
+                actual_server = self.servers[item] if isinstance(item, int) else item
+                old_name = actual_server.get("name", "")
+                
+                if new_name == old_name: return
+                
+                target_folder = actual_server.get("folder", root_val)
+                
+                # Smart local collision check
+                existing_names = {
+                    s.get("name") for s in self.servers 
+                    if s.get("folder", root_val) == target_folder and s != actual_server
+                }
+                
+                final_name = new_name
+                counter = 1
+                while final_name in existing_names:
+                    final_name = f"{new_name} ({counter})"
+                    counter += 1
+                    
+                actual_server["name"] = final_name
+                self.log(f"Renamed server: '{old_name}' -> '{final_name}'")
+                
+                # Safely rebuild UI
+                GLib.idle_add(self.save_state_and_reload)
                 return
 
-            # 1. Update the folder names in memory
-            to_remove = []
-            to_add = []
-            for uf in self.user_folders:
-                if uf == old_path or uf.startswith(old_path + "/"):
-                    to_remove.append(uf)
-                    remainder = uf[len(old_path):]
-                    to_add.append(new_path + remainder)
+            # --- RENAME FOLDER ---
+            elif typ == "folder":
+                new_name = new_name.replace("/", "-") 
+                old_path = str(item)
 
-            for uf in to_remove:
-                if uf in self.user_folders:
-                    self.user_folders.remove(uf)
-            self.user_folders.extend(to_add)
+                if old_path == root_val: return
 
-            # 2. Update all servers residing inside this folder (and its subfolders)
-            for s in self.servers:
-                s_folder = s.get("folder", root_val)
-                if s_folder == old_path or s_folder.startswith(old_path + "/"):
-                    remainder = s_folder[len(old_path):]
-                    s["folder"] = new_path + remainder
+                if "/" in old_path:
+                    parent_path = old_path.rsplit("/", 1)[0]
+                    new_path = f"{parent_path}/{new_name}"
+                else:
+                    new_path = new_name
 
-            self.log(f"Renamed folder: '{old_path}' -> '{new_path}'")
-            
-            # --- CRITICAL GTK RACE-CONDITION FIX ---
-            # Defer the UI rebuild until AFTER GTK finishes closing the inline text editor!
-            # This prevents the silent abort when editing a folder that contains servers.
-            GLib.idle_add(self.save_state_and_reload)
+                if new_path == old_path: return
+
+                if new_path in self.user_folders:
+                    self.log(f"Notice: Folder '{new_path}' already exists.")
+                    return
+
+                to_remove = []
+                to_add = []
+                for uf in self.user_folders:
+                    if uf == old_path or uf.startswith(old_path + "/"):
+                        to_remove.append(uf)
+                        remainder = uf[len(old_path):]
+                        to_add.append(new_path + remainder)
+
+                for uf in to_remove:
+                    if uf in self.user_folders:
+                        self.user_folders.remove(uf)
+                self.user_folders.extend(to_add)
+
+                for s in self.servers:
+                    s_folder = s.get("folder", root_val)
+                    if s_folder == old_path or s_folder.startswith(old_path + "/"):
+                        remainder = s_folder[len(old_path):]
+                        s["folder"] = new_path + remainder
+
+                self.log(f"Renamed folder: '{old_path}' -> '{new_path}'")
+                
+                # Safely rebuild UI
+                GLib.idle_add(self.save_state_and_reload)
 
         except Exception as e:
             self.log(f"Rename error: {type(e).__name__}: {e}")
