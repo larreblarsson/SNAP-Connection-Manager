@@ -5254,7 +5254,46 @@ class ScarpaConnectionManager(Gtk.Application):
 
         except Exception as e:
             self.log(f"Rename error: {type(e).__name__}: {e}")
-        
+
+    def _start_help_server(self):
+        """
+        Starts a simple, temporary HTTP server in a background thread to serve
+        the help file, bypassing any browser sandboxing issues.
+        Returns the URL to the help file and the server object.
+        """
+        try:
+            # The directory where user_guide.html is located
+            serve_directory = os.path.dirname(HELP_FILE_PATH)
+            # The filename of the guide
+            file_name = os.path.basename(HELP_FILE_PATH)
+
+            # A special handler that serves files from our specific directory
+            class HelpRequestHandler(http.server.SimpleHTTPRequestHandler):
+                def __init__(self, *args, **kwargs):
+                    super().__init__(*args, directory=serve_directory, **kwargs)
+                
+                # Optional: Mute the terminal logging so it doesn't spam your console
+                def log_message(self, format, *args):
+                    pass
+
+            # Find a free port to run the server on
+            httpd = socketserver.TCPServer(("127.0.0.1", 0), HelpRequestHandler)
+            port = httpd.server_address[1]
+            
+            # Run the server in a daemon thread. This means the thread will
+            # automatically shut down when the main application exits.
+            server_thread = threading.Thread(target=httpd.serve_forever)
+            server_thread.daemon = True
+            server_thread.start()
+
+            url = f"http://127.0.0.1:{port}/{file_name}"
+            self.log(f"Help server started at {url}")
+            return url, httpd
+            
+        except Exception as e:
+            self.log(f"Failed to start local help server: {e}")
+            return None, None
+
     def on_user_guide(self, action, param):
             """
             Opens the user guide by starting a local web server and pointing
@@ -5279,6 +5318,9 @@ class ScarpaConnectionManager(Gtk.Application):
                     self.log(f"webbrowser.open_new failed: {e}")
             else:
                 self._error("Could not start the local help server to display the user guide.")
+
+
+
 
     def _open_server_dialog(self, cfg=None, idx=None, target_window=None, preselected_folder=None):
         is_edit = cfg is not None
