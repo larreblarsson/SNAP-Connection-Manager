@@ -26,11 +26,13 @@ Sensitive data is protected using a robust GnuPG-based encryption system.
 ### 2.1 Server & Folder Management
 - Hierarchical organization of servers into folders  
 - Add, edit, delete servers and folders  
-- Inline renaming (slow double-click to edit)  
-- Drag-and-drop reordering  
+- Multi-selection support (`Ctrl+Click` / `Shift+Click`) for batch operations  
+- Duplicate name collision protection within folders  
+- Inline renaming (slow double-click to edit, fast double-click to connect)  
+- Drag-and-drop support for moving items between folders  
 - Copy & paste servers via menu or shortcuts (`Ctrl+C` / `Ctrl+V`)  
-- Keyboard shortcuts: `Delete` removes selected item, `Ctrl+C`/`Ctrl+V` copy/paste  
-- Natural alphanumeric sorting (e.g., `server10` after `server9`)  
+- Keyboard shortcuts: `Delete` removes selected item, `Enter` quickly submits dialogs  
+- Natural alphanumeric sorting (e.g., `server10` after `server9`)
 
 ### 2.2 Connection & Automation
 - SSH and SFTP protocol support  

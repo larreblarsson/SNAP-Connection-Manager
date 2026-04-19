@@ -149,15 +149,20 @@
     <ul>
         <li><strong>Add a Folder:</strong> Right-click the root "Session" folder (or any subfolder) and select <strong>Add Folder</strong> to create groups (e.g., "Production", "AWS").</li>
         <li><strong>Add a Server:</strong> Right-click a folder and select <strong>Add Server</strong>. You must provide a Host IP/Domain, Port, Username, and choose either Password or Private Key authentication.</li>
+        <li><strong>Duplicate Protection:</strong> The application automatically prevents creating two servers with the exact same name inside the same folder.</li>
         <li><strong>Drag-and-Drop:</strong> Click and drag servers to move them between folders, or drag folders to rearrange your hierarchy.</li>
+        <li><strong>Multi-Selection:</strong> Hold <code>Ctrl</code> or <code>Shift</code> while clicking to select multiple servers or folders for batch deletion or copying.</li>
         <li><strong>Natural Sorting:</strong> The list automatically sorts items intelligently (e.g., <code>Web-2</code> is placed before <code>Web-10</code>).</li>
     </ul>
 
     <h3>Editing & Actions</h3>
     <ul>
-        <li><strong>Inline Renaming:</strong> Select a folder or server, wait 1 second, and click it again (or press <kbd>F2</kbd>) to rename it directly in the list.</li>
-        <li><strong>Copy/Paste:</strong> Right-click a server and select <strong>Copy</strong> (or press <kbd>Ctrl</kbd> + <kbd>C</kbd>). Select a destination folder and choose <strong>Paste</strong> (<kbd>Ctrl</kbd> + <kbd>V</kbd>) to create an exact duplicate.</li>
-        <li><strong>Deletion:</strong> Select an item and press <kbd>Delete</kbd> to remove it.</li>
+        <li><strong>Connecting:</strong> Rapidly double-click a server to instantly launch its SSH session.</li>
+        <li><strong>Inline Renaming:</strong> Slowly double-click (click, wait, click) a server or folder to rename it directly in the list.</li>
+        <li><strong>Edit Server:</strong> Right-click a server and select <strong>Edit</strong> to modify its settings, add port forwards, or enable logging.</li>
+        <li><strong>Keyboard Accessibility:</strong> Press <code>Enter</code> to instantly submit and save any dialog window (like Add Server, New Folder, or Login Actions).</li>
+        <li><strong>Duplicate & Move:</strong> Use the <strong>Copy/Paste</strong> options in the top menu (or <code>Ctrl+C</code> / <code>Ctrl+V</code>) to duplicate servers.</li>
+        <li><strong>Delete:</strong> Select one or more items and press the <code>Delete</code> key on your keyboard to permanently remove them.</li>
     </ul>
 
     <h2 id="terminal">4. Connecting & Terminal Features</h2>
