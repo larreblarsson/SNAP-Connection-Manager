@@ -2552,7 +2552,7 @@ class ScarpaConnectionManager(Gtk.Application):
         
         # --- NEW: UNLOCK MULTI-SELECTION AND MOUSE DRAG-BOX ---
         sel.set_mode(Gtk.SelectionMode.MULTIPLE)
-        self.tree.set_rubber_banding(True) 
+        self.tree.set_rubber_banding(False) 
         
         sel.connect("changed", self.on_tree_selection_changed)
 
@@ -3172,25 +3172,6 @@ class ScarpaConnectionManager(Gtk.Application):
                     if typ == "folder" and val in expanded_folders:
                         self.tree.expand_row(path, False)
             self.store.foreach(restore_expanded)
-
-
-    
-    # Double-click on a server row → launch SSH
-    def on_tree_activate(self, treeview, path, column):
-        """Native GTK handler for Double-Clicks"""
-        model = treeview.get_model()
-        it = model.get_iter(path)
-        typ, item = model.get_value(it, 2)
-        
-        if typ == "server":
-            # THE FIX: Added the missing second argument to stop the crash!
-            self.on_ssh(None, None)
-        elif typ == "folder":
-            # Toggle expand/collapse when double-clicking a folder
-            if treeview.row_expanded(path):
-                treeview.collapse_row(path)
-            else:
-                treeview.expand_row(path, False)
 
     # Drag-and-drop: reorder servers and assign them to folders
     def on_tree_row_dropped(self, widget, context, x, y, selection_data, info, time):
@@ -4114,64 +4095,78 @@ class ScarpaConnectionManager(Gtk.Application):
                 self._error(f"Failed to change passphrase: {e}")
    
     # ── Folder Commands (New/Rename/Delete) ───────────────────────────────────────
-    def on_new_folder(self, widget=None, data=None):
-        """Creates a new folder nested under the currently selected folder"""
-        # 1. Determine the exact target folder using our smart locking
+    def on_new_folder(self, widget, param):
         selection = self.tree.get_selection()
-        model, tree_iter = selection.get_selected()
+        model, paths = selection.get_selected_rows()
         
-        try: root_val = ROOT_FOLDER
-        except NameError: root_val = "Session"
-        
-        parent_path = root_val
-        if tree_iter:
+        parent_path = "Session"
+        if paths:
+            tree_iter = model.get_iter(paths[0])
             row_data = model.get_value(tree_iter, 2)
             if row_data and len(row_data) >= 2:
-                typ, item = row_data[0], row_data[1]
-                if typ == "folder":
-                    parent_path = str(item)
-                elif typ == "server":
-                    actual_data = self.servers[item] if isinstance(item, int) else item
-                    parent_path = actual_data.get("folder", root_val)
+                node, val = row_data[0], row_data[1]
+                if node == "folder":
+                    parent_path = str(val)
+                elif node == "server":
+                    if isinstance(val, dict):
+                        parent_path = val.get("folder", "Session")
+                    elif isinstance(val, int):
+                        parent_path = self.servers[val].get("folder", "Session")
 
-        # 2. Prompt for the new folder name
-        dialog = Gtk.MessageDialog(
+        dialog = Gtk.Dialog(
+            title="New Folder",
             transient_for=self.win,
-            flags=0,
-            message_type=Gtk.MessageType.QUESTION,
-            buttons=Gtk.ButtonsType.OK_CANCEL,
-            text=f"Create new folder inside '{parent_path}':"
+            flags=Gtk.DialogFlags.MODAL,
         )
+        dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        dialog.add_button("OK", Gtk.ResponseType.OK)
+
+        box = dialog.get_content_area()
+        box.set_spacing(6)
+        box.set_margin_top(10)
+        box.set_margin_bottom(10)
+        box.set_margin_start(10)
+        box.set_margin_end(10)
+
+        lbl = Gtk.Label(label=f"Create new folder inside: {parent_path}")
+        lbl.set_xalign(0)
+        box.pack_start(lbl, False, False, 0)
+
         entry = Gtk.Entry()
-        entry.set_placeholder_text("Add Folder Name")
-        box = dialog.get_message_area()
-        box.pack_start(entry, True, True, 10)
-        dialog.show_all()
+        entry.set_placeholder_text("Folder Name")
+        
+        # Make the Enter key trigger the OK button!
+        entry.set_activates_default(True)
         dialog.set_default_response(Gtk.ResponseType.OK)
         
+        box.pack_start(entry, False, False, 0)
+        dialog.show_all()
+
         response = dialog.run()
-        new_name = entry.get_text().strip()
+        if response == Gtk.ResponseType.OK:
+            new_name = entry.get_text().strip().replace("/", "-")
+            if new_name:
+                new_full = new_name if parent_path == "Session" else f"{parent_path}/{new_name}"
+                if new_full not in self.user_folders:
+                    self.user_folders.append(new_full)
+                    self.log(f"Created folder: {new_full}")
+                    GLib.idle_add(self.save_state_and_reload)
+                else:
+                    self.log(f"Notice: Folder '{new_full}' already exists.")
+
         dialog.destroy()
-        
-        # 3. Safely nest and build the folder
-        if response == Gtk.ResponseType.OK and new_name:
-            new_name = new_name.replace("/", "-") # Prevent manual path corruption
-            
-            full_new_path = new_name if parent_path == root_val else f"{parent_path}/{new_name}"
-                
-            if full_new_path not in self.user_folders:
-                self.user_folders.append(full_new_path)
-                self.save_state_and_reload() # Use our new helper!
-                self.log(f"Created new folder: '{full_new_path}'")
-            else:
-                self.log(f"Notice: Folder '{full_new_path}' already exists.")
 
     def on_rename_folder(self, widget=None, data=None):
         """Renames a folder via the menu, showing only the short name in the dialog"""
         selection = self.tree.get_selection()
-        model, tree_iter = selection.get_selected()
-        if not tree_iter: return
+        model, paths = selection.get_selected_rows()
+        if not paths: return
+        
+        if len(paths) > 1:
+            self.show_info_dialog("Invalid", "Please select exactly ONE folder to rename.")
+            return
 
+        tree_iter = model.get_iter(paths[0])
         row_data = model.get_value(tree_iter, 2)
         if not row_data or len(row_data) < 2 or row_data[0] != "folder":
             return
@@ -4184,7 +4179,6 @@ class ScarpaConnectionManager(Gtk.Application):
             self.show_info_dialog("Invalid", "Cannot rename the root Session folder.")
             return
 
-        # --- CRITICAL UX FIX ---
         # Extract just the short name (basename) and the parent path separately
         old_basename = old_path.split("/")[-1]
         parent_path = old_path.rsplit("/", 1)[0] if "/" in old_path else ""
@@ -4198,10 +4192,7 @@ class ScarpaConnectionManager(Gtk.Application):
         )
         
         entry = Gtk.Entry()
-        # Pre-fill the box with ONLY the short name!
         entry.set_text(old_basename) 
-        
-        # Allow pressing 'Enter' to instantly save
         entry.connect("activate", lambda e: dialog.response(Gtk.ResponseType.OK))
         
         box = dialog.get_message_area()
@@ -4214,11 +4205,9 @@ class ScarpaConnectionManager(Gtk.Application):
         new_basename = entry.get_text().strip()
         dialog.destroy()
 
-        # If they clicked OK, typed a new name, and it's actually different:
         if response == Gtk.ResponseType.OK and new_basename and new_basename != old_basename:
-            new_basename = new_basename.replace("/", "-") # Prevent manual path corruption
+            new_basename = new_basename.replace("/", "-") 
             
-            # Reconstruct the full path safely
             if parent_path:
                 new_path = f"{parent_path}/{new_basename}"
             else:
@@ -4228,7 +4217,6 @@ class ScarpaConnectionManager(Gtk.Application):
                 self.show_info_dialog("Exists", f"Folder '{new_path}' already exists.")
                 return
                 
-            # 1. Update the folder names in memory
             to_remove = []
             to_add = []
             for uf in self.user_folders:
@@ -4242,7 +4230,6 @@ class ScarpaConnectionManager(Gtk.Application):
                     self.user_folders.remove(uf)
             self.user_folders.extend(to_add)
 
-            # 2. Update all servers residing inside this folder (and its subfolders)
             for s in self.servers:
                 s_folder = s.get("folder", root_val)
                 if s_folder == old_path or s_folder.startswith(old_path + "/"):
@@ -4300,47 +4287,67 @@ class ScarpaConnectionManager(Gtk.Application):
             self.save_state_and_reload()
             self.log(f"Deleted {len(paths)} item(s).")
 
-    def on_add_server(self, widget=None, data=None):
-        """Opens the Add Server dialog, pre-filling the currently selected folder"""
+    def on_add_server(self, action, param):
         selection = self.tree.get_selection()
-        model, tree_iter = selection.get_selected()
+        model, paths = selection.get_selected_rows()
         
-        try: root_val = ROOT_FOLDER
-        except NameError: root_val = "Session"
-        
-        target_folder = root_val
-        
-        # 1. Figure out exactly what folder is currently selected
-        if tree_iter:
+        default_folder = "Session"
+        if paths:
+            tree_iter = model.get_iter(paths[0])
             row_data = model.get_value(tree_iter, 2)
             if row_data and len(row_data) >= 2:
-                typ, item = row_data[0], row_data[1]
-                if typ == "folder":
-                    target_folder = str(item)
-                elif typ == "server":
-                    # If a server is selected, use its parent folder
-                    actual_data = self.servers[item] if isinstance(item, int) else item
-                    target_folder = actual_data.get("folder", root_val)
+                node, val = row_data[0], row_data[1]
+                if node == "folder":
+                    default_folder = str(val)
+                elif node == "server":
+                    if isinstance(val, dict):
+                        default_folder = val.get("folder", "Session")
+                    elif isinstance(val, int):
+                        default_folder = self.servers[val].get("folder", "Session")
 
-        # 2. Open the dialog and explicitly pass the target folder
-        self._open_server_dialog(cfg=None, preselected_folder=target_folder)
+        # Use your built-in dialog launcher!
+        self._open_server_dialog(cfg=None, preselected_folder=default_folder)
 
     def on_edit_server(self, action, param):
-        model, it = self.tree.get_selection().get_selected()
-        if not it:
-            return self._info("Select a server first.")
-        node, idx = model.get_value(it, 2)
-        if node != "server":
-            return self._info("Select a server first.")
-        self._open_server_dialog(self.servers[idx], idx)
-        self.populate_tree()
-        self.tree.expand_row(Gtk.TreePath.new_from_string("0"), False)
+        selection = self.tree.get_selection()
+        model, paths = selection.get_selected_rows()
 
-    # ── Connect Actions (SSH & SFTP) ─────────────────────────────────────────
+        if not paths:
+            self.show_info_dialog("Edit Server", "Please select a server to edit.")
+            return
+            
+        if len(paths) > 1:
+            self.show_info_dialog("Edit Server", "Please select exactly ONE server to edit.")
+            return
+
+        tree_iter = model.get_iter(paths[0])
+        row_data = model.get_value(tree_iter, 2)
+        if not row_data or len(row_data) < 2: 
+            return
+            
+        node, val = row_data[0], row_data[1]
+
+        if node != "server":
+            self.show_info_dialog("Edit Server", "Please select a server (not a folder).")
+            return
+
+        actual_server = self.servers[val] if isinstance(val, int) else val
+        
+        # Use your built-in dialog launcher!
+        self._open_server_dialog(cfg=actual_server)
+
+# ── Connect Actions (SSH & SFTP) ─────────────────────────────────────────
     def on_ssh(self, action, param):
-        model, it = self.tree.get_selection().get_selected()
-        if not it:
+        selection = self.tree.get_selection()
+        model, paths = selection.get_selected_rows()
+        
+        if not paths:
             return self._info("Select a server first.")
+            
+        if len(paths) > 1:
+            return self._info("Please select exactly ONE server to connect to.")
+            
+        it = model.get_iter(paths[0])
         node, idx = model.get_value(it, 2)
         if node != "server":
             return self._info("Select a server first.")
@@ -4411,10 +4418,18 @@ class ScarpaConnectionManager(Gtk.Application):
     
         self._launch_expect(lines, f"{cfg['name']} SSH", cfg)
 
+
     def on_sftp(self, action, param):
-        model, it = self.tree.get_selection().get_selected()
-        if not it:
+        selection = self.tree.get_selection()
+        model, paths = selection.get_selected_rows()
+        
+        if not paths:
             return self._info("Select a server first.")
+            
+        if len(paths) > 1:
+            return self._info("Please select exactly ONE server to connect to.")
+            
+        it = model.get_iter(paths[0])
         node, idx = model.get_value(it, 2)
         if node != "server":
             return self._info("Select a server first.")
@@ -4486,14 +4501,42 @@ class ScarpaConnectionManager(Gtk.Application):
         lines.append("interact\n")
         self._launch_expect(lines, f"{cfg['name']} SFTP", cfg)
 
+
+    # Double-click on a server row → launch SSH
+    def on_tree_activate(self, treeview, path, column):
+        """Native GTK handler for Double-Clicks"""
+        # --- FIX: Kill the rename timer instantly if they fast double-click! ---
+        if getattr(self, 'rename_timer', None):
+            GLib.source_remove(self.rename_timer)
+            self.rename_timer = None
+            self.deferred_path = None
+
+        model = treeview.get_model()
+        it = model.get_iter(path)
+        typ, item = model.get_value(it, 2)
+        
+        if typ == "server":
+            treeview.get_selection().select_path(path)
+            self.on_ssh(None, None)
+        elif typ == "folder":
+            if treeview.row_expanded(path):
+                treeview.collapse_row(path)
+            else:
+                treeview.expand_row(path, False)
+
     def on_sftpgui(self, action, param):
         # Handle if called from context menu (param has the index) or top menu (param is None)
         if param is not None and isinstance(param, int):
             idx = param
         else:
-            model, it = self.tree.get_selection().get_selected()
-            if not it:
+            selection = self.tree.get_selection()
+            model, paths = selection.get_selected_rows()
+            if not paths:
                 return self._info("Select a server first.")
+            if len(paths) > 1:
+                return self._info("Please select exactly ONE server to connect to.")
+                
+            it = model.get_iter(paths[0])
             node, idx = model.get_value(it, 2)
             if node != "server":
                 return self._info("Select a server first.")
@@ -4501,7 +4544,6 @@ class ScarpaConnectionManager(Gtk.Application):
         cfg = self.servers[idx]
         self.log(f"Launching Visual SFTP for: {cfg['name']}")
     
-        # --- NEW ACTUAL LAUNCH LOGIC ---
         host = cfg.get("host")
         port = cfg.get("port", 22)
         user = cfg.get("user")
@@ -4510,7 +4552,6 @@ class ScarpaConnectionManager(Gtk.Application):
         key_file = cfg.get("key_file", "") if auth_method == "key_file" else None
 
         try:
-            # Launch the new GUI window we added
             sftp_window = SFTPWindow(
                 parent_win=self.win, 
                 host=host, 
@@ -4996,6 +5037,7 @@ class ScarpaConnectionManager(Gtk.Application):
         if event.button == Gdk.BUTTON_SECONDARY:
             x, y = int(event.x), int(event.y)
             path_info = tree.get_path_at_pos(x, y)
+            
             if path_info:
                 path, col, cx, cy = path_info
                 selection = tree.get_selection()
@@ -5013,20 +5055,44 @@ class ScarpaConnectionManager(Gtk.Application):
                     menu = self._create_context_menu(node, val)
                     menu.popup_at_pointer(event)
                 return True
-            return False
+            else:
+                # --- Right-Click in Empty Space ---
+                tree.get_selection().unselect_all()
+                menu = Gtk.Menu()
+                
+                mi_folder = Gtk.MenuItem(label="Add Folder")
+                mi_folder.connect("activate", lambda w: self.on_new_folder(None, None))
+                menu.append(mi_folder)
+                
+                mi_server = Gtk.MenuItem(label="Add Server")
+                mi_server.connect("activate", lambda w: self.on_add_server(None, None))
+                menu.append(mi_server)
+                
+                menu.show_all()
+                menu.popup_at_pointer(event)
+                return True
 
         # 2. Handle Left Click (Smart Rename & D&D Backup Logic)
         if event.button == Gdk.BUTTON_PRIMARY:
-            if self.rename_timer:
+            # Clear existing timer on ANY left click event (Press, Release, or Double)
+            if getattr(self, 'rename_timer', None):
                 GLib.source_remove(self.rename_timer)
                 self.rename_timer = None
                 self.deferred_path = None
 
-            if event.type == Gdk.EventType._2BUTTON_PRESS:
+            # --- THE FIX ---
+            # Ignore anything that isn't a standard, single Mouse Down event.
+            # (Previously, the Mouse UP event after a double-click was starting a NEW timer!)
+            if event.type != Gdk.EventType.BUTTON_PRESS:
                 return False 
 
             path_info = tree.get_path_at_pos(int(event.x), int(event.y))
-            if not path_info: return False
+            
+            # --- Left-Click in Empty Space ---
+            if not path_info:
+                tree.get_selection().unselect_all()
+                return False
+                
             path, col, cx, cy = path_info
 
             selection = tree.get_selection()
@@ -5034,25 +5100,22 @@ class ScarpaConnectionManager(Gtk.Application):
             is_selected = any(r == path for r in rows)
 
             # --- THE MULTI-DRAG BACKUP ---
-            # If we click an already selected item in a group, GTK will alter the 
-            # selection on Mouse-Down. We back up the full selection right here!
             if is_selected and len(rows) > 1:
                 self._drag_paths_backup = rows
             else:
                 self._drag_paths_backup = None
 
-            # Let GTK natively handle Ctrl/Shift clicks
             if has_modifiers:
                 return False
 
-            # If clicking inside a bulk selection without modifiers, let GTK handle it.
             if is_selected and len(rows) > 1:
                 return False
                 
             # If it's a single item and already selected, trigger inline rename
             if is_selected:
                 self.deferred_path = path
-                self.rename_timer = GLib.timeout_add(500, self._trigger_rename)
+                # Increased slightly to 600ms so fast clicks don't trip it accidentally
+                self.rename_timer = GLib.timeout_add(600, self._trigger_rename)
                 return False
         
         return False
@@ -5141,32 +5204,39 @@ class ScarpaConnectionManager(Gtk.Application):
         try: root_val = ROOT_FOLDER
         except NameError: root_val = "Session"
 
-        # Lock the root folder, but allow editing for everything else!
         if typ == "folder" and str(item) == root_val:
             cell.set_property("editable", False)
         else:
-            cell.set_property("editable", True)
+            # --- FIX: Only allow editing if our slow-timer explicitly unlocks this specific path! ---
+            path = model.get_path(tree_iter)
+            is_active = (getattr(self, "_active_edit_path", None) == path)
+            cell.set_property("editable", is_active)
 
     def _trigger_rename(self):
         """Called by the timer to enable editing."""
         self.rename_timer = None
-        if not self.deferred_path: return False
+        if not getattr(self, 'deferred_path', None): return False
         
         self.rename_path = self.deferred_path
         self.deferred_path = None
         
-        # Focus the cell and start editing
-        # We assume the text column is the first one (column 0)
+        # --- FIX: Temporarily unlock this specific row for editing ---
+        self._active_edit_path = self.rename_path
+        
         col = self.tree.get_column(0)
-        self.tree.set_cursor(self.rename_path, col, True) # True = start editing
+        self.tree.set_cursor(self.rename_path, col, True) 
         return False
 
     def _on_editing_canceled(self, renderer):
         """Reset state if user presses Escape."""
         self.rename_path = None
+        self._active_edit_path = None # Relock the row!
 
     def _on_cell_edited(self, widget, path, text):
         """Handles inline renaming of folders AND servers safely without crashing GTK"""
+        self.rename_path = None
+        self._active_edit_path = None # Relock the row!
+        
         new_name = text.strip()
         if not new_name: return
 
@@ -5319,9 +5389,6 @@ class ScarpaConnectionManager(Gtk.Application):
             else:
                 self._error("Could not start the local help server to display the user guide.")
 
-
-
-
     def _open_server_dialog(self, cfg=None, idx=None, target_window=None, preselected_folder=None):
         is_edit = cfg is not None
     
@@ -5360,10 +5427,10 @@ class ScarpaConnectionManager(Gtk.Application):
             grid.attach(lbl, 0, row, 1, 1)
             grid.attach(widget, 1, row, 1, 1)
     
-        en_name = Gtk.Entry();   en_name.set_size_request(300, -1)
-        en_host = Gtk.Entry();   en_host.set_size_request(300, -1)
-        en_port = Gtk.Entry();   en_port.set_size_request(300, -1)
-        en_user = Gtk.Entry();   en_user.set_size_request(300, -1)
+        en_name = Gtk.Entry();   en_name.set_size_request(300, -1); en_name.set_activates_default(True)
+        en_host = Gtk.Entry();   en_host.set_size_request(300, -1); en_host.set_activates_default(True)
+        en_port = Gtk.Entry();   en_port.set_size_request(300, -1); en_port.set_activates_default(True)
+        en_user = Gtk.Entry();   en_user.set_size_request(300, -1); en_user.set_activates_default(True)
         folder_cb = Gtk.ComboBoxText(); folder_cb.set_size_request(300, -1)
         
         en_port.set_text(str(cfg.get("port", 22)) if cfg else "22")
@@ -5406,6 +5473,7 @@ class ScarpaConnectionManager(Gtk.Application):
         pw_entry.set_size_request(300, -1)
         pw_entry.set_visibility(False)
         pw_entry.set_placeholder_text("Enter password")
+        pw_entry.set_activates_default(True)
     
         key_entry = Gtk.Entry(); key_entry.set_size_request(300, -1)
         key_btn   = Gtk.Button(label="Browse")
@@ -5934,8 +6002,36 @@ class ScarpaConnectionManager(Gtk.Application):
     
             name = en_name.get_text().strip()
             if not name:
-                self._error("Server Name is required.")
+                self.show_info_dialog("Error", "Server Name is required.")
                 continue
+                
+            target_folder = folder_cb.get_active_text() or "Session"
+
+            # --- START COLLISION CHECK ---
+            is_duplicate = False
+            for i, existing_server in enumerate(self.servers):
+                # If editing, we skip checking the current server against itself!
+                if is_edit:
+                    if idx is not None and i == idx:
+                        continue
+                    elif cfg is not None and existing_server == cfg:
+                        continue
+                
+                existing_name = existing_server.get("name", "")
+                existing_folder = existing_server.get("folder", "Session")
+                
+                # Treat missing/blank folder as "Session" root
+                if not existing_folder: existing_folder = "Session"
+                check_folder = target_folder if target_folder else "Session"
+                
+                if existing_name == name and existing_folder == check_folder:
+                    is_duplicate = True
+                    break
+                    
+            if is_duplicate:
+                self.show_info_dialog("Name Collision", f"A server named '{name}' already exists in the '{target_folder}' folder.\n\nPlease choose a different name or folder.")
+                continue
+            # --- END COLLISION CHECK ---
     
             result = {
                 "name":         name,
@@ -5999,9 +6095,19 @@ class ScarpaConnectionManager(Gtk.Application):
                     open(result["log_path"], "w").close()
     
             if is_edit:
-                self.servers[idx].clear()
-                self.servers[idx].update(result)
-                self.log(f"Edited '{result['name']}'")
+                # Fallback to automatically find idx if missing
+                actual_idx = idx
+                if actual_idx is None and cfg in self.servers:
+                    actual_idx = self.servers.index(cfg)
+                    
+                if actual_idx is not None:
+                    self.servers[actual_idx].clear()
+                    self.servers[actual_idx].update(result)
+                    self.log(f"Edited '{result['name']}'")
+                else:
+                    # Failsafe append
+                    self.servers.append(result)
+                    self.log(f"Added as new (edit failed to find original): '{result['name']}'")
             else:
                 self.servers.append(result)
                 self.log(f"Added '{result['name']}'")
@@ -6026,13 +6132,18 @@ class ScarpaConnectionManager(Gtk.Application):
             tree_iter = store.get_iter(paths[0])
             rule_to_edit = store.get_value(tree_iter, 4)
     
+        # --- FIX: Added use_header_bar=0 to prevent GTK layout crashes ---
         dlg = Gtk.Dialog(
             title="Edit Forwarding Rule" if rule_to_edit else "Add Forwarding Rule",
             transient_for=parent,
-            modal=True
+            modal=True,
+            use_header_bar=0
         )
         dlg.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
                         Gtk.STOCK_OK,     Gtk.ResponseType.OK)
+                        
+        # Set default response so Enter works
+        dlg.set_default_response(Gtk.ResponseType.OK)
     
         grid = Gtk.Grid(column_spacing=6, row_spacing=6, margin=10)
         dlg.get_content_area().add(grid)
@@ -6048,16 +6159,19 @@ class ScarpaConnectionManager(Gtk.Application):
         # Source Port
         grid.attach(Gtk.Label(label="Source Port:", halign=Gtk.Align.START), 0, 1, 1, 1)
         src_port_spin = Gtk.SpinButton.new_with_range(1, 65535, 1)
+        src_port_spin.set_activates_default(True)  # <-- Enter triggers OK
         grid.attach(src_port_spin, 1, 1, 1, 1)
     
         # Destination Host
         grid.attach(Gtk.Label(label="Destination Host:", halign=Gtk.Align.START), 0, 2, 1, 1)
         dest_host_entry = Gtk.Entry(text="localhost")
+        dest_host_entry.set_activates_default(True)  # <-- Enter triggers OK
         grid.attach(dest_host_entry, 1, 2, 1, 1)
     
         # Destination Port
         grid.attach(Gtk.Label(label="Destination Port:", halign=Gtk.Align.START), 0, 3, 1, 1)
         dest_port_spin = Gtk.SpinButton.new_with_range(1, 65535, 1)
+        dest_port_spin.set_activates_default(True)  # <-- Enter triggers OK
         grid.attach(dest_port_spin, 1, 3, 1, 1)
     
         # Disable dest fields if Dynamic selected
@@ -6079,9 +6193,7 @@ class ScarpaConnectionManager(Gtk.Application):
         if dlg.run() == Gtk.ResponseType.OK:
             t = type_cb.get_active_text()
             rule = {"type": t, "source_port": int(src_port_spin.get_value())}
-            if not is_safe_sandbox_path(filename, dlg):
-                dlg.destroy()
-                return # Stop the process and make them try again!
+            
             if t != "Dynamic":
                 rule["dest_host"] = dest_host_entry.get_text().strip() or "localhost"
                 rule["dest_port"] = int(dest_port_spin.get_value())
@@ -6091,7 +6203,7 @@ class ScarpaConnectionManager(Gtk.Application):
                 store.set(tree_iter, [0,1,2,3,4], row)
             else:
                 store.append(row)
-        dlg.destroy()
+        dlg.destroy()    
     
     def _delete_selected_from_view(self, view, store):
         """Delete the currently selected rows from a Gtk.TreeView/ListStore."""
@@ -6141,12 +6253,12 @@ class ScarpaConnectionManager(Gtk.Application):
         seq_store: Gtk.ListStore(str expect, str send, bool hide)
         tree_iter: iter to edit, or None to append new.
         """
-        # Make parent transient_for self.win only if self.win exists
-        parent_window = self.win if hasattr(self, 'win') and self.win else None # Use parent_window for dlg
+        # --- FIX: Attach to the actual 'parent' dialog to avoid GTK structural crashes ---
         dlg = Gtk.Dialog(
             title="Edit Step" if tree_iter else "Add Step",
-            transient_for=parent_window, # Can be None
-            modal=True
+            transient_for=parent,
+            modal=True,
+            use_header_bar=0  # Forces GTK to build a traditional, crash-free button box
         )
         dlg.add_buttons(
             Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
@@ -6154,6 +6266,9 @@ class ScarpaConnectionManager(Gtk.Application):
         )
         dlg.set_default_size(360, 160)
         dlg.set_resizable(False)
+        
+        # Set default response so Enter works smoothly
+        dlg.set_default_response(Gtk.ResponseType.OK)
     
         box = dlg.get_content_area()
         box.set_margin_top(10)
@@ -6161,25 +6276,25 @@ class ScarpaConnectionManager(Gtk.Application):
         box.set_margin_start(10)
         box.set_margin_end(10)
     
-        # ── Expect / Send entries row ───────────────────────────────
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         ent_exp = Gtk.Entry(); ent_exp.set_size_request(165, -1)
         ent_snd = Gtk.Entry(); ent_snd.set_size_request(165, -1)
+        
+        # Trigger OK when pressing Enter in these boxes
+        ent_exp.set_activates_default(True)
+        ent_snd.set_activates_default(True)
+        
         row.pack_start(ent_exp, False, False, 0)
-        row.pack_start(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL),
-                      False, False, 0)
+        row.pack_start(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL), False, False, 0)
         row.pack_start(ent_snd, False, False, 0)
         box.pack_start(row, False, False, 0)
     
-        # ── Hide-Send checkbox ───────────────────────────────────────
         mask_chk = Gtk.CheckButton(label="Hide Send Input")
         mask_chk.set_tooltip_text("When unselected, show and clear Send text")
-        mask_chk.set_active(False)   # default: unchecked → always show
+        mask_chk.set_active(False)
         box.pack_start(mask_chk, False, False, 6)
     
-        # ── Pre-fill if editing ─────────────────────────────────────
         if tree_iter:
-            # get each column separately
             e0 = seq_store.get_value(tree_iter, 0)
             s0 = seq_store.get_value(tree_iter, 1)
             h0 = seq_store.get_value(tree_iter, 2)
@@ -6187,13 +6302,9 @@ class ScarpaConnectionManager(Gtk.Application):
             ent_snd.set_text(s0)
             mask_chk.set_active(h0)
     
-        # set visibility based on the checkbox’s state
         ent_snd.set_visibility(not mask_chk.get_active())
     
-        # ── Now wire up the toggle handler *after* pre-fill ────────────
         def _on_mask_toggled(cb):
-            # cb.get_active()==True  → hide/mask
-            # cb.get_active()==False → show & clear
             ent_snd.set_visibility(not cb.get_active())
             if not cb.get_active():
                 ent_snd.set_text("")
@@ -6214,12 +6325,18 @@ class ScarpaConnectionManager(Gtk.Application):
         dlg.destroy()
 
     def on_copy_server(self, action, param):
-        model, it = self.tree.get_selection().get_selected()
-        if not it:
+        selection = self.tree.get_selection()
+        model, paths = selection.get_selected_rows()
+        if not paths:
             return self._info("Select a server to copy.")
+        if len(paths) > 1:
+            return self._info("Please select exactly ONE server to copy.")
+            
+        it = model.get_iter(paths[0])
         node, idx = model.get_value(it, 2)
         if node != "server":
             return self._info("Select a server to copy.")
+            
         # Make a deep copy to avoid mutating original
         import copy
         self._copied_server = copy.deepcopy(self.servers[idx])
@@ -6240,27 +6357,29 @@ class ScarpaConnectionManager(Gtk.Application):
     
             # 2. If no param, infer target from current selection (Ctrl+V)
             else:
-                model, it = self.tree.get_selection().get_selected()
-                if it:
+                selection = self.tree.get_selection()
+                model, paths = selection.get_selected_rows()
+                
+                try: root_val = ROOT_FOLDER
+                except NameError: root_val = "Session"
+                
+                if paths:
+                    it = model.get_iter(paths[0])
                     node, val = model.get_value(it, 2)
                     if node == "folder":
                         target_folder = val
                     elif node == "server":
-                        # If pasting onto a server, put it in that server's folder
-                        target_folder = self.servers[val].get("folder", ROOT_FOLDER)
+                        target_folder = self.servers[val].get("folder", root_val)
     
             if not target_folder:
                 return self._info("Could not determine target folder.")
     
-            # --- Perform the Paste ---
             import copy
             new_srv = copy.deepcopy(self._copied_server)
             
-            # Create unique name
             base_name = new_srv["name"]
             existing_names = {s["name"] for s in self.servers}
             
-            # If it's a direct copy, maybe append "Copy". If repeated, append number.
             if base_name in existing_names:
                 new_name = f"{base_name} Copy"
             else:
@@ -6283,7 +6402,7 @@ class ScarpaConnectionManager(Gtk.Application):
     
             self.reload_folders()
             self.populate_tree()
-            self.tree.expand_all() # Optional: ensure we see the new item
+            self.tree.expand_all()
             self.log(f"Pasted server as '{final_name}' into '{target_folder}'.")
 
     def apply_appearance_to_terminal(self, terminal, cfg):
@@ -6418,10 +6537,14 @@ class ScarpaConnectionManager(Gtk.Application):
             buttons=Gtk.ButtonsType.OK_CANCEL,
             text=message
         )
+        
         # Create a hidden password entry field
         entry = Gtk.Entry()
         entry.set_visibility(False)  # Hides text as dots
+        
+        # --- FIX: Trigger OK when pressing Enter ---
         entry.set_activates_default(True)
+        dialog.set_default_response(Gtk.ResponseType.OK)
         
         box = dialog.get_message_area()
         box.pack_start(entry, True, True, 10)
@@ -6431,6 +6554,7 @@ class ScarpaConnectionManager(Gtk.Application):
         password = entry.get_text() if response == Gtk.ResponseType.OK else None
         dialog.destroy()
         return password
+
 
     def show_info_dialog(self, title, message):
         """Safely shows a GUI info message"""
