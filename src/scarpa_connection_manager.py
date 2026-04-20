@@ -2447,8 +2447,8 @@ class ScarpaConnectionManager(Gtk.Application):
                 ("Add",    self.on_add_server),
                 ("Edit",   self.on_edit_server),
                 ("Delete", self.on_delete_selected),
-                ("Copy",   self.on_copy_server),
-                ("Paste",  self.on_paste_server),
+                ("Copy",   self.execute_smart_copy),
+                ("Paste",  self.execute_smart_paste),
             ],
             "Folders": [
                 ("Add",    self.on_new_folder),
@@ -2667,6 +2667,8 @@ class ScarpaConnectionManager(Gtk.Application):
         folders_to_add = []
         folders_to_remove = []
 
+        import re # Used to strip off existing (1) (2) tags
+
         # Batch process all items in the clipboard
         for clip_item in items_to_paste:
             c_type = clip_item.get("type")
@@ -2683,14 +2685,17 @@ class ScarpaConnectionManager(Gtk.Application):
                     new_srv["folder"] = target_base_path if not is_root_target else root_val
                     
                     base_name = c_data.get('name', 'Server')
-                    desired_name = f"{base_name} (Copy)" if (base_name in existing_names_in_target and is_same_parent) else base_name
                     
-                    final_name = desired_name
-                    counter = 1
-                    while final_name in existing_names_in_target:
-                        suffix = f" (Copy {counter})" if is_same_parent else f" ({counter})"
-                        final_name = f"{base_name}{suffix}"
-                        counter += 1
+                    # --- FIX: Strip off existing numbers so it counts cleanly ---
+                    clean_base = re.sub(r'\s*\(\d+\)$', '', base_name)
+                    
+                    final_name = base_name
+                    if final_name in existing_names_in_target:
+                        counter = 1
+                        final_name = f"{clean_base} ({counter})"
+                        while final_name in existing_names_in_target:
+                            counter += 1
+                            final_name = f"{clean_base} ({counter})"
                         
                     new_srv["name"] = final_name
                     if "uuid" in new_srv:
@@ -2704,12 +2709,17 @@ class ScarpaConnectionManager(Gtk.Application):
                     if is_same_parent: continue
 
                     base_name = c_data.get('name', 'Server')
+                    
+                    # --- FIX: Strip off existing numbers so it counts cleanly ---
+                    clean_base = re.sub(r'\s*\(\d+\)$', '', base_name)
+
                     final_name = base_name
                     if final_name in existing_names_in_target:
                         counter = 1
-                        while f"{base_name} ({counter})" in existing_names_in_target:
+                        final_name = f"{clean_base} ({counter})"
+                        while final_name in existing_names_in_target:
                             counter += 1
-                        final_name = f"{base_name} ({counter})"
+                            final_name = f"{clean_base} ({counter})"
 
                     if c_ref in self.servers:
                         c_ref["name"] = final_name
@@ -2724,25 +2734,29 @@ class ScarpaConnectionManager(Gtk.Application):
                 if clean_target == source_path or clean_target.startswith(source_path + "/"): continue
                 if action == "cut" and clean_target == source_parent: continue
 
-                is_same_parent = (target_base_path == source_parent)
                 def build_full_path(fname): return fname if is_root_target else f"{clean_target}/{fname}"
 
+                # --- FIX: Strip off existing numbers for folders too ---
+                clean_base = re.sub(r'\s*\(\d+\)$', '', source_name)
+
                 if action == "copy":
-                    desired_name = f"{source_name} (Copy)" if is_same_parent else source_name
-                    final_name = desired_name
-                    counter = 1
-                    while build_full_path(final_name) in self.user_folders or build_full_path(final_name) in folders_to_add:
-                        suffix = f" (Copy {counter})" if is_same_parent else f" ({counter})"
-                        final_name = f"{source_name}{suffix}"
-                        counter += 1
+                    final_name = source_name
+                    if build_full_path(final_name) in self.user_folders or build_full_path(final_name) in folders_to_add:
+                        counter = 1
+                        final_name = f"{clean_base} ({counter})"
+                        while build_full_path(final_name) in self.user_folders or build_full_path(final_name) in folders_to_add:
+                            counter += 1
+                            final_name = f"{clean_base} ({counter})"
                     final_base = build_full_path(final_name)
                     
                 elif action == "cut":
                     final_name = source_name
-                    counter = 1
-                    while (build_full_path(final_name) in self.user_folders or build_full_path(final_name) in folders_to_add) and build_full_path(final_name) != source_path:
-                        final_name = f"{source_name} ({counter})"
-                        counter += 1
+                    if (build_full_path(final_name) in self.user_folders or build_full_path(final_name) in folders_to_add) and build_full_path(final_name) != source_path:
+                        counter = 1
+                        final_name = f"{clean_base} ({counter})"
+                        while (build_full_path(final_name) in self.user_folders or build_full_path(final_name) in folders_to_add) and build_full_path(final_name) != source_path:
+                            counter += 1
+                            final_name = f"{clean_base} ({counter})"
                     final_base = build_full_path(final_name)
 
                 for uf in self.user_folders:
@@ -3102,6 +3116,16 @@ class ScarpaConnectionManager(Gtk.Application):
         """
         # --- 1) Capture dynamically which folders are currently expanded ---
         expanded_folders = set()
+        
+        # --- THE FIX: Inject our forced expansion target & ensure ALL parent branches open! ---
+        if getattr(self, '_force_expand', None):
+            parts = self._force_expand.split('/')
+            cur = ""
+            for p in parts:
+                cur = f"{cur}/{p}" if cur else p
+                expanded_folders.add(cur)
+            self._force_expand = None
+            
         if hasattr(self, 'tree') and self.tree:
             def capture_expanded(model, path, tree_iter):
                 if self.tree.row_expanded(path):
@@ -4100,6 +4124,9 @@ class ScarpaConnectionManager(Gtk.Application):
         model, paths = selection.get_selected_rows()
         
         parent_path = "Session"
+        try: root_val = ROOT_FOLDER
+        except NameError: root_val = "Session"
+
         if paths:
             tree_iter = model.get_iter(paths[0])
             row_data = model.get_value(tree_iter, 2)
@@ -4109,9 +4136,9 @@ class ScarpaConnectionManager(Gtk.Application):
                     parent_path = str(val)
                 elif node == "server":
                     if isinstance(val, dict):
-                        parent_path = val.get("folder", "Session")
+                        parent_path = val.get("folder", root_val)
                     elif isinstance(val, int):
-                        parent_path = self.servers[val].get("folder", "Session")
+                        parent_path = self.servers[val].get("folder", root_val)
 
         dialog = Gtk.Dialog(
             title="New Folder",
@@ -4143,18 +4170,36 @@ class ScarpaConnectionManager(Gtk.Application):
         dialog.show_all()
 
         response = dialog.run()
-        if response == Gtk.ResponseType.OK:
-            new_name = entry.get_text().strip().replace("/", "-")
-            if new_name:
-                new_full = new_name if parent_path == "Session" else f"{parent_path}/{new_name}"
-                if new_full not in self.user_folders:
-                    self.user_folders.append(new_full)
-                    self.log(f"Created folder: {new_full}")
-                    GLib.idle_add(self.save_state_and_reload)
-                else:
-                    self.log(f"Notice: Folder '{new_full}' already exists.")
-
+        
+        # Destroy dialog early so we can show warning popups cleanly if needed
+        new_name = entry.get_text().strip().replace("/", "-")
         dialog.destroy()
+
+        if response == Gtk.ResponseType.OK and new_name:
+            new_full = new_name if parent_path == root_val else f"{parent_path}/{new_name}"
+            
+            # --- THE POPUP FIX ---
+            if new_full in self.user_folders:
+                dlg = Gtk.MessageDialog(
+                    transient_for=self.win,
+                    flags=0,
+                    message_type=Gtk.MessageType.WARNING,
+                    buttons=Gtk.ButtonsType.OK,
+                    text="Folder Exists"
+                )
+                dlg.format_secondary_text(f"A folder named '{new_name}' already exists inside '{parent_path}'.")
+                dlg.run()
+                dlg.destroy()
+                
+                # Make them try again immediately
+                return self.on_new_folder(widget, param)
+                
+            else:
+                self.user_folders.append(new_full)
+                self.log(f"Created folder: {new_full}")
+                
+                self._force_expand = parent_path 
+                self.save_state_and_reload()
 
     def on_rename_folder(self, widget=None, data=None):
         """Renames a folder via the menu, showing only the short name in the dialog"""
@@ -5136,12 +5181,10 @@ class ScarpaConnectionManager(Gtk.Application):
                 mi.connect("activate", lambda w: self.on_new_folder(None, None))
                 menu.append(mi)
     
-                # 3. Paste Server (NEW: Only if something is copied)
-                if hasattr(self, "_copied_server") and self._copied_server:
-                    mi = Gtk.MenuItem(label="Paste Server")
-                    # IMPORTANT: We pass 'val' (the folder name) as the second argument (param)
-                    # usage: handler(widget, user_data) -> on_paste_server(widget, folder_name)
-                    mi.connect("activate", self.on_paste_server, val)
+                # 3. Paste Server (NEW: Point to Smart Paste)
+                if getattr(self, '_app_clipboard', {}).get("items"):
+                    mi = Gtk.MenuItem(label="Paste")
+                    mi.connect("activate", lambda w: self.execute_smart_paste())
                     menu.append(mi)
     
                 # Separator before destructive actions
@@ -5181,9 +5224,9 @@ class ScarpaConnectionManager(Gtk.Application):
                 # 2. Edit / Copy / Delete ...
                 for lbl, fn in (
                     ("Edit Server", self.on_edit_server),
-                    ("Copy Server", self.on_copy_server),
+                    ("Copy Server", self.execute_smart_copy),
                     ("Delete Server", self.on_delete_selected),
-                ):
+                ): 
                     mi = Gtk.MenuItem(label=lbl)
                     mi.connect("activate", lambda w, f=fn: f(None, None))
                     menu.append(mi)
@@ -6111,6 +6154,11 @@ class ScarpaConnectionManager(Gtk.Application):
             else:
                 self.servers.append(result)
                 self.log(f"Added '{result['name']}'")
+                
+                # --- FIX: Tell the UI to force expand the folder so we see the new server ---
+                try: root_val = ROOT_FOLDER
+                except NameError: root_val = "Session"
+                self._force_expand = result.get("folder", root_val)
    
             try:
                 save_servers(self.servers, self.master_passphrase)
@@ -6323,87 +6371,6 @@ class ScarpaConnectionManager(Gtk.Application):
                 seq_store.append([exp_txt, snd_txt, hide_fl])
     
         dlg.destroy()
-
-    def on_copy_server(self, action, param):
-        selection = self.tree.get_selection()
-        model, paths = selection.get_selected_rows()
-        if not paths:
-            return self._info("Select a server to copy.")
-        if len(paths) > 1:
-            return self._info("Please select exactly ONE server to copy.")
-            
-        it = model.get_iter(paths[0])
-        node, idx = model.get_value(it, 2)
-        if node != "server":
-            return self._info("Select a server to copy.")
-            
-        # Make a deep copy to avoid mutating original
-        import copy
-        self._copied_server = copy.deepcopy(self.servers[idx])
-        self.log(f"Copied server '{self._copied_server['name']}' to clipboard.")
-    
-    def on_paste_server(self, action, param):
-            """
-            param: Can be a folder name string (from context menu) or None (from key shortcut).
-            """
-            if not hasattr(self, "_copied_server") or not self._copied_server:
-                return self._info("No server copied.")
-    
-            target_folder = None
-    
-            # 1. Check if a specific target folder was passed (Context Menu)
-            if param and isinstance(param, str):
-                target_folder = param
-    
-            # 2. If no param, infer target from current selection (Ctrl+V)
-            else:
-                selection = self.tree.get_selection()
-                model, paths = selection.get_selected_rows()
-                
-                try: root_val = ROOT_FOLDER
-                except NameError: root_val = "Session"
-                
-                if paths:
-                    it = model.get_iter(paths[0])
-                    node, val = model.get_value(it, 2)
-                    if node == "folder":
-                        target_folder = val
-                    elif node == "server":
-                        target_folder = self.servers[val].get("folder", root_val)
-    
-            if not target_folder:
-                return self._info("Could not determine target folder.")
-    
-            import copy
-            new_srv = copy.deepcopy(self._copied_server)
-            
-            base_name = new_srv["name"]
-            existing_names = {s["name"] for s in self.servers}
-            
-            if base_name in existing_names:
-                new_name = f"{base_name} Copy"
-            else:
-                new_name = base_name
-    
-            suffix = 1
-            final_name = new_name
-            while final_name in existing_names:
-                final_name = f"{new_name} {suffix}"
-                suffix += 1
-                
-            new_srv["name"] = final_name
-            new_srv["folder"] = target_folder
-            
-            self.servers.append(new_srv)
-            try:
-                save_servers(self.servers, self.master_passphrase)
-            except Exception as e:
-                return self._error(f"Failed to save after paste: {e}")
-    
-            self.reload_folders()
-            self.populate_tree()
-            self.tree.expand_all()
-            self.log(f"Pasted server as '{final_name}' into '{target_folder}'.")
 
     def apply_appearance_to_terminal(self, terminal, cfg):
         """Apply font, colors, palette and scrollback to a Vte.Terminal."""
