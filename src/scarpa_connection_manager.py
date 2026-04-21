@@ -792,7 +792,7 @@ class SFTPWindow(Gtk.Window):
         local_scroll_bc = Gtk.ScrolledWindow()
         local_scroll_bc.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
         self.local_breadcrumb_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
-        local_scroll_bc.add_with_viewport(self.local_breadcrumb_box)
+        local_scroll_bc.add(self.local_breadcrumb_box)
         local_scroll_bc.get_child().set_shadow_type(Gtk.ShadowType.NONE) 
         local_hbox.pack_start(local_scroll_bc, True, True, 0)
 
@@ -822,7 +822,7 @@ class SFTPWindow(Gtk.Window):
         remote_scroll_bc = Gtk.ScrolledWindow()
         remote_scroll_bc.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
         self.remote_breadcrumb_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
-        remote_scroll_bc.add_with_viewport(self.remote_breadcrumb_box)
+        remote_scroll_bc.add(self.remote_breadcrumb_box)
         remote_scroll_bc.get_child().set_shadow_type(Gtk.ShadowType.NONE)
         remote_hbox.pack_start(remote_scroll_bc, True, True, 0)
 
@@ -1422,6 +1422,31 @@ class SFTPWindow(Gtk.Window):
 
     # --- LOCAL LOGIC ---
     def load_local_directory(self, path):
+        abs_path = os.path.abspath(path)
+        if os.environ.get('SNAP'):
+            real_home = os.environ.get('SNAP_REAL_HOME', os.path.expanduser('~'))
+            # Prevent navigating "above" the home directory
+            if not abs_path.startswith(real_home):
+                dialog = Gtk.MessageDialog(
+                    transient_for=self,
+                    flags=0,
+                    message_type=Gtk.MessageType.INFO,
+                    buttons=Gtk.ButtonsType.OK,
+                    text="Sandboxed Environment"
+                )
+                dialog.format_secondary_markup(
+                    "You are running the Snap version of Scarpa Connection Manager.\n\n"
+                    "Due to strict security sandboxing, local file access is restricted "
+                    f"to your home directory:\n<b>{real_home}</b>\n\n"
+                    "If you need full local file-system access, we recommend installing the PPA version:\n\n"
+                    "<tt>sudo add-apt-repository ppa:larre-b-larsson/scarpa-connection-manager\n"
+                    "sudo apt update\n"
+                    "sudo apt install scarpa-connection-manager</tt>"
+                )
+                dialog.run()
+                dialog.destroy()
+                return # Block the navigation and stay in the current directory
+
         # 1. Clean up existing monitor before changing folders
         if self.local_monitor:
             self.local_monitor.cancel()
@@ -1430,14 +1455,31 @@ class SFTPWindow(Gtk.Window):
         self.local_liststore.clear()
         try:
             entries = []
-            if os.path.dirname(path) != path: 
+            
+            # --- NEW FIX: Hide the ".." (Up) folder if we are at the sandbox root limit ---
+            is_at_sandbox_root = False
+            if os.environ.get('SNAP'):
+                real_home = os.environ.get('SNAP_REAL_HOME', os.path.expanduser('~'))
+                if abs_path == real_home:
+                    is_at_sandbox_root = True
+
+            # Only add the ".." folder if we are not at the very top of the system OR sandbox
+            if os.path.dirname(abs_path) != abs_path and not is_at_sandbox_root: 
                 entries.append({'pixbuf': self.transparent_pixbuf, 'name': '..', 'size': '', 'is_dir': True, 'mtime': '', 'raw_size': -1.0, 'raw_time': 0.0, 'sort_key': '0_..'})
 
-            for filename in os.listdir(path):
-                full_path = os.path.join(path, filename)
-                st = os.stat(full_path)
-                is_dir = stat.S_ISDIR(st.st_mode)
-                raw_size, raw_time = float(st.st_size or 0), float(st.st_mtime or 0)
+            for filename in os.listdir(abs_path):
+                full_path = os.path.join(abs_path, filename)
+                
+                # --- PREVIOUS FIX: Safely check file stats and catch Permission/Symlink Errors ---
+                is_dir = False
+                raw_size, raw_time = 0.0, 0.0
+                try:
+                    st = os.lstat(full_path)
+                    is_dir = stat.S_ISDIR(st.st_mode)
+                    raw_size, raw_time = float(st.st_size or 0), float(st.st_mtime or 0)
+                except OSError:
+                    is_dir = True 
+                
                 category = self.get_sort_category(filename, is_dir)
                 pixbuf = self.get_icon_pixbuf(filename, is_dir)
                 
@@ -1452,13 +1494,13 @@ class SFTPWindow(Gtk.Window):
             for e in entries:
                 self.local_liststore.append([e['pixbuf'], e['name'], e['size'], e['is_dir'], e['mtime'], e['raw_size'], e['raw_time'], e['sort_key']])
                 
-            self.current_local_dir = path
+            self.current_local_dir = abs_path
             
             # --- UPDATED: Pass 'local' as the 4th argument ---
-            self.update_breadcrumbs(self.local_breadcrumb_box, path, self.load_local_directory, 'local')
+            self.update_breadcrumbs(self.local_breadcrumb_box, abs_path, self.load_local_directory, 'local')
 
             # 2. Setup the new File Monitor for the current directory
-            gfile = Gio.File.new_for_path(path)
+            gfile = Gio.File.new_for_path(abs_path)
             self.local_monitor = gfile.monitor_directory(Gio.FileMonitorFlags.NONE, None)
             self.local_monitor.connect("changed", self._on_local_file_changed)
 
@@ -1585,7 +1627,12 @@ class SFTPWindow(Gtk.Window):
                             self._rename_candidate_treeview = treeview
                     
                     self._last_click_time = event.time
-                return False
+                    return False
+                else:
+                    # --- THE FIX: User clicked the empty space! Clear the selection ---
+                    treeview.get_selection().unselect_all()
+                    self._rename_candidate_path = None
+                    return True 
 
             elif event.button == 3:
                 path_info = treeview.get_path_at_pos(int(event.x), int(event.y))
@@ -1720,28 +1767,25 @@ class SFTPWindow(Gtk.Window):
         Gtk.drag_set_icon_name(context, icon_name, 0, 0)
 
     # ── Build drag payload: serialize selected row-paths ────────────────────
-    def on_drag_data_get(self, treeview, context, selection, info, time):
-        """Bypasses GTK byte-mangling by using an internal memory pocket for D&D"""
+    def on_drag_data_get(self, treeview, context, selection, info, time, pane):
         try:
             model, paths = treeview.get_selection().get_selected_rows()
             if not paths: return
             
-            # Put the dragged items into the safe internal pocket
-            self._internal_drag_data = []
+            # Get the absolute paths of all selected items using our helper
+            selected_items = self.get_selected_items(treeview, pane)
+            if not selected_items: return
             
-            for path in paths:
-                tree_iter = model.get_iter(path)
-                row_data = model.get_value(tree_iter, 2)
-                
-                if row_data and len(row_data) >= 2:
-                    typ, item = row_data[0], row_data[1]
-                    self._internal_drag_data.append({"type": typ, "path": item})
-
-            # Send a dummy byte to satisfy GTK's handshake requirement
-            selection.set(selection.get_target(), 8, b"OK")
+            # Package the source pane and paths into a single string
+            # Format: "local:/path/1|/path/2" or "remote:/path/1|/path/2"
+            paths_str = "|".join(selected_items)
+            payload = f"{pane}:{paths_str}"
+            
+            # Send the payload to the drop receiver
+            selection.set_text(payload, -1)
             
         except Exception as e:
-            self.log(f"Error starting D&D: {e}")
+            self.set_status(f"Error starting Drag & Drop: {e}")
 
     def on_drag_data_received(self, treeview, context, x, y, selection, info, time, dest_pane):
         # 1. Default to the pane's current directory
@@ -2309,7 +2353,6 @@ class ScarpaConnectionManager(Gtk.Application):
         # If we failed to get/verify passphrase, self.master_passphrase will be None.
         # In that case, we should not proceed with UI activation or server loading.
         if not self.master_passphrase:
-            self._error("Application startup failed: Master passphrase not set or verified.")
             self.quit() # Exit application if passphrase cannot be set/verified
             return
 
@@ -2938,10 +2981,10 @@ class ScarpaConnectionManager(Gtk.Application):
                         self._error(f"Failed to remove old encrypted server data: {e}")
                 # --- END FIX ---
                 return
+
             else: # User cancelled
                 dlg.destroy()
-                self._error("Master passphrase not set. Application will quit.")
-                self.master_passphrase = None # Ensure it's None if user cancels
+                self.master_passphrase = None 
                 return
 
     def verify_master_passphrase(self):
@@ -2992,14 +3035,13 @@ class ScarpaConnectionManager(Gtk.Application):
                     dlg.destroy() # Destroy dialog before looping
             else: # User cancelled
                 dlg.destroy()
-                self._error("Passphrase verification cancelled. Application will quit.")
-                self.master_passphrase = None # Ensure it's None if user cancels
+                # --- FIX: Removed the error popup here ---
+                self.master_passphrase = None 
                 return
         
         # If max_retries reached
         self._error("Maximum passphrase attempts reached. Application will quit.")
         self.master_passphrase = None
-    # --- End New Passphrase Management Methods ---
 
     # ── Simple Input Dialog ────────────────────────────────────────────────
     def _simple_input(self, title, prompt=None, default_text=""):
