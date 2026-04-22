@@ -1,8 +1,12 @@
+scarpa-connection-manager (1.2.22-13) stable; urgency=medium
+
+  * reverting back from sandbox
+
 scarpa-connection-manager (1.2.22-12) stable; urgency=medium
 
-  * Even more updates for SFTP GUI
+  * Updates with sandbox chheck for log and command file
       
- -- Tomas Larsson <larre.b.larsson@gmail.com>  Wed, 22 Apr 2026 15:00:00 +0100
+ -- Tomas Larsson <larre.b.larsson@gmail.com>  Wed, 22 Apr 2026 156:00:00 +0100
 
 scarpa-connection-manager (1.2.22-11) stable; urgency=medium
 
