@@ -694,16 +694,36 @@ class SFTPWindow(Gtk.Window):
         #transfer_btn_download image { color: #3794ff; } 
         #stop_btn_active image { color: #e5534b; } 
         #resume_btn_active image { color: #f39c12; } 
-        
+
+        .active-pane { 
+            border-top: 3px solid #C0C0C0; 
+            border-bottom: none; 
+            border-left: none; 
+            border-right: none; 
+            border-radius: 0px; 
+        }
+        .inactive-pane { 
+            border-top: 3px solid transparent; 
+            border-bottom: none; 
+            border-left: none; 
+            border-right: none; 
+            border-radius: 0px; 
+        } 
+       
         /* Hyperlink style for path breadcrumbs */
         .breadcrumb-btn { 
             background: transparent; 
-            color: #0056b3; 
-            font-weight: bold;
-            padding: 2px 4px;
+            color: #000000; 
+            font-weight: normal;
+            padding: 2px 2px;
             border: none;
             box-shadow: none;
         }
+        .breadcrumb-drag-hover {
+            font-weight: bold;
+            color: #003d82;
+            text-decoration: underline;
+        }        
         .breadcrumb-btn:hover { 
             text-decoration: underline;
             color: #003d82;
@@ -807,10 +827,11 @@ class SFTPWindow(Gtk.Window):
 
         self._add_columns(self.local_treeview, is_local=True)
 
-        local_scroll = Gtk.ScrolledWindow()
-        local_scroll.set_vexpand(True)
-        local_scroll.add(self.local_treeview)
-        local_vbox.pack_start(local_scroll, True, True, 0)
+        self.local_scroll_tv = Gtk.ScrolledWindow()
+        self.local_scroll_tv.set_vexpand(True)
+        self.local_scroll_tv.add(self.local_treeview)
+        self.local_scroll_tv.get_style_context().add_class("active-pane")
+        local_vbox.pack_start(self.local_scroll_tv, True, True, 0)
 
         # --- RIGHT PANE (REMOTE) ---
         remote_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
@@ -837,10 +858,11 @@ class SFTPWindow(Gtk.Window):
 
         self._add_columns(self.remote_treeview, is_local=False)
 
-        remote_scroll = Gtk.ScrolledWindow()
-        remote_scroll.set_vexpand(True)
-        remote_scroll.add(self.remote_treeview)
-        remote_vbox.pack_start(remote_scroll, True, True, 0)
+        self.remote_scroll_tv = Gtk.ScrolledWindow()
+        self.remote_scroll_tv.set_vexpand(True)
+        self.remote_scroll_tv.add(self.remote_treeview)
+        self.remote_scroll_tv.get_style_context().add_class("inactive-pane")
+        remote_vbox.pack_start(self.remote_scroll_tv, True, True, 0)
 
         self.paned.set_position(550)
 
@@ -869,40 +891,17 @@ class SFTPWindow(Gtk.Window):
         self.remote_treeview.connect("drag-data-received", self.on_drag_data_received, "remote")
         self.remote_treeview.connect_after("drag-begin", self.on_drag_begin)
 
-    # --- UI HELPERS ---
-    def update_breadcrumbs(self, box, path, callback):
-        for child in box.get_children(): box.remove(child)
-        normalized_path = path.replace('\\', '/')
-        parts = [p for p in normalized_path.split('/') if p]
-        
-        def add_link(label, target_path):
-            btn = Gtk.Button(label=label)
-            btn.set_relief(Gtk.ReliefStyle.NONE)
-            btn.get_style_context().add_class("breadcrumb-btn")
-            btn.connect("clicked", lambda w: callback(target_path))
-            box.pack_start(btn, False, False, 0)
-
-        def add_separator():
-            lbl = Gtk.Label(label="/")
-            lbl.get_style_context().add_class("breadcrumb-sep")
-            box.pack_start(lbl, False, False, 0)
-            
-        if normalized_path.startswith("/"):
-            add_link("/", "/")
-            
-        current_path = "/" if normalized_path.startswith("/") else ""
-        if not normalized_path.startswith("/") and parts:
-            current_path = parts[0] + "/"
-            add_link(parts[0], current_path)
-            if len(parts) > 1: add_separator()
-            parts = parts[1:]
-
-        for i, part in enumerate(parts):
-            current_path = os.path.join(current_path, part).replace('\\', '/')
-            add_link(part, current_path)
-            if i < len(parts) - 1: add_separator()
-            
-        box.show_all()
+    def _update_pane_highlight(self):
+        if self.active_pane == "local":
+            self.local_scroll_tv.get_style_context().remove_class("inactive-pane")
+            self.local_scroll_tv.get_style_context().add_class("active-pane")
+            self.remote_scroll_tv.get_style_context().remove_class("active-pane")
+            self.remote_scroll_tv.get_style_context().add_class("inactive-pane")
+        else:
+            self.remote_scroll_tv.get_style_context().remove_class("inactive-pane")
+            self.remote_scroll_tv.get_style_context().add_class("active-pane")
+            self.local_scroll_tv.get_style_context().remove_class("active-pane")
+            self.local_scroll_tv.get_style_context().add_class("inactive-pane")
 
     # --- UI HELPERS: Updated to set up breadcrumb drops ---
     def update_breadcrumbs(self, box, path, callback, pane):
@@ -920,15 +919,16 @@ class SFTPWindow(Gtk.Window):
             btn.get_style_context().add_class("breadcrumb-btn")
             btn.connect("clicked", lambda w: callback(target_path))
             
-            # --- Added: Make individual breadcrumb buttons drag targets ---
-            # Set up as internal drag destination
+            # --- Make individual breadcrumb buttons drag targets ---
             btn.drag_dest_set(Gtk.DestDefaults.ALL, [self.internal_target], Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
-            # Connect drop signal, passing target path and pane
             btn.connect("drag-data-received", self.on_breadcrumb_drop_received, target_path, pane)
-            # -------------------------------------------------------------
+            
+            # --- NEW: Visual feedback signals ---
+            btn.connect("drag-motion", self._on_breadcrumb_drag_motion)
+            btn.connect("drag-leave", self._on_breadcrumb_drag_leave)
             
             box.pack_start(btn, False, False, 0)
-
+            
         def add_separator():
             lbl = Gtk.Label(label="/")
             lbl.get_style_context().add_class("breadcrumb-sep")
@@ -951,13 +951,19 @@ class SFTPWindow(Gtk.Window):
             
         box.show_all()
 
+    def _on_breadcrumb_drag_motion(self, widget, context, x, y, time):
+        # Add the bold styling when hovering
+        widget.get_style_context().add_class("breadcrumb-drag-hover")
+        return False # Let GTK handle the standard drag defaults as well
+
+    def _on_breadcrumb_drag_leave(self, widget, context, time):
+        # Remove the bold styling when moving away
+        widget.get_style_context().remove_class("breadcrumb-drag-hover")
+
     # --- New Method: Handling drops on breadcrumb buttons ---
     def on_breadcrumb_drop_received(self, button, context, x, y, selection, info, time, target_path, dest_pane):
-        """
-        Handler for drops onto individual breadcrumb buttons.
-        target_path: the absolute path targeted by the specific button dropped on (e.g., /home/larre)
-        dest_pane: 'local' or 'remote', depending on which path trail was dropped on.
-        """
+    
+        button.get_style_context().remove_class("breadcrumb-drag-hover")
         # 1. Parse the dragged data (same format as treeview drops)
         data = selection.get_text()
         if not data or ":" not in data:
@@ -1061,6 +1067,7 @@ class SFTPWindow(Gtk.Window):
         if self._clearing_selection: return
         
         self.active_pane = pane
+        self._update_pane_highlight()
         self._clearing_selection = True
         
         if pane == "local":
@@ -1420,6 +1427,30 @@ class SFTPWindow(Gtk.Window):
         except Exception as e:
             self.set_status(f"Rename failed: {e}")
 
+    def _open_system_file(self, filepath, filename):
+        try:
+            # Method 1: Pure GTK Native (Bypasses Window/DBus display errors)
+            uri = Gio.File.new_for_path(filepath).get_uri()
+            success = Gio.AppInfo.launch_default_for_uri(uri, None)
+            if success:
+                GLib.idle_add(self.set_status, f"Opened {filename}")
+                return
+        except Exception:
+            pass
+            
+        try:
+            # Method 2: Fallback to OS command line tools (gio or xdg-open)
+            import subprocess
+            import shutil
+            if shutil.which("gio"):
+                subprocess.Popen(['gio', 'open', filepath], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            else:
+                subprocess.Popen(['xdg-open', filepath], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                
+            GLib.idle_add(self.set_status, f"Opened {filename}")
+        except Exception as e:
+            GLib.idle_add(self.show_error_dialog, "Cannot Open File", f"Failed to open '{filename}':\n{e}")
+
     # --- LOCAL LOGIC ---
     def load_local_directory(self, path):
         abs_path = os.path.abspath(path)
@@ -1543,9 +1574,14 @@ class SFTPWindow(Gtk.Window):
         model = treeview.get_model()
         iter_ = model.get_iter(path)
         filename = model.get_value(iter_, 1)
-        if model.get_value(iter_, 3): 
+        
+        if model.get_value(iter_, 3): # If it's a directory
             new_path = os.path.dirname(self.current_local_dir) if filename == ".." else os.path.join(self.current_local_dir, filename)
             self.load_local_directory(new_path)
+        else:
+            # --- NEW: Use our bulletproof helper ---
+            filepath = os.path.join(self.current_local_dir, filename)
+            self._open_system_file(filepath, filename)
 
     # --- REMOTE LOGIC ---
     def connect_to_server(self):
@@ -1602,9 +1638,35 @@ class SFTPWindow(Gtk.Window):
         model = treeview.get_model()
         iter_ = model.get_iter(path)
         filename = model.get_value(iter_, 1)
-        if model.get_value(iter_, 3): 
+        
+        if model.get_value(iter_, 3): # If it's a directory
             new_path = os.path.dirname(self.current_remote_dir) if filename == ".." else os.path.join(self.current_remote_dir, filename).replace('\\', '/')
             self.load_remote_directory(new_path)
+        else:
+            # --- NEW: Download remote file to a temp folder, then open it! ---
+            import tempfile
+            remote_path = f"{self.current_remote_dir}/{filename}".replace('//', '/')
+            temp_dir = tempfile.gettempdir()
+            local_temp_path = os.path.join(temp_dir, filename)
+            
+            self.set_status(f"Downloading {filename} to open...")
+            
+            def download_and_open():
+                try:
+                    # 1. Download to temp folder
+                    self.sftp.get(remote_path, local_temp_path)
+                    
+                    # 2. Open using our bulletproof helper
+                    self._open_system_file(local_temp_path, filename)
+                    GLib.idle_add(self.set_status, f"Opened {filename} (Read-Only Copy)")
+                except Exception as e:
+                    GLib.idle_add(self.show_error_dialog, "Cannot Open Remote File", f"Failed to open '{filename}':\n{str(e)}")
+                    GLib.idle_add(self.set_status, "Failed to open file.")
+            
+            # Run in a background thread so the UI doesn't freeze while downloading
+            thread = threading.Thread(target=download_and_open)
+            thread.daemon = True
+            thread.start()
 
     # --- MOUSE CLICK & CONTEXT MENU ---
     def on_button_press(self, treeview, event, pane):
@@ -1630,9 +1692,22 @@ class SFTPWindow(Gtk.Window):
                     return False
                 else:
                     # --- THE FIX: User clicked the empty space! Clear the selection ---
+                    # 1. Update the visual border to this pane
+                    self.active_pane = pane
+                    self._update_pane_highlight()
+                    
+                    # 2. Deselect everything in BOTH panes
+                    self._clearing_selection = True
                     treeview.get_selection().unselect_all()
+                    other_tv = self.remote_treeview if pane == "local" else self.local_treeview
+                    other_tv.get_selection().unselect_all()
+                    self._clearing_selection = False
+                    
+                    # 3. Manually update buttons (grey out transfer buttons)
+                    self.on_selection_changed(treeview.get_selection(), pane)
+                    
                     self._rename_candidate_path = None
-                    return True 
+                    return True
 
             elif event.button == 3:
                 path_info = treeview.get_path_at_pos(int(event.x), int(event.y))
