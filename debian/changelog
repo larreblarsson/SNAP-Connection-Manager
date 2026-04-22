@@ -1,3 +1,9 @@
+scarpa-connection-manager (1.2.22-12) stable; urgency=medium
+
+  * Even more updates for SFTP GUI
+      
+ -- Tomas Larsson <larre.b.larsson@gmail.com>  Wed, 22 Apr 2026 15:00:00 +0100
+
 scarpa-connection-manager (1.2.22-11) stable; urgency=medium
 
   * Even more updates for SFTP GUI

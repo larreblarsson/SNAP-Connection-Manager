@@ -1428,16 +1428,37 @@ class SFTPWindow(Gtk.Window):
             self.set_status(f"Rename failed: {e}")
 
     def _open_system_file(self, filepath, filename):
+        # 1. Ask the OS if it actually knows how to open this file type!
+        content_type, _ = Gio.content_type_guess(filepath, None)
+        app_info = Gio.AppInfo.get_default_for_type(content_type, False)
+        
+        if not app_info:
+            self.show_error_dialog(
+                "Unknown File Type", 
+                f"Your system does not have a default application set to open '{filename}'.\n\n"
+                "Please associate an application with this file type in your OS settings."
+            )
+            return
+
+        # 2. An app exists! Let's launch it.
         self.set_status(f"Launching {filename}...")
+        
         try:
             import subprocess
-            # Use 'gio open' (the Ubuntu/GNOME standard) to launch the file
-            # DEVNULL hides any background DBus/Wayland warnings from polluting your terminal
             subprocess.Popen(
                 ['gio', 'open', filepath],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL
             )
+            
+            # 3. Transition the status to "Opened" after a brief 1.5-second delay
+            # so the user has time to read "Launching..." before it switches.
+            def _update_status():
+                self.set_status(f"Opened {filename}")
+                return False # Returning False tells GTK to only run this timer once
+                
+            GLib.timeout_add(1500, _update_status)
+            
         except Exception as e:
             self.show_error_dialog("Cannot Open File", f"Failed to launch '{filename}':\n{str(e)}")
 
@@ -1656,8 +1677,12 @@ class SFTPWindow(Gtk.Window):
 
                     if selection.path_is_selected(path) and len(paths) == 1:
                         if event.time - self._last_click_time > 400: 
-                            self._rename_candidate_path = path
-                            self._rename_candidate_treeview = treeview
+                            # --- NEW FIX: Don't queue rename for '..' ---
+                            model = treeview.get_model()
+                            filename = model.get_value(model.get_iter(path), 1)
+                            if filename != "..":
+                                self._rename_candidate_path = path
+                                self._rename_candidate_treeview = treeview
                     
                     self._last_click_time = event.time
                     return False
@@ -2414,6 +2439,16 @@ class ScarpaConnectionManager(Gtk.Application):
         except Exception as e:
             self._error(f"Failed to load server data: {e}\nApplication will start with empty data.")
             self.servers = [] # Start with empty data if loading fails for other reasons
+
+    def _is_path_allowed_in_snap(self, file_path):
+        import os
+        # Check if we are actually running inside a Snap
+        if 'SNAP' in os.environ:
+            home_dir = os.path.expanduser("~")
+            # If the path doesn't start with the user's home directory, it's outside the sandbox
+            if not os.path.abspath(file_path).startswith(home_dir):
+                return False
+        return True
 
     def _show_disclaimer_if_needed(self):
         accepted = self.settings.get("disclaimer_accepted", False)
@@ -5650,9 +5685,30 @@ class ScarpaConnectionManager(Gtk.Application):
     
         log_entry = Gtk.Entry(); log_entry.set_size_request(280, -1)
         log_btn   = Gtk.Button(label="Browse")
-        log_btn.connect("clicked", lambda w: browse_log(dlg, log_entry))
+
+        def _browse_log(w):
+            d = Gtk.FileChooserDialog("Select Log File", dlg, Gtk.FileChooserAction.SAVE)
+            real_home = os.environ.get('SNAP_REAL_HOME', os.path.expanduser('~'))
+            d.set_current_folder(real_home)
+            d.set_do_overwrite_confirmation(True)
+            d.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL, Gtk.STOCK_SAVE, Gtk.ResponseType.OK)
+
+            if d.run() == Gtk.ResponseType.OK:
+                filename = d.get_filename()
+                
+                # --- NEW SANDBOX CHECK ---
+                if not self._is_path_allowed_in_snap(filename):
+                    self.show_info_dialog(
+                        "Sandbox Restriction",
+                        "This is the Snap version of the application and it is sandboxed.\n\n"
+                        "You can only select files within your home folder (/home/username/)."
+                    )
+                else:
+                    log_entry.set_text(filename)
+            d.destroy()
+
+        log_btn.connect("clicked", _browse_log)
         log_grid.attach(log_entry, 0, 1, 1, 1)
-        log_grid.attach(log_btn,   1, 1, 1, 1)
     
         hbox_mode = Gtk.Box(spacing=12)
         hbox_mode.pack_start(Gtk.Label(label="Mode:"), False, False, 0)
@@ -5782,27 +5838,25 @@ class ScarpaConnectionManager(Gtk.Application):
         btn_cmd = Gtk.Button(label="Browse")
 
         def _browse_cmd(w):
-            # Create the file browser as 'd'
             d = Gtk.FileChooserDialog("Select Command File", dlg, Gtk.FileChooserAction.OPEN)
             real_home = os.environ.get('SNAP_REAL_HOME', os.path.expanduser('~'))
-            # Tell 'd' (the file browser) to set the folder, NOT 'dlg'!
             d.set_current_folder(real_home)
             d.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL, Gtk.STOCK_OPEN, Gtk.ResponseType.OK)
             
             if d.run() == Gtk.ResponseType.OK:
                 filename = d.get_filename()
                 
-                if not is_safe_sandbox_path(filename, d):
-                    d.destroy()
-                    return
-
-                ent_cmd.set_text(filename)
+                # --- NEW SANDBOX CHECK ---
+                if not self._is_path_allowed_in_snap(filename):
+                    self.show_info_dialog(
+                        "Sandbox Restriction",
+                        "This is the Snap version of the application and it is sandboxed.\n\n"
+                        "You can only select files within your home folder (/home/username/)."
+                    )
+                else:
+                    ent_cmd.set_text(filename)
                 
             d.destroy()
-        btn_cmd.connect("clicked", _browse_cmd)
-        cmd_grid.attach(chk_cmd, 0, 0, 2, 1) 
-        cmd_grid.attach(ent_cmd, 0, 1, 1, 1) 
-        cmd_grid.attach(btn_cmd, 1, 1, 1, 1)
 
         def _toggle_cmd(chk):
             sen = chk.get_active()
@@ -5878,8 +5932,8 @@ class ScarpaConnectionManager(Gtk.Application):
         btn_add  = Gtk.Button(label="Add")
         btn_edit = Gtk.Button(label="Edit")
         btn_del  = Gtk.Button(label="Delete")
-        up_btn   = Gtk.Button(); up_btn.add(Gtk.Arrow(Gtk.ArrowType.UP, Gtk.ShadowType.NONE))
-        dn_btn   = Gtk.Button(); dn_btn.add(Gtk.Arrow(Gtk.ArrowType.DOWN, Gtk.ShadowType.NONE))
+        up_btn   = Gtk.Button(); up_btn.add(Gtk.Arrow(arrow_type=Gtk.ArrowType.UP, shadow_type=Gtk.ShadowType.NONE))
+        dn_btn   = Gtk.Button(); dn_btn.add(Gtk.Arrow(arrow_type=Gtk.ArrowType.DOWN, shadow_type=Gtk.ShadowType.NONE))        
     
         btn_add.connect("clicked", lambda w: self._open_seq_editor(dlg, seq_store, None))
         btn_edit.connect("clicked", lambda w: self._edit_seq_selected(seq_view, seq_store, dlg))
@@ -5969,14 +6023,14 @@ class ScarpaConnectionManager(Gtk.Application):
         
         # Text color
         lbl_fg = Gtk.Label(label="Text color:"); lbl_fg.set_halign(Gtk.Align.START)
-        btn_fg = Gtk.ColorButton(); btn_fg.set_use_alpha(False)
+        btn_fg = Gtk.ColorButton()
         grid.attach(lbl_fg, 0, row, 1, 1)
         grid.attach(btn_fg, 1, row, 1, 1)
         row += 1
         
         # Background
         lbl_bg = Gtk.Label(label="Background:"); lbl_bg.set_halign(Gtk.Align.START)
-        btn_bg = Gtk.ColorButton(); btn_bg.set_use_alpha(False)
+        btn_bg = Gtk.ColorButton()
         grid.attach(lbl_bg, 0, row, 1, 1)
         grid.attach(btn_bg, 1, row, 1, 1)
         row += 1
