@@ -1428,28 +1428,18 @@ class SFTPWindow(Gtk.Window):
             self.set_status(f"Rename failed: {e}")
 
     def _open_system_file(self, filepath, filename):
+        self.set_status(f"Launching {filename}...")
         try:
-            # Method 1: Pure GTK Native (Bypasses Window/DBus display errors)
-            uri = Gio.File.new_for_path(filepath).get_uri()
-            success = Gio.AppInfo.launch_default_for_uri(uri, None)
-            if success:
-                GLib.idle_add(self.set_status, f"Opened {filename}")
-                return
-        except Exception:
-            pass
-            
-        try:
-            # Method 2: Fallback to OS command line tools (gio or xdg-open)
             import subprocess
-            import shutil
-            if shutil.which("gio"):
-                subprocess.Popen(['gio', 'open', filepath], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            else:
-                subprocess.Popen(['xdg-open', filepath], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                
-            GLib.idle_add(self.set_status, f"Opened {filename}")
+            # Use 'gio open' (the Ubuntu/GNOME standard) to launch the file
+            # DEVNULL hides any background DBus/Wayland warnings from polluting your terminal
+            subprocess.Popen(
+                ['gio', 'open', filepath],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
         except Exception as e:
-            GLib.idle_add(self.show_error_dialog, "Cannot Open File", f"Failed to open '{filename}':\n{e}")
+            self.show_error_dialog("Cannot Open File", f"Failed to launch '{filename}':\n{str(e)}")
 
     # --- LOCAL LOGIC ---
     def load_local_directory(self, path):
@@ -1643,30 +1633,11 @@ class SFTPWindow(Gtk.Window):
             new_path = os.path.dirname(self.current_remote_dir) if filename == ".." else os.path.join(self.current_remote_dir, filename).replace('\\', '/')
             self.load_remote_directory(new_path)
         else:
-            # --- NEW: Download remote file to a temp folder, then open it! ---
-            import tempfile
-            remote_path = f"{self.current_remote_dir}/{filename}".replace('//', '/')
-            temp_dir = tempfile.gettempdir()
-            local_temp_path = os.path.join(temp_dir, filename)
-            
-            self.set_status(f"Downloading {filename} to open...")
-            
-            def download_and_open():
-                try:
-                    # 1. Download to temp folder
-                    self.sftp.get(remote_path, local_temp_path)
-                    
-                    # 2. Open using our bulletproof helper
-                    self._open_system_file(local_temp_path, filename)
-                    GLib.idle_add(self.set_status, f"Opened {filename} (Read-Only Copy)")
-                except Exception as e:
-                    GLib.idle_add(self.show_error_dialog, "Cannot Open Remote File", f"Failed to open '{filename}':\n{str(e)}")
-                    GLib.idle_add(self.set_status, "Failed to open file.")
-            
-            # Run in a background thread so the UI doesn't freeze while downloading
-            thread = threading.Thread(target=download_and_open)
-            thread.daemon = True
-            thread.start()
+            # --- NEW: Block opening and show descriptive message ---
+            self.show_error_dialog(
+                "Remote File Access", 
+                "Cannot open a remote file locally!\n\nPlease download the file to your local system to open or edit it, and then upload it back to the server."
+            )
 
     # --- MOUSE CLICK & CONTEXT MENU ---
     def on_button_press(self, treeview, event, pane):
