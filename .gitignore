@@ -9,3 +9,4 @@ debian/debhelper-build-stamp
 *.deb
 *.buildinfo
 *.changes
+auth.txt

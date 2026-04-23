@@ -317,9 +317,14 @@ def is_safe_sandbox_path(filename, parent_dialog):
         buttons=Gtk.ButtonsType.OK,
         text="Sandbox Security Restriction"
     )
-    warning.format_secondary_text(
-        "Because this application runs inside a secure Linux Sandbox, it cannot read or save files in system folders like /tmp or /etc.\n\n"
-        f"Please select a location inside your home folder:\n{real_home}"
+    warning.format_secondary_markup(
+        "You are running the Snap version of Scarpa Connection Manager.\n\n"
+        "Due to strict security sandboxing, local file access is restricted "
+         f"to your home directory:\n<b>{real_home}</b>\n\n"
+        "If you need full local file-system access, we recommend installing the PPA version:\n\n"
+        "<tt>sudo add-apt-repository ppa:larre-b-larsson/scarpa-connection-manager\n"
+        "sudo apt update\n"
+        "sudo apt install scarpa-connection-manager</tt>"
     )
     warning.run()
     warning.destroy()
@@ -540,40 +545,6 @@ def browse_key(parent_dialog, key_entry):
             
         # It is safe! Update the text box:
         key_entry.set_text(filename)
-        
-    # Always destroy the dialog when done
-    dlg.destroy()
-
-def browse_log(parent_dialog, log_entry):
-    # 1. Create the dialog
-    dlg = Gtk.FileChooserDialog(
-        title="Select Log File",
-        parent=parent_dialog,
-        action=Gtk.FileChooserAction.SAVE,
-    )
-    
-    # 2. Force it to the real home directory
-    real_home = os.environ.get('SNAP_REAL_HOME', os.path.expanduser('~'))
-    dlg.set_current_folder(real_home)
-
-    # 3. Add buttons
-    dlg.add_buttons(
-        Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
-        Gtk.STOCK_SAVE,   Gtk.ResponseType.OK,
-    )
-
-    # 4. Run the dialog and wait for the user
-    if dlg.run() == Gtk.ResponseType.OK:
-        # User clicked Save! Grab the filename FIRST:
-        filename = dlg.get_filename()
-        
-        # Now check if the filename they chose is safe:
-        if not is_safe_sandbox_path(filename, dlg):
-            dlg.destroy()
-            return # It was outside the home folder, stop here!
-            
-        # It is safe! Update the text box:
-        log_entry.set_text(filename)
         
     # Always destroy the dialog when done
     dlg.destroy()
@@ -5630,7 +5601,6 @@ class ScarpaConnectionManager(Gtk.Application):
             key_entry.set_text(cfg.get("key_file", ""))
     
         pw_entry.set_sensitive(auth_pw.get_active())
-
     
         # ── Terminal Tab ──────────────────────────────────────────────────────────
         term_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, margin=12)
@@ -5650,7 +5620,42 @@ class ScarpaConnectionManager(Gtk.Application):
     
         log_entry = Gtk.Entry(); log_entry.set_size_request(280, -1)
         log_btn   = Gtk.Button(label="Browse")
-        log_btn.connect("clicked", lambda w: browse_log(dlg, log_entry))
+        
+        # Sandbox check directly inside the logging browse button
+        def _browse_log_inline(w):
+            d = Gtk.FileChooserDialog("Select Log File", dlg, Gtk.FileChooserAction.SAVE)
+            real_home = os.environ.get('SNAP_REAL_HOME', os.path.expanduser('~'))
+            d.set_current_folder(real_home)
+            d.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL, Gtk.STOCK_SAVE, Gtk.ResponseType.OK)
+            
+            if d.run() == Gtk.ResponseType.OK:
+                filename = d.get_filename()
+                is_safe = os.path.abspath(filename).startswith(os.path.abspath(real_home))
+                
+                if not is_safe:
+                    warn_dlg = Gtk.MessageDialog(
+                        transient_for=dlg, modal=True,
+                        message_type=Gtk.MessageType.INFO, buttons=Gtk.ButtonsType.OK,
+                        text="Sandbox Restriction"
+                    )
+                    warn_dlg.format_secondary_markup(
+                         "You are running the Snap version of Scarpa Connection Manager.\n\n"
+                        "Due to strict security sandboxing, local file access is restricted "
+                        f"to your home directory:\n<b>{real_home}</b>\n\n"
+                        "If you need full local file-system access, we recommend installing the PPA version:\n\n"
+                        "<tt>sudo add-apt-repository ppa:larre-b-larsson/scarpa-connection-manager\n"
+                        "sudo apt update\n"
+                        "sudo apt install scarpa-connection-manager</tt>"
+                    ) 
+                    warn_dlg.run()
+                    warn_dlg.destroy()
+                    d.destroy()
+                    return
+
+                log_entry.set_text(filename)
+            d.destroy()
+
+        log_btn.connect("clicked", _browse_log_inline)
         log_grid.attach(log_entry, 0, 1, 1, 1)
         log_grid.attach(log_btn,   1, 1, 1, 1)
     
@@ -5781,24 +5786,41 @@ class ScarpaConnectionManager(Gtk.Application):
         ent_cmd = Gtk.Entry(); ent_cmd.set_size_request(280, -1)
         btn_cmd = Gtk.Button(label="Browse")
 
+        # Sandbox check directly inside the command browse button
         def _browse_cmd(w):
-            # Create the file browser as 'd'
             d = Gtk.FileChooserDialog("Select Command File", dlg, Gtk.FileChooserAction.OPEN)
             real_home = os.environ.get('SNAP_REAL_HOME', os.path.expanduser('~'))
-            # Tell 'd' (the file browser) to set the folder, NOT 'dlg'!
             d.set_current_folder(real_home)
             d.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL, Gtk.STOCK_OPEN, Gtk.ResponseType.OK)
             
             if d.run() == Gtk.ResponseType.OK:
                 filename = d.get_filename()
+                is_safe = os.path.abspath(filename).startswith(os.path.abspath(real_home))
                 
-                if not is_safe_sandbox_path(filename, d):
+                if not is_safe:
+                    warn_dlg = Gtk.MessageDialog(
+                        transient_for=dlg, modal=True,
+                        message_type=Gtk.MessageType.INFO, buttons=Gtk.ButtonsType.OK,
+                        text="Sandbox Restriction"
+                    )
+                    warn_dlg.format_secondary_markup(
+                        "You are running the Snap version of Scarpa Connection Manager.\n\n"
+                        "Due to strict security sandboxing, local file access is restricted "
+                        f"to your home directory:\n<b>{real_home}</b>\n\n"
+                        "If you need full local file-system access, we recommend installing the PPA version:\n\n"
+                        "<tt>sudo add-apt-repository ppa:larre-b-larsson/scarpa-connection-manager\n"
+                        "sudo apt update\n"
+                        "sudo apt install scarpa-connection-manager</tt>"
+                    )
+                    warn_dlg.run()
+                    warn_dlg.destroy()
                     d.destroy()
                     return
 
                 ent_cmd.set_text(filename)
                 
             d.destroy()
+
         btn_cmd.connect("clicked", _browse_cmd)
         cmd_grid.attach(chk_cmd, 0, 0, 2, 1) 
         cmd_grid.attach(ent_cmd, 0, 1, 1, 1) 
