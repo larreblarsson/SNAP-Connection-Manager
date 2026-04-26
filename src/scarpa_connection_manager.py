@@ -25,12 +25,18 @@ from datetime import datetime
 
 gi.require_version('Gtk', '3.0')
 try:
+    gi.require_version('Secret', '1')
+    from gi.repository import Secret
+    HAS_SECRET = True
+except (ValueError, ImportError):
+    HAS_SECRET = False
+    print("WARNING: libsecret not found. 'Remember Me' will be disabled.", file=sys.stderr)
+try:
     gi.require_version('Vte', '2.91')
     from gi.repository import Vte
 except (ValueError, ImportError):
     print("ERROR: VTE library not found. Please install gir1.2-vte-2.91", file=sys.stderr)
     sys.exit(1)
-# --- END NEW ---
 from gi.repository import Gtk, Gio, GLib, GdkPixbuf
 from gi.repository import Gdk
 from gi.repository import Pango # Moved here as it's used in init_ui_elements
@@ -2231,8 +2237,58 @@ class SFTPWindow(Gtk.Window):
         if self.sftp: self.sftp.close()
         if self.transport: self.transport.close()
 
+
+if HAS_SECRET:
+    SECRET_SCHEMA = Secret.Schema.new("org.scarpa.ConnectionManager",
+        Secret.SchemaFlags.NONE,
+        {
+            "application": Secret.SchemaAttributeType.STRING,
+            "purpose": Secret.SchemaAttributeType.STRING
+        }
+    )
+
+def get_saved_master_passphrase():
+    if not HAS_SECRET:
+        return None
+    try:
+        return Secret.password_lookup_sync(
+            SECRET_SCHEMA,
+            {"application": "scarpacm", "purpose": "master_passphrase"},
+            None
+        )
+    except Exception as e:
+        print(f"Failed to read from Keyring: {e}")
+        return None
+
+def save_master_passphrase(password):
+    if not HAS_SECRET:
+        return
+    try:
+        Secret.password_store_sync(
+            SECRET_SCHEMA,
+            {"application": "scarpacm", "purpose": "master_passphrase"},
+            Secret.COLLECTION_DEFAULT,
+            "SCARPA Master Passphrase",
+            password,
+            None
+        )
+    except Exception as e:
+        print(f"Failed to save to Keyring: {e}")
+
+def clear_master_passphrase():
+    if not HAS_SECRET:
+        return
+    try:
+        Secret.password_clear_sync(
+            SECRET_SCHEMA,
+            {"application": "scarpacm", "purpose": "master_passphrase"},
+            None
+        )
+    except Exception as e:
+        print(f"Failed to clear Keyring: {e}")
+
 class PassphraseInputDialog(Gtk.Dialog):
-    def __init__(self, parent, title, prompt_text, confirm_text=None, show_retry_message=False):
+    def __init__(self, parent, title, prompt_text, confirm_text=None, show_retry_message=False, show_remember_me=False, prefill_passphrase="", remember_me_active=False):
         super().__init__(
             title=title,
             transient_for=parent, 
@@ -2243,51 +2299,67 @@ class PassphraseInputDialog(Gtk.Dialog):
             Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
             Gtk.STOCK_OK, Gtk.ResponseType.OK
         )
-        self.set_default_size(350, 150)
+        self.set_default_size(350, -1)
         self.set_resizable(False)
-        self.set_default_response(Gtk.ResponseType.OK) # Set OK as default button
+        self.set_default_response(Gtk.ResponseType.OK)
 
         box = self.get_content_area()
+        box.set_spacing(5)
+        box.set_margin_top(10)
+        box.set_margin_bottom(10)
+        box.set_margin_start(10)
+        box.set_margin_end(10)
         
         # Main prompt label
         lbl_prompt = Gtk.Label(label=prompt_text)
-        lbl_prompt.set_margin_top(10)
+        lbl_prompt.set_halign(Gtk.Align.START)
         box.pack_start(lbl_prompt, False, False, 0)
 
-        # Passphrase input entry
+        # Passphrase input entry (PRE-FILL LOGIC ADDED HERE)
         self.entry_pass = Gtk.Entry(visibility=False, primary_icon_name="security-high")
+        if prefill_passphrase:
+            self.entry_pass.set_text(prefill_passphrase)
         self.entry_pass.set_activates_default(True)
         box.pack_start(self.entry_pass, False, False, 5)
 
-        # Confirmation field (if needed, e.g., for setting a new passphrase)
+        # Confirmation field
         self.entry_confirm = None
         if confirm_text:
             lbl_confirm = Gtk.Label(label=confirm_text)
+            lbl_confirm.set_halign(Gtk.Align.START)
             box.pack_start(lbl_confirm, False, False, 0)
             self.entry_confirm = Gtk.Entry(visibility=False, primary_icon_name="security-high")
             self.entry_confirm.set_activates_default(True)
             box.pack_start(self.entry_confirm, False, False, 5)
 
-        # Retry error message (hidden by default)
-        self.lbl_retry_msg = Gtk.Label(label="Incorrect passphrase. Please try again.")
+        # Remember Me Checkbox (PRE-CHECK LOGIC ADDED HERE)
+        self.chk_remember = None
+        if show_remember_me and HAS_SECRET:
+            self.chk_remember = Gtk.CheckButton(label="Remember password")
+            self.chk_remember.set_active(remember_me_active)
+            box.pack_start(self.chk_remember, False, False, 5)
+
+        # Retry error message
+        self.lbl_retry_msg = Gtk.Label()
         self.lbl_retry_msg.set_markup("<span foreground='red'>Incorrect passphrase. Please try again.</span>")
-        self.lbl_retry_msg.set_no_show_all(True) # Don't show by default
+        self.lbl_retry_msg.set_no_show_all(True) 
         if show_retry_message:
-            self.lbl_retry_msg.show() # Show it initially if it's a retry scenario
+            self.lbl_retry_msg.show() 
         box.pack_start(self.lbl_retry_msg, False, False, 5)
 
-        self.show_all() # Show dialog elements before run()
-
+        self.show_all()
+ 
     def get_passphrases(self):
-        """Returns the passphrase and confirmation passphrase (if applicable)."""
+        """Returns passphrase, confirm_passphrase, and remember_me status."""
         passphrase = self.entry_pass.get_text()
         confirm_passphrase = self.entry_confirm.get_text() if self.entry_confirm else None
-        return passphrase, confirm_passphrase
+        remember = self.chk_remember.get_active() if self.chk_remember else False
+        return passphrase, confirm_passphrase, remember
 
     def show_retry_error(self):
         """Shows the retry error message."""
         self.lbl_retry_msg.show()
-
+  
 # ── Helper: Required Placeholder for VTE ────────────────────────────────────
 # This function is strictly required by Vte.Terminal.spawn_async (Argument 9).
 # Even though we don't use the result here, the app will crash if this is missing.
@@ -2949,7 +3021,6 @@ class ScarpaConnectionManager(Gtk.Application):
             
         return False
 
-    # --- New Passphrase Management Methods (add these inside ScarpaConnectionManager) ---
     def set_master_passphrase(self):
         """Prompts user to set a new master passphrase for the first time."""
         while True:
@@ -3006,23 +3077,33 @@ class ScarpaConnectionManager(Gtk.Application):
 
     def verify_master_passphrase(self):
         """Prompts user to verify their master passphrase."""
+        
+        # --- NEW: Check Keyring to prefill, BUT DON'T AUTO-LOGIN ---
+        saved_pw = get_saved_master_passphrase()
+        prefill_pw = saved_pw if saved_pw else ""
+        is_remembered = bool(saved_pw)
+
         max_retries = 3
         for attempt in range(max_retries):
-            # Pass None as parent as self.win might not exist yet during initial startup
             dlg = PassphraseInputDialog(
-                None, # Parent is None for initial dialogs before main window is created
+                None, 
                 "Enter Master Passphrase",
                 "Please enter your master passphrase to unlock server data:",
-                show_retry_message=(attempt > 0) # Show retry message after first failed attempt
+                show_retry_message=(attempt > 0), 
+                show_remember_me=True,
+                prefill_passphrase=prefill_pw,      # <--- Pass the saved password
+                remember_me_active=is_remembered    # <--- Tick the box if it was saved
             )
             response = dlg.run()
             
             if response == Gtk.ResponseType.OK:
-                entered_passphrase, _ = dlg.get_passphrases()
+                entered_passphrase, _, remember_me = dlg.get_passphrases()
                 
                 if not entered_passphrase:
                     self._error("Passphrase cannot be empty.")
-                    dlg.destroy() # Destroy dialog before looping
+                    dlg.destroy() 
+                    # If they clear it, don't keep pre-filling it on the retry attempt
+                    prefill_pw = "" 
                     continue
 
                 stored_hash = self.settings.get("master_passphrase_hash")
@@ -3030,33 +3111,39 @@ class ScarpaConnectionManager(Gtk.Application):
                 
                 if not stored_hash or not stored_salt_hex:
                     self._error("Error: Passphrase hash or salt missing from settings.")
-                    self.master_passphrase = None # Force quit
+                    self.master_passphrase = None 
                     dlg.destroy()
                     return
 
                 try:
-                    stored_salt = bytes.fromhex(stored_salt_hex) # Convert salt hex string back to bytes
+                    stored_salt = bytes.fromhex(stored_salt_hex) 
                 except ValueError:
                     self._error("Error: Invalid salt format in settings. Please delete settings file and restart.")
-                    self.master_passphrase = None # Force quit
+                    self.master_passphrase = None 
                     dlg.destroy()
                     return
 
                 if hash_passphrase(entered_passphrase, stored_salt) == stored_hash:
-                    self.master_passphrase = entered_passphrase # Store for current session
+                    self.master_passphrase = entered_passphrase 
+                    
+                    # --- NEW: Save or Clear Keyring based on checkbox ---
+                    if remember_me:
+                        save_master_passphrase(entered_passphrase)
+                    else:
+                        clear_master_passphrase() # If they unchecked it, delete it from OS!
+                        
                     dlg.destroy()
-                    self.log("Passphrase verified.") # Log instead of showing dialog
+                    self.log("Passphrase verified.") 
                     return
                 else:
                     self._error("Incorrect passphrase. Please try again.")
-                    dlg.destroy() # Destroy dialog before looping
+                    dlg.destroy() 
+                    prefill_pw = "" # Clear prefill so they can type a new one
             else: # User cancelled
                 dlg.destroy()
-                # --- FIX: Removed the error popup here ---
                 self.master_passphrase = None 
                 return
         
-        # If max_retries reached
         self._error("Maximum passphrase attempts reached. Application will quit.")
         self.master_passphrase = None
 
@@ -5494,8 +5581,6 @@ class ScarpaConnectionManager(Gtk.Application):
     def _open_server_dialog(self, cfg=None, idx=None, target_window=None, preselected_folder=None):
         is_edit = cfg is not None
     
-        # Determine the parent. If we came from a specific terminal window, use that.
-        # Otherwise, fall back to the main application window.
         if target_window:
             parent_window = target_window
         else:
@@ -5503,15 +5588,16 @@ class ScarpaConnectionManager(Gtk.Application):
             
         dlg = Gtk.Dialog(
             title="Edit Server" if is_edit else "Add Server",
-            transient_for=parent_window,
+            transient_for=None,
             modal=True
         )
 
         dlg.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
                         Gtk.STOCK_OK,     Gtk.ResponseType.OK)
         dlg.set_default_response(Gtk.ResponseType.OK)
-        dlg.set_default_size(700, 600)
-        dlg.set_resizable(True)
+        
+        dlg.set_size_request(700, 600) 
+        dlg.set_resizable(False) 
     
         content = dlg.get_content_area()
         nb = Gtk.Notebook()
@@ -6144,10 +6230,11 @@ class ScarpaConnectionManager(Gtk.Application):
         
         scheme_cb.connect("changed", on_scheme_changed)
         
+        dlg.show_all()
+
         # Validation loop
-        center(dlg)
         result = None
-    
+
         while True:
             resp = dlg.run()
             if resp != Gtk.ResponseType.OK:
