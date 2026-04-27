@@ -20,6 +20,10 @@ import getpass
 import uuid
 import xml.etree.ElementTree as ET
 import urllib.parse
+import copy
+import traceback
+import time
+import warnings
 
 from datetime import datetime
 
@@ -88,10 +92,6 @@ def get_asset_path(filename, top_folder="docs"):
 FOLDER_ICON    = get_asset_path("folder.png", "docs")
 SERVER_ICON    = get_asset_path("server.png", "docs")
 HELP_FILE_PATH = get_asset_path("user_guide.html", "docs")
-
-
-
-
 APP_ID         = "com.example.scarpacm"
 APP_TITLE      = "Scarpa Connection Manager"
 ROOT_FOLDER    = "Session"
@@ -609,8 +609,6 @@ class SFTPWindow(Gtk.Window):
         self.icon_theme = Gtk.IconTheme.get_default()
         self.yellow_folder_pixbuf = self._create_yellow_folder_pixbuf()
         self.transparent_pixbuf = self._create_transparent_pixbuf()
-        self.binoculars_pixbuf = self._create_binoculars_pixbuf()
-
         self.setup_ui()
         self.connect("destroy", self.on_close)
         
@@ -626,15 +624,10 @@ class SFTPWindow(Gtk.Window):
         stream = Gio.MemoryInputStream.new_from_data(svg_data, None)
         return GdkPixbuf.Pixbuf.new_from_stream(stream, None)
 
-    def _create_binoculars_pixbuf(self):
+    def _create_search_pixbuf(self):
+        # A sleek magnifying glass colored in a bright emerald green (#2ecc71)
         svg_data = b"""<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
-            <rect x="2" y="2" width="3" height="2" fill="#7f8c8d"/>
-            <rect x="11" y="2" width="3" height="2" fill="#7f8c8d"/>
-            <path d="M 2 4 C 1 4 1 5 1 6 L 1 13 C 1 14 2 15 3 15 L 6 15 L 6 4 Z" fill="#2c3e50"/>
-            <path d="M 14 4 C 15 4 15 5 15 6 L 15 13 C 15 14 14 15 13 15 L 10 15 L 10 4 Z" fill="#2c3e50"/>
-            <rect x="6" y="6" width="4" height="3" fill="#34495e"/>
-            <ellipse cx="3.5" cy="13" rx="1.5" ry="1.5" fill="#3498db"/>
-            <ellipse cx="12.5" cy="13" rx="1.5" ry="1.5" fill="#3498db"/>
+        <path d="M 6.5 1 C 3.462 1 1 3.462 1 6.5 C 1 9.538 3.462 12 6.5 12 C 7.746 12 8.896 11.583 9.805 10.893 L 13.646 14.734 C 13.842 14.93 14.158 14.93 14.354 14.734 C 14.55 14.538 14.55 14.222 14.354 14.025 L 10.537 10.209 C 11.442 9.278 12 8.016 12 6.5 C 12 3.462 9.538 1 6.5 1 Z M 6.5 3 C 8.433 3 10 4.567 10 6.5 C 10 8.433 8.433 10 6.5 10 C 4.567 10 3 8.433 3 6.5 C 3 4.567 4.567 3 6.5 3 Z" fill="#2ecc71"/>
         </svg>"""
         stream = Gio.MemoryInputStream.new_from_data(svg_data, None)
         return GdkPixbuf.Pixbuf.new_from_stream(stream, None)
@@ -767,7 +760,7 @@ class SFTPWindow(Gtk.Window):
 
         self.search_btn = Gtk.Button()
         self.search_btn.set_relief(Gtk.ReliefStyle.NONE)
-        self.search_icon = Gtk.Image.new_from_pixbuf(self.binoculars_pixbuf)
+        self.search_icon = Gtk.Image.new_from_pixbuf(self._create_search_pixbuf())
         self.search_btn.set_image(self.search_icon)
         self.search_btn.set_tooltip_text("Search recursively in Active Pane")
         self.search_btn.connect("clicked", self.on_search_button_clicked)
@@ -1168,7 +1161,7 @@ class SFTPWindow(Gtk.Window):
             self.set_status("Please wait for current task to finish.")
             return
 
-        dialog = Gtk.Dialog(title=f"Search in {pane.capitalize()}", transient_for=self, flags=Gtk.DialogFlags.MODAL)
+        dialog = Gtk.Dialog(title=f"Search in {pane.capitalize()}", transient_for=self, modal=True)
         dialog.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL, "Search", Gtk.ResponseType.OK)
         
         box = dialog.get_content_area()
@@ -1407,7 +1400,6 @@ class SFTPWindow(Gtk.Window):
     def _open_system_file(self, filepath, filename):
         self.set_status(f"Launching {filename}...")
         try:
-            import subprocess
             # Use 'gio open' (the Ubuntu/GNOME standard) to launch the file
             # DEVNULL hides any background DBus/Wayland warnings from polluting your terminal
             subprocess.Popen(
@@ -1619,7 +1611,33 @@ class SFTPWindow(Gtk.Window):
     # --- MOUSE CLICK & CONTEXT MENU ---
     def on_button_press(self, treeview, event, pane):
         if event.type == Gdk.EventType.BUTTON_PRESS:
-            if event.button == 1:
+            
+            # --- NEW: Mouse Back Button (Navigate UP) ---
+            if event.button == 8: 
+                if pane == "local":
+                    self.load_local_directory(os.path.dirname(self.current_local_dir))
+                else:
+                    new_path = os.path.dirname(self.current_remote_dir).replace('\\', '/')
+                    self.load_remote_directory(new_path if new_path else "/")
+                return True
+                
+            # --- NEW: Mouse Forward Button (Navigate INTO selected folder) ---
+            elif event.button == 9: 
+                model, paths = treeview.get_selection().get_selected_rows()
+                if len(paths) == 1:
+                    iter_ = model.get_iter(paths[0])
+                    if model.get_value(iter_, 3): # If the selected item is a directory
+                        filename = model.get_value(iter_, 1)
+                        if pane == "local":
+                            new_path = os.path.dirname(self.current_local_dir) if filename == ".." else os.path.join(self.current_local_dir, filename)
+                            self.load_local_directory(new_path)
+                        else:
+                            new_path = os.path.dirname(self.current_remote_dir) if filename == ".." else f"{self.current_remote_dir}/{filename}".replace('//', '/')
+                            self.load_remote_directory(new_path)
+                return True
+
+            # --- Existing Left Click Logic ---
+            elif event.button == 1:
                 path_info = treeview.get_path_at_pos(int(event.x), int(event.y))
                 if path_info:
                     path = path_info[0]
@@ -1657,6 +1675,7 @@ class SFTPWindow(Gtk.Window):
                     self._rename_candidate_path = None
                     return True
 
+            # --- Existing Right Click Logic ---
             elif event.button == 3:
                 path_info = treeview.get_path_at_pos(int(event.x), int(event.y))
                 if path_info:
@@ -1673,6 +1692,7 @@ class SFTPWindow(Gtk.Window):
                     self.show_context_menu(event, pane, empty_space=True)
                 return True 
                 
+        # --- Existing Double Click Logic ---
         elif event.type == Gdk.EventType._2BUTTON_PRESS: 
             self._rename_candidate_path = None
             return False
@@ -1841,7 +1861,6 @@ class SFTPWindow(Gtk.Window):
                 return
                 
             source_paths = []
-            import urllib.parse
             for uri in uris:
                 if uri.startswith("file://"):
                     path = urllib.parse.unquote(uri[7:])
@@ -2638,7 +2657,6 @@ class ScarpaConnectionManager(Gtk.Application):
         self.tree.set_headers_visible(False)
 
         # ── enable drag-and-drop within this TreeView ───────────────
-        from gi.repository import Gdk
         dnd_target = Gtk.TargetEntry.new("dnd-row", Gtk.TargetFlags.SAME_WIDGET, 0)
         self.tree.enable_model_drag_source(
             Gdk.ModifierType.BUTTON1_MASK,
@@ -2751,7 +2769,6 @@ class ScarpaConnectionManager(Gtk.Application):
             typ, item = row_data[0], row_data[1]
             actual_data = self.servers[item] if isinstance(item, int) else item
             
-            import copy
             items_to_copy.append({
                 "type": typ,
                 "data": copy.deepcopy(actual_data),
@@ -2799,8 +2816,6 @@ class ScarpaConnectionManager(Gtk.Application):
         folders_to_add = []
         folders_to_remove = []
 
-        import re # Used to strip off existing (1) (2) tags
-
         # Batch process all items in the clipboard
         for clip_item in items_to_paste:
             c_type = clip_item.get("type")
@@ -2812,7 +2827,6 @@ class ScarpaConnectionManager(Gtk.Application):
                 is_same_parent = (target_base_path == source_parent)
                 
                 if action == "copy":
-                    import copy
                     new_srv = copy.deepcopy(c_data)
                     new_srv["folder"] = target_base_path if not is_root_target else root_val
                     
@@ -2831,7 +2845,6 @@ class ScarpaConnectionManager(Gtk.Application):
                         
                     new_srv["name"] = final_name
                     if "uuid" in new_srv:
-                        import uuid
                         new_srv["uuid"] = str(uuid.uuid4())
                         
                     self.servers.append(new_srv)
@@ -2907,7 +2920,6 @@ class ScarpaConnectionManager(Gtk.Application):
                         remainder = s_folder[len(source_path):]
                         new_fld = final_base + remainder
                         if action == "copy":
-                            import copy
                             ns = copy.deepcopy(s)
                             ns["folder"] = new_fld
                             if "uuid" in ns: ns["uuid"] = str(uuid.uuid4())
@@ -3714,7 +3726,6 @@ class ScarpaConnectionManager(Gtk.Application):
             self.show_info_dialog("Import Successful", f"Successfully imported {added} SCARPA servers.")
 
         except Exception as e:
-            import traceback
             traceback.print_exc()
             self._error(f"Import failed:\n{e}")
 
@@ -3800,7 +3811,6 @@ class ScarpaConnectionManager(Gtk.Application):
             self.show_info_dialog("Import Successful", f"Successfully imported {added} servers from XML.")
             
         except Exception as e:
-            import traceback
             traceback.print_exc()
             self._error(f"An error occurred during XML import:\n{e}")
 
@@ -3884,7 +3894,6 @@ class ScarpaConnectionManager(Gtk.Application):
             self.show_info_dialog("Import Successful", f"Successfully imported {added} servers from PuTTY.")
             
         except Exception as e:
-            import traceback
             traceback.print_exc()
             self._error(f"An error occurred during PuTTY import:\n{e}")
 
@@ -4527,7 +4536,7 @@ class ScarpaConnectionManager(Gtk.Application):
         # Use your built-in dialog launcher!
         self._open_server_dialog(cfg=actual_server)
 
-# ── Connect Actions (SSH & SFTP) ─────────────────────────────────────────
+    # ── Connect Actions (SSH & SFTP) ─────────────────────────────────────────
     def on_ssh(self, action, param):
         selection = self.tree.get_selection()
         model, paths = selection.get_selected_rows()
@@ -4692,7 +4701,6 @@ class ScarpaConnectionManager(Gtk.Application):
         lines.append("interact\n")
         self._launch_expect(lines, f"{cfg['name']} SFTP", cfg)
 
-
     # Double-click on a server row → launch SSH
     def on_tree_activate(self, treeview, path, column):
         """Native GTK handler for Double-Clicks"""
@@ -4803,7 +4811,7 @@ class ScarpaConnectionManager(Gtk.Application):
                 pass
             return out
         except Exception as e:
-            print(f"DEBUG: Error formatting custom log data: {e}", file=sys.stderr)
+            print(f"Error formatting custom log data: {e}", file=sys.stderr)
             return template
 
     # ── Helper: Background Log Monitor ────────────────────────────────────────
@@ -4811,7 +4819,6 @@ class ScarpaConnectionManager(Gtk.Application):
         """
         Reads raw log data, cleans ANSI codes, handles custom log injections.
         """
-        import time
         partial_buffer = ""
         incomplete_esc_re = re.compile(r'\x1B(\[[\d;?]*|\][^\x07\x1B]*)?$')
         
@@ -4826,8 +4833,6 @@ class ScarpaConnectionManager(Gtk.Application):
             str_line = ""
         
         is_start_of_line = True
-
-        print(f"DEBUG: Monitor thread starting for {final_path}")
 
         try:
             with open(raw_path, 'r', encoding='utf-8', errors='ignore', newline='') as f_raw, \
@@ -4894,8 +4899,6 @@ class ScarpaConnectionManager(Gtk.Application):
                     if not msg.endswith('\n'): f_final.write('\n')
                     f_final.flush()
             
-            print(f"DEBUG: Monitor thread closing normally for {final_path}")
-                    
         except Exception as e:
             print(f"ERROR: Log monitor thread CRASHED: {e}", file=sys.stderr)
         finally:
@@ -4950,7 +4953,6 @@ class ScarpaConnectionManager(Gtk.Application):
                         f.write("")
                 
                 # B. Create a unique TEMP file for raw output
-                import uuid
                 raw_log_path = os.path.join(tempfile.gettempdir(), f"scarpacm_raw_{uuid.uuid4().hex[:8]}.log")
                 # Create it empty
                 open(raw_log_path, 'w').close()
@@ -5112,7 +5114,6 @@ class ScarpaConnectionManager(Gtk.Application):
             
             argv = [expect_path, "-f", tf.name]
 
-            import warnings
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 terminal.spawn_sync(
@@ -5153,7 +5154,6 @@ class ScarpaConnectionManager(Gtk.Application):
         else:
             # Fallback for very early messages
             print(f"LOG (early): {msg}", file=sys.stderr)
-
             
     # ── Info / Error / Confirm Dialogs ───────────────────────────────────
     def _info(self, text):
@@ -5986,8 +5986,8 @@ class ScarpaConnectionManager(Gtk.Application):
         btn_add  = Gtk.Button(label="Add")
         btn_edit = Gtk.Button(label="Edit")
         btn_del  = Gtk.Button(label="Delete")
-        up_btn   = Gtk.Button(); up_btn.add(Gtk.Arrow(Gtk.ArrowType.UP, Gtk.ShadowType.NONE))
-        dn_btn   = Gtk.Button(); dn_btn.add(Gtk.Arrow(Gtk.ArrowType.DOWN, Gtk.ShadowType.NONE))
+        up_btn   = Gtk.Button(); up_btn.add(Gtk.Arrow(arrow_type=Gtk.ArrowType.UP, shadow_type=Gtk.ShadowType.NONE))
+        dn_btn   = Gtk.Button(); dn_btn.add(Gtk.Arrow(arrow_type=Gtk.ArrowType.DOWN, shadow_type=Gtk.ShadowType.NONE))
     
         btn_add.connect("clicked", lambda w: self._open_seq_editor(dlg, seq_store, None))
         btn_edit.connect("clicked", lambda w: self._edit_seq_selected(seq_view, seq_store, dlg))
@@ -6077,14 +6077,14 @@ class ScarpaConnectionManager(Gtk.Application):
         
         # Text color
         lbl_fg = Gtk.Label(label="Text color:"); lbl_fg.set_halign(Gtk.Align.START)
-        btn_fg = Gtk.ColorButton(); btn_fg.set_use_alpha(False)
+        btn_fg = Gtk.ColorButton()
         grid.attach(lbl_fg, 0, row, 1, 1)
         grid.attach(btn_fg, 1, row, 1, 1)
         row += 1
         
         # Background
         lbl_bg = Gtk.Label(label="Background:"); lbl_bg.set_halign(Gtk.Align.START)
-        btn_bg = Gtk.ColorButton(); btn_bg.set_use_alpha(False)
+        btn_bg = Gtk.ColorButton()
         grid.attach(lbl_bg, 0, row, 1, 1)
         grid.attach(btn_bg, 1, row, 1, 1)
         row += 1
@@ -6463,7 +6463,6 @@ class ScarpaConnectionManager(Gtk.Application):
             it = store.get_iter(paths[0])
             self._open_seq_editor(parent, store, it)
 
-
     def _delete_seq_selected(self, view, store):
         model, paths = view.get_selection().get_selected_rows()
         for p in sorted(paths, reverse=True):
@@ -6660,9 +6659,7 @@ class ScarpaConnectionManager(Gtk.Application):
     def _on_terminal_button_press(self, terminal, event):
             """
             Handles mouse clicks to show a context menu on right-click.
-            """
-            from gi.repository import Gdk
-            
+            """            
             # Check for Right Click (Button 3)
             if event.type == Gdk.EventType.BUTTON_PRESS and event.button == 3:
                 menu = Gtk.Menu()
@@ -6719,7 +6716,6 @@ class ScarpaConnectionManager(Gtk.Application):
         dialog.destroy()
         return password
 
-
     def show_info_dialog(self, title, message):
         """Safely shows a GUI info message"""
         dialog = Gtk.MessageDialog(
@@ -6737,7 +6733,6 @@ class ScarpaConnectionManager(Gtk.Application):
 
 def main():
     app = ScarpaConnectionManager()
-    import sys
     sys.exit(app.run(sys.argv))
 
 
