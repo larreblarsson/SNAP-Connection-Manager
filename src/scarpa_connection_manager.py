@@ -118,7 +118,7 @@ BUILTIN_SCHEMES = {
 # --- CHAMELEON MODE: Detect Environment ---
 IS_SNAP = 'SNAP' in os.environ
 
-# --- Passphrase Hashing Globals ---
+# ---  Hashing Globals ---
 PBKDF2_ITERATIONS = 600000  # Number of iterations for PBKDF2. Higher = more secure but slower.
 SALT_SIZE = 16              # Salt size in bytes (16 bytes = 128 bits)
 # --- End Passphrase Hashing Globals ---
@@ -3046,7 +3046,7 @@ class ScarpaConnectionManager(Gtk.Application):
             response = dlg.run()
             
             if response == Gtk.ResponseType.OK:
-                passphrase, confirm_passphrase = dlg.get_passphrases()
+                passphrase, confirm_passphrase, _ = dlg.get_passphrases()
                 
                 if not passphrase:
                     self._error("Passphrase cannot be empty.")
@@ -4170,7 +4170,7 @@ class ScarpaConnectionManager(Gtk.Application):
         dlg = PassphraseInputDialog(self.win, "Change Passphrase", "Enter current passphrase:")
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy(); return
-        current_pass, _ = dlg.get_passphrases()
+        current_pass, _, _ = dlg.get_passphrases()
         dlg.destroy()
     
         stored_hash = self.settings.get("master_passphrase_hash")
@@ -4190,7 +4190,7 @@ class ScarpaConnectionManager(Gtk.Application):
         dlg2 = PassphraseInputDialog(self.win, "Change Passphrase", "Enter new passphrase:", confirm_text="Confirm new passphrase:")
         if dlg2.run() != Gtk.ResponseType.OK:
             dlg2.destroy(); return
-        new_pass, new_confirm = dlg2.get_passphrases()
+        new_pass, new_confirm, _ = dlg2.get_passphrases()
         dlg2.destroy()
     
         if not new_pass:
