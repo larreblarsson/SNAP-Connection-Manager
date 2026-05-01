@@ -24,6 +24,7 @@ import copy
 import traceback
 import time
 import warnings
+import urllib.parse
 
 from datetime import datetime
 
@@ -126,6 +127,7 @@ SALT_SIZE = 16              # Salt size in bytes (16 bytes = 128 bits)
 def parse_securecrt_xml(file_path):
     """
     Parses native SecureCRT (VanDyke) XML export files.
+    Extracts Host, User, Port, Port Forwarding (Array & Key formats), and Login Actions.
     """
     servers = []
     try:
@@ -152,15 +154,16 @@ def parse_securecrt_xml(file_path):
                 node_name = child_key.get("name")
                 if not node_name: continue
                 
-                # SecureCRT Folders only contain other <key> tags.
-                # Server Sessions contain <string> and <dword> tags.
                 is_server = len(child_key.findall("string")) > 0 or len(child_key.findall("dword")) > 0
                 
                 if is_server:
                     hostname = ""
                     username = ""
                     port = "22"
+                    port_forwards = []
+                    auto_sequence = []
                     
+                    # 1. Parse standard connection properties
                     for prop in child_key:
                         if not isinstance(prop.tag, str): continue
                         attr_name = prop.get("name")
@@ -179,13 +182,67 @@ def parse_securecrt_xml(file_path):
                                 except: port = clean_text
                             elif clean_text:
                                 port = clean_text
+
+                    # 2. Extract Port Forwarding (New Array Format)
+                    for arr in child_key.findall("array"):
+                        arr_name = arr.get("name", "").lower()
+                        if "port forward table" in arr_name:
+                            for string_elem in arr.findall("string"):
+                                text = string_elem.text
+                                if text:
+                                    # Example: fre-cpg-sftp|2014|1|10.32.180.53|22||
+                                    parts = text.split("|")
+                                    if len(parts) >= 5:
+                                        try: src_port = int(parts[1])
+                                        except ValueError: continue
+                                        
+                                        dst_host = parts[3]
+                                        try: dst_port = int(parts[4]) if parts[4] else 0
+                                        except ValueError: dst_port = 0
+                                        
+                                        pf_type = "Dynamic" if "socks" in dst_host.lower() else "Local"
+                                        
+                                        if src_port > 0:
+                                            port_forwards.append({
+                                                "type": pf_type,
+                                                "source_port": src_port,
+                                                "dest_host": dst_host if pf_type != "Dynamic" else "localhost",
+                                                "dest_port": dst_port if pf_type != "Dynamic" else 0
+                                            })
+
+                    # 3. Drill into Sub-Keys for Logon Data
+                    for subkey in child_key.findall("key"):
+                        subkey_name = subkey.get("name", "").lower()
+
+                        # --- Extract Login Actions (Expect/Send) ---
+                        if "logon" in subkey_name or "automate" in subkey_name:
+                            expects = {}
+                            sends = {}
+                            for prop in subkey.findall("string") + subkey.findall("dword"):
+                                name = prop.get("name", "").lower()
+                                text = prop.text.strip() if prop.text else ""
+                                if not text: continue
                                 
-                    # Fallback: If Hostname is explicitly blank, use the session's name as the Host
+                                match = re.search(r'(expect|send)\s*(\d+)?', name)
+                                if match:
+                                    action_type = match.group(1)
+                                    idx = int(match.group(2)) if match.group(2) else 1
+                                    if action_type == "expect":
+                                        expects[idx] = text
+                                    else:
+                                        sends[idx] = text
+                            
+                            all_indices = sorted(set(expects.keys()).union(sends.keys()))
+                            for idx in all_indices:
+                                auto_sequence.append({
+                                    "expect": expects.get(idx, ""),
+                                    "send": sends.get(idx, ""),
+                                    "hide": False
+                                })
+
                     final_host = hostname if hostname else node_name
-                    
                     folder = current_folder_path.strip("/")
                     
-                    # Skip the SecureCRT "Default" template so it doesn't clutter your app
                     if node_name == "Default" and not folder:
                         continue
 
@@ -193,20 +250,19 @@ def parse_securecrt_xml(file_path):
                         "name": node_name,
                         "host": final_host,
                         "port": port,
-                        "user": username
+                        "user": username,
+                        "port_forwards": port_forwards,
+                        "auto_sequence": auto_sequence
                     }
                     
-                    # Only assign a folder if one actually exists!
                     if folder:
                         server_data["folder"] = folder
                         
                     servers.append(server_data)
                 else:
-                    # It's a folder. Recurse deeper!
                     new_folder_path = f"{current_folder_path}/{node_name}" if current_folder_path else node_name
                     traverse_nodes(child_key, new_folder_path)
 
-        # Start recursive search
         traverse_nodes(sessions_root, "")
         
     return servers
@@ -214,7 +270,9 @@ def parse_securecrt_xml(file_path):
 def parse_putty_reg(file_path):
     """
     Parses native Windows PuTTY (.reg) export files.
+    Extracts Host, User, Port, and Port Forwarding Rules.
     """
+    import urllib.parse
     servers = []
     try:
         # Windows Registry files are often exported in UTF-16 format, 
@@ -254,7 +312,9 @@ def parse_putty_reg(file_path):
                         "host": "",
                         "user": "",
                         "port": "22",
-                   }
+                        "port_forwards": [],
+                        "auto_sequence": []
+                    }
                 else:
                     # If it's some other registry key, save our current server and move on
                     if current_server and current_server.get('host'):
@@ -286,12 +346,155 @@ def parse_putty_reg(file_path):
                     except (IndexError, ValueError):
                         pass
 
+                elif line.startswith('"PortForwardings"='):
+                    # PuTTY Format: "L8080=127.0.0.1:80,D9090=,R2222=192.168.1.5:22"
+                    pf_string = line.split('=', 1)[1].strip('"')
+                    if pf_string:
+                        rules = pf_string.split(',')
+                        for rule in rules:
+                            try:
+                                if not rule: continue
+                                
+                                type_char = rule[0].upper() # L, R, or D
+                                
+                                if type_char == 'D':
+                                    # Dynamic rules look like "D3000" or "D3000="
+                                    src_port = int(rule[1:].strip('='))
+                                    current_server['port_forwards'].append({
+                                        "type": "Dynamic",
+                                        "source_port": src_port,
+                                        "dest_host": "localhost",
+                                        "dest_port": 0
+                                    })
+                                elif type_char in ['L', 'R']:
+                                    # Local/Remote rules look like "L8080=10.0.0.5:80"
+                                    pf_type = "Local" if type_char == 'L' else "Remote"
+                                    src_str, dest_str = rule[1:].split('=', 1)
+                                    src_port = int(src_str)
+                                    
+                                    if ':' in dest_str:
+                                        # Split from the right in case of weird hostname formatting
+                                        dest_host, dest_port_str = dest_str.rsplit(':', 1)
+                                        dest_port = int(dest_port_str)
+                                        current_server['port_forwards'].append({
+                                            "type": pf_type,
+                                            "source_port": src_port,
+                                            "dest_host": dest_host,
+                                            "dest_port": dest_port
+                                        })
+                            except Exception as parse_err:
+                                print(f"Warning: Failed to parse PuTTY port forward rule '{rule}': {parse_err}")
+
         # Catch the very last server in the file
         if current_server and current_server.get('host'):
             servers.append(current_server)
 
     except Exception as e:
         print(f"Error parsing PuTTY file: {e}")
+
+    return servers
+
+def parse_putty_linux(directory_path):
+    """
+    Parses a directory of native Linux PuTTY session files.
+    Extracts Host, User, Port, and Port Forwarding Rules.
+    """
+    servers = []
+    
+    if not os.path.isdir(directory_path):
+        print(f"Directory not found: {directory_path}")
+        return servers
+
+    # Iterate through every file in the selected directory
+    for filename in os.listdir(directory_path):
+        file_path = os.path.join(directory_path, filename)
+        
+        # Skip subdirectories (PuTTY doesn't use them for sessions)
+        if not os.path.isfile(file_path):
+            continue
+            
+        # In Linux PuTTY, the filename IS the URL-encoded session name
+        session_name = urllib.parse.unquote(filename)
+        
+        # Skip the default configuration template
+        if not session_name or session_name.lower() == "default settings":
+            continue
+
+        current_server = {
+            "name": session_name,
+            "host": "",
+            "user": "",
+            "port": "22",
+            "port_forwards": [],
+            "auto_sequence": []
+        }
+
+        try:
+            # PuTTY config files are plain text on Linux
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or '=' not in line:
+                        continue
+                        
+                    key, val = line.split('=', 1)
+                    
+                    if key == "HostName":
+                        # Catch the user@host edge case
+                        if '@' in val:
+                            user_part, host_part = val.split('@', 1)
+                            current_server['user'] = user_part
+                            current_server['host'] = host_part
+                        else:
+                            current_server['host'] = val
+                            
+                    elif key == "UserName":
+                        if val:
+                            current_server['user'] = val
+                            
+                    elif key == "PortNumber":
+                        if val:
+                            current_server['port'] = val
+                            
+                    elif key == "PortForwardings":
+                        # Exact same logic as the Windows version!
+                        if val:
+                            rules = val.split(',')
+                            for rule in rules:
+                                try:
+                                    if not rule: continue
+                                    type_char = rule[0].upper()
+                                    
+                                    if type_char == 'D':
+                                        src_port = int(rule[1:].strip('='))
+                                        current_server['port_forwards'].append({
+                                            "type": "Dynamic",
+                                            "source_port": src_port,
+                                            "dest_host": "localhost",
+                                            "dest_port": 0
+                                        })
+                                    elif type_char in ['L', 'R']:
+                                        pf_type = "Local" if type_char == 'L' else "Remote"
+                                        src_str, dest_str = rule[1:].split('=', 1)
+                                        src_port = int(src_str)
+                                        if ':' in dest_str:
+                                            dest_host, dest_port_str = dest_str.rsplit(':', 1)
+                                            dest_port = int(dest_port_str)
+                                            current_server['port_forwards'].append({
+                                                "type": pf_type,
+                                                "source_port": src_port,
+                                                "dest_host": dest_host,
+                                                "dest_port": dest_port
+                                            })
+                                except Exception as parse_err:
+                                    print(f"Warning: Failed to parse Linux PuTTY port forward rule '{rule}': {parse_err}")
+
+            # Only append the server if we actually found a Host IP/Domain
+            if current_server.get('host'):
+                servers.append(current_server)
+
+        except Exception as e:
+            print(f"Error reading Linux PuTTY file {filename}: {e}")
 
     return servers
 
@@ -2477,6 +2680,45 @@ class ScarpaConnectionManager(Gtk.Application):
             self._error(f"Failed to load server data: {e}\nApplication will start with empty data.")
             self.servers = [] # Start with empty data if loading fails for other reasons
 
+    def show_securecrt_warning_dialog(self):
+        """Shows a warning about SecureCRT encryption with a 'Don't show again' checkbox."""
+        parent_window = self.win if hasattr(self, 'win') and self.win else None
+        
+        dialog = Gtk.MessageDialog(
+            transient_for=parent_window,
+            modal=True,
+            message_type=Gtk.MessageType.WARNING,
+            buttons=Gtk.ButtonsType.OK_CANCEL,
+            text="SecureCRT Import Limitations"
+        )
+        
+        dialog.format_secondary_markup(
+            "Due to SecureCRT's proprietary encryption, <b>Expect/Send Login Actions</b> "
+            "and stored passwords cannot be automatically imported.\n\n"
+            "You will need to enter these details manually into your server configurations after the import completes."
+        )
+
+        # Create the acknowledgment checkbox
+        check_box = Gtk.CheckButton(label="I understand, do not show this message again.")
+        check_box.set_margin_top(10)
+        
+        # Add the checkbox to the dialog's message area
+        box = dialog.get_message_area()
+        box.pack_start(check_box, False, False, 0)
+        dialog.show_all()
+
+        response = dialog.run()
+        
+        # If they clicked OK and checked the box, save it to the settings file!
+        if response == Gtk.ResponseType.OK and check_box.get_active():
+            self.settings["securecrt_warning_acknowledged"] = True
+            save_settings(self.settings)
+
+        dialog.destroy()
+        
+        # Return True if they clicked OK to proceed, False if they clicked Cancel
+        return response == Gtk.ResponseType.OK
+
     def _show_disclaimer_if_needed(self):
         accepted = self.settings.get("disclaimer_accepted", False)
         if accepted:
@@ -3499,7 +3741,7 @@ class ScarpaConnectionManager(Gtk.Application):
         """Builds and displays the Graphical Import Wizard with Radio Buttons"""
         dialog = Gtk.Dialog(
             title="Import Server Configurations",
-            transient_for=None,
+            transient_for=self.win if hasattr(self, 'win') and self.win else None,
             flags=0
         )
         dialog.add_buttons(
@@ -3525,22 +3767,24 @@ class ScarpaConnectionManager(Gtk.Application):
         
         # Radio Buttons
         rb_scarpa = Gtk.RadioButton.new_with_label_from_widget(None, "SCARPA Connection Manager (.json, .gpg)")
-        rb_winscp = Gtk.RadioButton.new_with_label_from_widget(rb_scarpa, "WinSCP / SecureCRT (.xml)")
-        rb_putty = Gtk.RadioButton.new_with_label_from_widget(rb_scarpa, "PuTTY (.reg)")
+        rb_securecrt = Gtk.RadioButton.new_with_label_from_widget(rb_scarpa, "SecureCRT (.xml)")
+        rb_putty = Gtk.RadioButton.new_with_label_from_widget(rb_scarpa, "PuTTY Windows (.reg)")
+        rb_putty_linux = Gtk.RadioButton.new_with_label_from_widget(rb_scarpa, "PuTTY Linux (Folder)")
         
         # Pack radio buttons with slight indentation
         rb_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
         rb_box.set_margin_start(10)
         rb_box.pack_start(rb_scarpa, False, False, 0)
-        rb_box.pack_start(rb_winscp, False, False, 0)
+        rb_box.pack_start(rb_securecrt, False, False, 0)
         rb_box.pack_start(rb_putty, False, False, 0)
+        rb_box.pack_start(rb_putty_linux, False, False, 0)
         box.pack_start(rb_box, False, False, 0)
         
         # File chooser row
         file_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         file_entry = Gtk.Entry()
         file_entry.set_hexpand(True)
-        file_entry.set_placeholder_text("Select a file to import...")
+        file_entry.set_placeholder_text("Select a file or folder to import...")
         file_entry.set_editable(False) # Force the user to use the Browse button
         
         browse_button = Gtk.Button(label="Browse...")
@@ -3551,29 +3795,48 @@ class ScarpaConnectionManager(Gtk.Application):
         
         # The Browse Button Callback (Changes filter based on radio button)
         def on_browse_clicked(btn):
-            chooser = Gtk.FileChooserDialog(
-                title="Select File to Import",
-                parent=dialog,
-                action=Gtk.FileChooserAction.OPEN
-            )
-            chooser.add_buttons(
-                Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
-                Gtk.STOCK_OPEN, Gtk.ResponseType.OK
-            )
+            # --- SMART CHOOSER LOGIC ---
+            # If Linux PuTTY is selected, launch a FOLDER chooser
+            if rb_putty_linux.get_active():
+                chooser = Gtk.FileChooserDialog(
+                    title="Select PuTTY Sessions Folder",
+                    parent=dialog,
+                    action=Gtk.FileChooserAction.SELECT_FOLDER
+                )
+                chooser.add_buttons(
+                    Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+                    "Select Folder", Gtk.ResponseType.OK
+                )
+                # Auto-navigate to the hidden PuTTY directory!
+                default_putty_dir = os.path.expanduser("~/.putty/sessions")
+                if os.path.isdir(default_putty_dir):
+                    chooser.set_current_folder(default_putty_dir)
             
-            filter_custom = Gtk.FileFilter()
-            if rb_scarpa.get_active():
-                filter_custom.set_name("SCARPA Data (*.json, *.gpg)")
-                filter_custom.add_pattern("*.json")
-                filter_custom.add_pattern("*.gpg")
-            elif rb_winscp.get_active():
-                filter_custom.set_name("WinSCP / SecureCRT XML (*.xml)")
-                filter_custom.add_pattern("*.xml")
-            elif rb_putty.get_active():
-                filter_custom.set_name("PuTTY Registry (*.reg)")
-                filter_custom.add_pattern("*.reg")
-            
-            chooser.add_filter(filter_custom)
+            # Otherwise, launch a standard FILE chooser
+            else:
+                chooser = Gtk.FileChooserDialog(
+                    title="Select File to Import",
+                    parent=dialog,
+                    action=Gtk.FileChooserAction.OPEN
+                )
+                chooser.add_buttons(
+                    Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+                    Gtk.STOCK_OPEN, Gtk.ResponseType.OK
+                )
+                
+                filter_custom = Gtk.FileFilter()
+                if rb_scarpa.get_active():
+                    filter_custom.set_name("SCARPA Data (*.json, *.gpg)")
+                    filter_custom.add_pattern("*.json")
+                    filter_custom.add_pattern("*.gpg")
+                elif rb_securecrt.get_active():
+                    filter_custom.set_name("SecureCRT XML (*.xml)")
+                    filter_custom.add_pattern("*.xml")
+                elif rb_putty.get_active():
+                    filter_custom.set_name("PuTTY Registry (*.reg)")
+                    filter_custom.add_pattern("*.reg")
+                
+                chooser.add_filter(filter_custom)
             
             if chooser.run() == Gtk.ResponseType.OK:
                 file_entry.set_text(chooser.get_filename())
@@ -3587,17 +3850,19 @@ class ScarpaConnectionManager(Gtk.Application):
         # Wait for the user to click Import or Cancel
         response = dialog.run()
         if response == Gtk.ResponseType.OK:
-            file_path = file_entry.get_text()
-            if not file_path:
-                self.show_error_message("No File Selected", "Please browse for a file to import.")
+            path = file_entry.get_text()
+            if not path:
+                self.show_error_dialog("No Selection", "Please browse for a file or folder to import.")
             else:
                 # Route to the correct import backend
                 if rb_scarpa.get_active():
-                    self.process_scarpa_import(file_path)
-                elif rb_winscp.get_active():
-                    self.process_securecrt_import(file_path)
+                    self.process_scarpa_import(path)
+                elif rb_securecrt.get_active():
+                    self.process_securecrt_import(path)
                 elif rb_putty.get_active():
-                    self.process_putty_import(file_path)
+                    self.process_putty_import(path)
+                elif rb_putty_linux.get_active():
+                    self.process_putty_linux_import(path)
                     
         dialog.destroy()
 
@@ -3730,14 +3995,20 @@ class ScarpaConnectionManager(Gtk.Application):
             self._error(f"Import failed:\n{e}")
 
     def process_securecrt_import(self, file_path):
-        """Handles XML imports with Interactive Auto-Renaming"""
+
+        if not self.settings.get("securecrt_warning_acknowledged", False):
+            proceed = self.show_securecrt_warning_dialog()
+            if not proceed:
+                self.log("SecureCRT import cancelled by user at the warning dialog.")
+                return # Stop the import if they clicked Cancel
+
         try:
             imported_servers = parse_securecrt_xml(file_path)
             
             if not imported_servers:
                 self._error("No valid servers found in the selected XML file.")
                 return
-                
+               
             for srv in imported_servers:
                 srv.setdefault("auto_sequence", [])
                 srv.setdefault("port_forwards", [])
@@ -3896,6 +4167,124 @@ class ScarpaConnectionManager(Gtk.Application):
         except Exception as e:
             traceback.print_exc()
             self._error(f"An error occurred during PuTTY import:\n{e}")
+
+    def process_putty_linux_import(self, directory_path):
+        """Handles native Linux PuTTY session directory imports"""
+        try:
+            imported_servers = parse_putty_linux(directory_path)
+            
+            if not imported_servers:
+                self._error("No valid servers found in the selected directory.")
+                return
+                
+            for srv in imported_servers:
+                srv.setdefault("auto_sequence", [])
+                srv.setdefault("port_forwards", [])
+                srv.setdefault("folder", ROOT_FOLDER) # Or whatever default folder logic you prefer
+                
+            existing_sigs = {
+                (s.get("name"), s.get("host"), s.get("user"), s.get("port"), s.get("folder"))
+                for s in self.servers
+            }
+            existing_names = { s.get("name") for s in self.servers if s.get("name") }
+
+            unique_new_servers = []
+            for srv in imported_servers:
+                base_name = srv.get("name")
+                
+                # Check for exact duplicate
+                sig = (base_name, srv.get("host"), srv.get("user"), srv.get("port"), srv.get("folder"))
+                if sig in existing_sigs:
+                    continue  
+                    
+                # Handle name collisions with different settings
+                new_name = base_name
+                if base_name in existing_names:
+                    msg = (f"A connection named '{base_name}' already exists, but the imported version "
+                           f"has different settings.\n\n"
+                           f"Do you want to import this as a new connection and auto-rename it?")
+                           
+                    wants_to_import = self.ask_yes_no_dialog("Duplicate Name Detected", msg)
+                    
+                    if not wants_to_import:
+                        continue 
+                        
+                    counter = 1
+                    while new_name in existing_names:
+                        new_name = f"{base_name}({counter})"
+                        counter += 1
+                        
+                srv["name"] = new_name
+                unique_new_servers.append(srv)
+                
+                new_sig = (new_name, srv.get("host"), srv.get("user"), srv.get("port"), srv.get("folder"))
+                existing_sigs.add(new_sig)
+                existing_names.add(new_name)
+
+            if not unique_new_servers:
+                self.show_info_dialog("No New Servers", "No new servers were imported. They were either exact duplicates or skipped.")
+                return
+
+            added = len(unique_new_servers)
+            self.servers.extend(unique_new_servers) 
+            
+            try:
+                # Assuming you have your master passphrase accessible here
+                save_servers(self.servers, self.master_passphrase)
+            except Exception as e:
+                self._error(f"Failed to save Linux PuTTY imported servers: {e}")
+                return
+                
+            self.settings["folders"] = self.user_folders
+            save_settings(self.settings)
+
+            self.reload_folders()
+            self.populate_tree()
+            self.tree.expand_row(Gtk.TreePath.new_from_string("0"), False)
+            
+            self.log(f"Imported {added} unique Linux PuTTY servers.")
+            self.show_info_dialog("Import Successful", f"Successfully imported {added} servers from PuTTY (Linux).")
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self._error(f"An error occurred during Linux PuTTY import:\n{e}")
+
+    def on_import_putty_linux_clicked(self, widget):
+        """Opens a folder chooser dialog for Linux PuTTY imports."""
+        
+        # 1. Create the dialog with the SELECT_FOLDER action
+        dialog = Gtk.FileChooserDialog(
+            title="Select PuTTY Sessions Folder",
+            parent=self.win,  # Ensure this points to your main application window
+            action=Gtk.FileChooserAction.SELECT_FOLDER,
+        )
+
+        # 2. Add the Cancel and Select buttons
+        dialog.add_buttons(
+            Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+            "Select Folder", Gtk.ResponseType.OK
+        )
+
+        # 3. Quality of Life: Auto-navigate to the hidden PuTTY directory!
+        default_putty_dir = os.path.expanduser("~/.putty/sessions")
+        if os.path.isdir(default_putty_dir):
+            dialog.set_current_folder(default_putty_dir)
+
+        # 4. Run the dialog and wait for the user
+        response = dialog.run()
+        
+        if response == Gtk.ResponseType.OK:
+            selected_folder = dialog.get_filename()
+            self.log(f"Selected PuTTY directory: {selected_folder}")
+            
+            # Pass the selected folder directly to the processor we wrote earlier
+            self.process_putty_linux_import(selected_folder)
+        else:
+            self.log("Linux PuTTY import cancelled.")
+
+        # 5. Always destroy the dialog when finished
+        dialog.destroy()
 
     def ask_yes_no_dialog(self, title, message):
         """Safely shows a GUI Yes/No question dialog"""
