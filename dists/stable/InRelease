@@ -1,0 +1,51 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+Architectures: amd64 all
+Codename: stable
+Components: main
+Date: Sun, 03 May 2026 07:52:20 +0000
+Description: Scarpa Connection Manager Repository
+Label: Scarpa Connection Manager
+Origin: Tomas Larsson
+Suite: stable
+MD5Sum:
+ 3a7b28486fea1163a93763550a3ca21e              216 Release
+ 036f72d4ace41d287fa5f852e97214ad              918 main/binary-all/Packages
+ 4f59ade59dcbb2cceb34765920d635ac              622 main/binary-all/Packages.gz
+ 036f72d4ace41d287fa5f852e97214ad              918 main/binary-amd64/Packages
+ 4f59ade59dcbb2cceb34765920d635ac              622 main/binary-amd64/Packages.gz
+SHA1:
+ 24637055367d72de374858435935868560dadf2d              216 Release
+ 754ff97655a4dc999b15ff6a60b20253d6c983d6              918 main/binary-all/Packages
+ 720936e0d59d1d2ddbf9621bd076ddf48630bddf              622 main/binary-all/Packages.gz
+ 754ff97655a4dc999b15ff6a60b20253d6c983d6              918 main/binary-amd64/Packages
+ 720936e0d59d1d2ddbf9621bd076ddf48630bddf              622 main/binary-amd64/Packages.gz
+SHA256:
+ 642add580613939b3c22cff839760640913bf3af26b0347b74abf335aa1910af              216 Release
+ f73b969bc313117943b1d745294cbaa75506d8ce0d44e8381dfd5245f83f91f1              918 main/binary-all/Packages
+ 320aec6cce6bef310e19aa9e7d5f0da41d8cd26aff71f0a63d4d80c66cafdb08              622 main/binary-all/Packages.gz
+ f73b969bc313117943b1d745294cbaa75506d8ce0d44e8381dfd5245f83f91f1              918 main/binary-amd64/Packages
+ 320aec6cce6bef310e19aa9e7d5f0da41d8cd26aff71f0a63d4d80c66cafdb08              622 main/binary-amd64/Packages.gz
+SHA512:
+ 33535d62248287ef690a99686bb5048044d558103197bb6adaa763523d7fe7102d86d2ce3fdff0d535cb673fcc9768b85ab07bb6a2de1fcbd414459865eee521              216 Release
+ fc0820a8b84ac5dd8ec694dd6a55b2f2849f62c088cc0b3ef8aaa633edcaae4d1814160698f12deb04693d16df86d705b7afbff79bd9d3454f586bc803c907de              918 main/binary-all/Packages
+ 529c81208555579c74617f42ac2a1c012b9007e8778552f869d3cf2d1e10d390b37a9752b7141b5acab0af04e706d836d208cf90d7997bf745e52d6023d66d35              622 main/binary-all/Packages.gz
+ fc0820a8b84ac5dd8ec694dd6a55b2f2849f62c088cc0b3ef8aaa633edcaae4d1814160698f12deb04693d16df86d705b7afbff79bd9d3454f586bc803c907de              918 main/binary-amd64/Packages
+ 529c81208555579c74617f42ac2a1c012b9007e8778552f869d3cf2d1e10d390b37a9752b7141b5acab0af04e706d836d208cf90d7997bf745e52d6023d66d35              622 main/binary-amd64/Packages.gz
+-----BEGIN PGP SIGNATURE-----
+
+iQIzBAEBCgAdFiEEhmxKIRYJg60Kyucdo6F48+gZdRkFAmn2/rQACgkQo6F48+gZ
+dRlq4hAAhy9TC5pgAp5CNgMTYXwbmo0akhGef3CYO12ro+HkeTWnAOe+y3vaM7C5
+IEHXx1quo/BMm8Gs9GEMRN0UEuCJGchD6Abe+Urxosr/Eano0rlfycs4U23j810Z
+SIPYRBB91umi2MsP4RKGMZ+j9jvBYpn+HK4/GhfXnZMPXUW9iLQZqZOcZUOLWFQv
+JVdQJYaOZYdPdaX0aaYOi9bLU+JlP4SKeRfeCB1h6C1dSzZ5nhkLxCH4H0tS2HDc
+Z0Yi6MZB/DJVvV2vItWnZjm7UJL3YMH8PAxbbSISGOS4olFT+MpRjrDLk/y3bae0
+CLDqH67yhLlNMU/Kmx46JtRNzsEP537J5zRD2Ziv8SG/24WPQM2JW+WU682XhuKb
+I6sbrEWAmIJU4g7+kM3FBeiCO/fv0NrCY0IiaMYd5uCUZr/2uUJL3GHuNkzJRO8U
+eJyHXlnONzktroz4R2cTJEzesyEgbV9AHMMtP7YqUYo68W0eKsO5fIz+dz/brggb
+DnxojnXpriBOWysXLePUKh6A4yJ61cqMAA5XotN91e2aEKWKw3h5b6DETe3f/lM5
+cUHFi0qs0gX8wyQkb6ByLPfxAs9nXHTtY/QSaAoVk7gUxM9f9Dp3VBoKFiNK3/xf
+QH6ikc4SO4nzxHvC6MFAIzVI+s1soTbBo2WyAF/wEZgWRAr13Ks=
+=g8Qr
+-----END PGP SIGNATURE-----
